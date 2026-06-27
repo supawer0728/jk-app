@@ -1,4 +1,4 @@
-package com.example.jkapp.ui
+﻿package com.jkapp.ui
 
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
@@ -38,7 +38,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.SubcomposeAsyncImage
-import com.example.jkapp.auth.AuthViewModel
+import com.jkapp.auth.AuthViewModel
 import com.jkapp.R
 
 private enum class MainTab(@StringRes val labelRes: Int, val icon: ImageVector) {
@@ -49,7 +49,12 @@ private enum class MainTab(@StringRes val labelRes: Int, val icon: ImageVector) 
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainScreen(viewModel: AuthViewModel) {
+fun MainScreen(
+    viewModel: AuthViewModel,
+    diaryViewModel: DiaryViewModel,
+    onNavigateToDetail: (String) -> Unit,
+    onNavigateToAdd: () -> Unit
+) {
     val user by viewModel.user.collectAsStateWithLifecycle()
     val currentUser = user ?: return
 
@@ -111,7 +116,11 @@ fun MainScreen(viewModel: AuthViewModel) {
             when (selectedTab) {
                 MainTab.HOME -> HomeTabScreen()
                 MainTab.ASSET -> AssetScreen()
-                MainTab.DIARY -> DiaryScreen()
+                MainTab.DIARY -> DiaryScreen(
+                    viewModel = diaryViewModel,
+                    onNavigateToDetail = onNavigateToDetail,
+                    onNavigateToAdd = onNavigateToAdd
+                )
             }
         }
     }
