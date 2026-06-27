@@ -32,6 +32,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -86,7 +88,6 @@ fun LoginScreen(viewModel: AuthViewModel) {
                 
                 GoogleSignInButton(
                     onClick = {
-                        if (isLoading) return@GoogleSignInButton
                         isLoading = true
                         errorMessage = null
                         coroutineScope.launch {
@@ -144,13 +145,21 @@ fun GoogleSignInButton(
     val contentColor = if (isDark) Color.White else Color(0xFF1F1F1F)
     val borderColor = if (isDark) Color(0xFF8E918F) else Color(0xFF747775)
     
+    val loadingDescription = stringResource(R.string.signing_in)
+    
     Surface(
-        onClick = onClick,
-        modifier = modifier.height(40.dp), // Official height is often around 40dp
-        shape = RoundedCornerShape(20.dp), // Pill shape as per modern guidelines
+        onClick = { if (!isLoading) onClick() },
+        modifier = modifier
+            .height(48.dp) // Accessibility: Minimum touch target 48dp
+            .semantics {
+                if (isLoading) {
+                    stateDescription = loadingDescription
+                }
+            },
+        shape = RoundedCornerShape(24.dp), // Adjusted for 48dp height to keep pill shape
         color = backgroundColor,
-        border = BorderStroke(1.dp, borderColor),
-        enabled = !isLoading
+        contentColor = contentColor, // Explicitly specify contentColor
+        border = BorderStroke(1.dp, borderColor)
     ) {
         Box(
             contentAlignment = Alignment.Center,
@@ -174,7 +183,7 @@ fun GoogleSignInButton(
                     )
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        text = "Google로 로그인",
+                        text = stringResource(R.string.sign_in_with_google),
                         color = contentColor,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Medium,
