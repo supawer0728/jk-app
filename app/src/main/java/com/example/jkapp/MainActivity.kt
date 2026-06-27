@@ -1,47 +1,58 @@
-package com.example.jkapp
+package com.jkapp
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
-import com.example.jkapp.ui.theme.JkappTheme
+import androidx.activity.viewModels
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.remember
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation3.runtime.entryProvider
+import androidx.navigation3.ui.NavDisplay
+import com.example.jkapp.auth.AuthViewModel
+import com.example.jkapp.nav.HomeRoute
+import com.example.jkapp.nav.LoginRoute
+import com.example.jkapp.ui.HomeScreen
+import com.example.jkapp.ui.LoginScreen
+import com.jkapp.ui.theme.JkappTheme
 
 class MainActivity : ComponentActivity() {
+
+    private val authViewModel: AuthViewModel by viewModels()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
             JkappTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    Greeting(
-                        name = "Android",
-                        modifier = Modifier.padding(innerPadding)
+                val user by authViewModel.user.collectAsStateWithLifecycle()
+
+                val backStack = remember {
+                    mutableStateListOf<Any>(
+                        if (authViewModel.user.value != null) HomeRoute else LoginRoute
                     )
                 }
+
+                LaunchedEffect(user) {
+                    val target: Any = if (user != null) HomeRoute else LoginRoute
+                    if (backStack.lastOrNull() != target) {
+                        backStack.clear()
+                        backStack.add(target)
+                    }
+                }
+
+                NavDisplay(
+                    backStack = backStack,
+                    onBack = { if (backStack.size > 1) backStack.removeLastOrNull() },
+                    entryProvider = entryProvider {
+                        entry<LoginRoute> { LoginScreen(viewModel = authViewModel) }
+                        entry<HomeRoute> { HomeScreen(viewModel = authViewModel) }
+                    }
+                )
             }
         }
-    }
-}
-
-@Composable
-fun Greeting(name: String, modifier: Modifier = Modifier) {
-    Text(
-        text = "Hello $name!",
-        modifier = modifier
-    )
-}
-
-@Preview(showBackground = true)
-@Composable
-fun GreetingPreview() {
-    JkappTheme {
-        Greeting("Android")
     }
 }

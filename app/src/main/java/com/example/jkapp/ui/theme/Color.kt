@@ -1,4 +1,4 @@
-package com.example.jkapp.ui.theme
+package com.jkapp.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
