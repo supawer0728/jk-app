@@ -3,14 +3,15 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.google.devtools.ksp)
     alias(libs.plugins.jetbrains.kotlin.plugin.serialization)
+    alias(libs.plugins.google.services)
 }
 
 android {
-    namespace = "com.example.jkapp"
+    namespace = "com.jkapp"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.example.jkapp"
+        applicationId = "com.jkapp"
         minSdk = 35
         targetSdk = 37
         versionCode = 1
@@ -53,6 +54,13 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.credentials.core)
+    implementation(libs.androidx.credentials.play.auth)
+    implementation(libs.play.auth)
+    implementation(libs.firebase.auth.ktx)
+    implementation(libs.google.drive.api)
+    implementation(libs.google.api.client)
+    implementation(libs.google.http.gson)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.runtime.ktx)
