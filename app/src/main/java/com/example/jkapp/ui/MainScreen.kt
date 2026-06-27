@@ -49,7 +49,12 @@ private enum class MainTab(@StringRes val labelRes: Int, val icon: ImageVector) 
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainScreen(viewModel: AuthViewModel) {
+fun MainScreen(
+    viewModel: AuthViewModel,
+    diaryViewModel: DiaryViewModel,
+    onNavigateToDetail: (String) -> Unit,
+    onNavigateToAdd: () -> Unit
+) {
     val user by viewModel.user.collectAsStateWithLifecycle()
     val currentUser = user ?: return
 
@@ -111,7 +116,11 @@ fun MainScreen(viewModel: AuthViewModel) {
             when (selectedTab) {
                 MainTab.HOME -> HomeTabScreen()
                 MainTab.ASSET -> AssetScreen()
-                MainTab.DIARY -> DiaryScreen()
+                MainTab.DIARY -> DiaryScreen(
+                    viewModel = diaryViewModel,
+                    onNavigateToDetail = onNavigateToDetail,
+                    onNavigateToAdd = onNavigateToAdd
+                )
             }
         }
     }

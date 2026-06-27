@@ -13,8 +13,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.ui.NavDisplay
 import com.example.jkapp.auth.AuthViewModel
+import com.example.jkapp.nav.DiaryDetailRoute
+import com.example.jkapp.nav.DiaryFormRoute
 import com.example.jkapp.nav.HomeRoute
 import com.example.jkapp.nav.LoginRoute
+import com.example.jkapp.ui.DiaryDetailScreen
+import com.example.jkapp.ui.DiaryFormScreen
+import com.example.jkapp.ui.DiaryViewModel
 import com.example.jkapp.ui.LoginScreen
 import com.example.jkapp.ui.MainScreen
 import com.jkapp.ui.theme.JkappTheme
@@ -22,6 +27,7 @@ import com.jkapp.ui.theme.JkappTheme
 class MainActivity : ComponentActivity() {
 
     private val authViewModel: AuthViewModel by viewModels()
+    private val diaryViewModel: DiaryViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -48,8 +54,38 @@ class MainActivity : ComponentActivity() {
                     backStack = backStack,
                     onBack = { if (backStack.size > 1) backStack.removeLastOrNull() },
                     entryProvider = entryProvider {
-                        entry<LoginRoute> { LoginScreen(viewModel = authViewModel) }
-                        entry<HomeRoute> { MainScreen(viewModel = authViewModel) }
+                        entry<LoginRoute> {
+                            LoginScreen(viewModel = authViewModel)
+                        }
+                        entry<HomeRoute> {
+                            MainScreen(
+                                viewModel = authViewModel,
+                                diaryViewModel = diaryViewModel,
+                                onNavigateToDetail = { date ->
+                                    backStack.add(DiaryDetailRoute(date))
+                                },
+                                onNavigateToAdd = {
+                                    backStack.add(DiaryFormRoute())
+                                }
+                            )
+                        }
+                        entry<DiaryDetailRoute> { route ->
+                            DiaryDetailScreen(
+                                viewModel = diaryViewModel,
+                                date = route.date,
+                                onBack = { backStack.removeLastOrNull() },
+                                onNavigateToEdit = { date ->
+                                    backStack.add(DiaryFormRoute(date = date))
+                                }
+                            )
+                        }
+                        entry<DiaryFormRoute> { route ->
+                            DiaryFormScreen(
+                                viewModel = diaryViewModel,
+                                date = route.date,
+                                onBack = { backStack.removeLastOrNull() }
+                            )
+                        }
                     }
                 )
             }
