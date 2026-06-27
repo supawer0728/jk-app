@@ -15,8 +15,8 @@ import androidx.navigation3.ui.NavDisplay
 import com.example.jkapp.auth.AuthViewModel
 import com.example.jkapp.nav.HomeRoute
 import com.example.jkapp.nav.LoginRoute
-import com.example.jkapp.ui.HomeScreen
 import com.example.jkapp.ui.LoginScreen
+import com.example.jkapp.ui.MainScreen
 import com.jkapp.ui.theme.JkappTheme
 
 class MainActivity : ComponentActivity() {
@@ -49,7 +49,7 @@ class MainActivity : ComponentActivity() {
                     onBack = { if (backStack.size > 1) backStack.removeLastOrNull() },
                     entryProvider = entryProvider {
                         entry<LoginRoute> { LoginScreen(viewModel = authViewModel) }
-                        entry<HomeRoute> { HomeScreen(viewModel = authViewModel) }
+                        entry<HomeRoute> { MainScreen(viewModel = authViewModel) }
                     }
                 )
             }
