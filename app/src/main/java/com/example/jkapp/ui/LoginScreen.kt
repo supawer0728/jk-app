@@ -1,7 +1,11 @@
 package com.example.jkapp.ui
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -10,14 +14,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountCircle
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -27,10 +28,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.credentials.CredentialManager
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
@@ -79,9 +83,10 @@ fun LoginScreen(viewModel: AuthViewModel) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(40.dp))
-                Button(
+                
+                GoogleSignInButton(
                     onClick = {
-                        if (isLoading) return@Button
+                        if (isLoading) return@GoogleSignInButton
                         isLoading = true
                         errorMessage = null
                         coroutineScope.launch {
@@ -109,30 +114,10 @@ fun LoginScreen(viewModel: AuthViewModel) {
                             }
                         }
                     },
-                    enabled = !isLoading,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    if (isLoading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            color = MaterialTheme.colorScheme.onPrimary,
-                            strokeWidth = 2.dp
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Default.AccountCircle,
-                            contentDescription = null
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Google로 로그인",
-                            style = MaterialTheme.typography.labelLarge
-                        )
-                    }
-                }
+                    isLoading = isLoading,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
                 errorMessage?.let { msg ->
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
@@ -145,3 +130,59 @@ fun LoginScreen(viewModel: AuthViewModel) {
         }
     }
 }
+
+@Composable
+fun GoogleSignInButton(
+    onClick: () -> Unit,
+    isLoading: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val isDark = isSystemInDarkTheme()
+    
+    // Google Branding Colors
+    val backgroundColor = if (isDark) Color(0xFF131314) else Color.White
+    val contentColor = if (isDark) Color.White else Color(0xFF1F1F1F)
+    val borderColor = if (isDark) Color(0xFF8E918F) else Color(0xFF747775)
+    
+    Surface(
+        onClick = onClick,
+        modifier = modifier.height(40.dp), // Official height is often around 40dp
+        shape = RoundedCornerShape(20.dp), // Pill shape as per modern guidelines
+        color = backgroundColor,
+        border = BorderStroke(1.dp, borderColor),
+        enabled = !isLoading
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.fillMaxSize()
+        ) {
+            if (isLoading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    color = contentColor,
+                    strokeWidth = 2.dp
+                )
+            } else {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 12.dp)
+                ) {
+                    Image(
+                        painter = painterResource(id = R.drawable.ic_google_logo),
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = "Google로 로그인",
+                        color = contentColor,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        letterSpacing = 0.25.sp
+                    )
+                }
+            }
+        }
+    }
+}
+
