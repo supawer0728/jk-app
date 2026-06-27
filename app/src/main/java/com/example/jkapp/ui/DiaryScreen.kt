@@ -79,7 +79,7 @@ fun DiaryScreen(
     LaunchedEffect(Unit) {
         if (viewModel.isAuthorized) return@LaunchedEffect
         val request = AuthorizationRequest.builder()
-            .setRequestedScopes(listOf(Scope(DriveScopes.DRIVE_FILE)))
+            .setRequestedScopes(listOf(Scope(DriveScopes.DRIVE)))
             .build()
         Identity.getAuthorizationClient(activity)
             .authorize(request)
