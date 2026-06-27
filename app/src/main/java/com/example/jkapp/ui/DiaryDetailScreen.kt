@@ -1,4 +1,4 @@
-package com.example.jkapp.ui
+﻿package com.jkapp.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -32,7 +32,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.jkapp.data.model.RecordType
+import com.jkapp.data.model.RecordType
 import com.jkapp.R
 
 @OptIn(ExperimentalMaterial3Api::class)

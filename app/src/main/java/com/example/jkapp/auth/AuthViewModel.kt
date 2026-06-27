@@ -1,4 +1,4 @@
-package com.example.jkapp.auth
+﻿package com.jkapp.auth
 
 import android.app.Application
 import androidx.credentials.ClearCredentialStateRequest

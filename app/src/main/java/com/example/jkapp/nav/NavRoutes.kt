@@ -1,4 +1,4 @@
-package com.example.jkapp.nav
+﻿package com.jkapp.nav
 
 import kotlinx.serialization.Serializable
 

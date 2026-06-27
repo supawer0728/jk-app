@@ -1,12 +1,12 @@
-package com.example.jkapp.ui
+﻿package com.jkapp.ui
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.jkapp.data.drive.DriveRepository
-import com.example.jkapp.data.drive.DriveRepositoryImpl
-import com.example.jkapp.data.model.AkiHealthRecord
-import com.example.jkapp.data.model.HealthRecord
+import com.jkapp.data.drive.DriveRepository
+import com.jkapp.data.drive.DriveRepositoryImpl
+import com.jkapp.data.model.AkiHealthRecord
+import com.jkapp.data.model.HealthRecord
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.coroutines.flow.MutableStateFlow

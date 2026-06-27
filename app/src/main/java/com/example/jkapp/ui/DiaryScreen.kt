@@ -1,4 +1,4 @@
-package com.example.jkapp.ui
+﻿package com.jkapp.ui
 
 import android.app.Activity
 import androidx.activity.compose.LocalActivity
@@ -43,8 +43,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.jkapp.data.model.HealthRecord
-import com.example.jkapp.data.model.RecordType
+import com.jkapp.data.model.HealthRecord
+import com.jkapp.data.model.RecordType
 import com.google.android.gms.auth.api.identity.AuthorizationRequest
 import com.google.android.gms.auth.api.identity.Identity
 import com.google.android.gms.common.api.Scope

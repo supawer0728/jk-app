@@ -1,4 +1,4 @@
-package com.jkapp
+﻿package com.jkapp
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -12,16 +12,16 @@ import androidx.compose.runtime.remember
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.ui.NavDisplay
-import com.example.jkapp.auth.AuthViewModel
-import com.example.jkapp.nav.DiaryDetailRoute
-import com.example.jkapp.nav.DiaryFormRoute
-import com.example.jkapp.nav.HomeRoute
-import com.example.jkapp.nav.LoginRoute
-import com.example.jkapp.ui.DiaryDetailScreen
-import com.example.jkapp.ui.DiaryFormScreen
-import com.example.jkapp.ui.DiaryViewModel
-import com.example.jkapp.ui.LoginScreen
-import com.example.jkapp.ui.MainScreen
+import com.jkapp.auth.AuthViewModel
+import com.jkapp.nav.DiaryDetailRoute
+import com.jkapp.nav.DiaryFormRoute
+import com.jkapp.nav.HomeRoute
+import com.jkapp.nav.LoginRoute
+import com.jkapp.ui.DiaryDetailScreen
+import com.jkapp.ui.DiaryFormScreen
+import com.jkapp.ui.DiaryViewModel
+import com.jkapp.ui.LoginScreen
+import com.jkapp.ui.MainScreen
 import com.jkapp.ui.theme.JkappTheme
 
 class MainActivity : ComponentActivity() {

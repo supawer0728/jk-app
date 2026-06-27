@@ -1,4 +1,4 @@
-package com.example.jkapp.ui
+﻿package com.jkapp.ui
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue

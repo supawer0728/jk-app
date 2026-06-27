@@ -1,4 +1,4 @@
-package com.example.jkapp.data.drive
+﻿package com.jkapp.data.drive
 
 object DriveConfig {
     const val FILE_ID = "1LmNGuh7lNawSHsVHB4Ys7LUK4fSLUyYlmSG2i5uixuk"

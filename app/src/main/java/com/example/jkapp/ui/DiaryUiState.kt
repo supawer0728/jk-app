@@ -1,6 +1,6 @@
-package com.example.jkapp.ui
+﻿package com.jkapp.ui
 
-import com.example.jkapp.data.model.AkiHealthRecord
+import com.jkapp.data.model.AkiHealthRecord
 
 sealed class DiaryUiState {
     object NeedsAuth : DiaryUiState()

@@ -1,4 +1,4 @@
-package com.example.jkapp.data.model
+﻿package com.jkapp.data.model
 
 import com.squareup.moshi.Json
 import com.squareup.moshi.JsonClass
