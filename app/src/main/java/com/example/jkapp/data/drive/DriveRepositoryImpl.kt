@@ -23,11 +23,13 @@ class DriveRepositoryImpl(private val moshi: Moshi) : DriveRepository {
     override suspend fun fetchRecord(accessToken: String): AkiHealthRecord =
         withContext(Dispatchers.IO) {
             // Google Docs 네이티브 파일은 export API로 읽어야 함 (executeMediaAsInputStream은 404 반환)
-            val json = buildDrive(accessToken)
+            // text/plain export 결과 앞에 BOM(﻿)이 붙을 수 있어 제거 후 파싱
+            val raw = buildDrive(accessToken)
                 .files().export(DriveConfig.FILE_ID, "text/plain")
                 .executeAsInputStream()
-                .bufferedReader()
+                .bufferedReader(Charsets.UTF_8)
                 .readText()
+            val json = raw.trimStart('﻿').trim()
             adapter.fromJson(json) ?: error("AkiHealthRecord 파싱 실패")
         }
 
