@@ -20,14 +20,6 @@
     <string name="delete_confirm_title">기록 삭제</string>
     <string name="delete_confirm_message">%s 기록을 삭제하시겠습니까?</string>
     <string name="record_type_label">기록 유형</string>
-    <string name="record_type_hospital">병원 방문</string>
-    <string name="record_type_daily">일일 기록</string>
     <string name="field_date">날짜 (YYYY-MM-DD)</string>
-    <string name="field_category">분류</string>
-    <string name="field_details">내용</string>
-    <string name="field_note">메모</string>
-    <string name="field_note_optional">메모 (선택)</string>
-    <string name="field_notes">일일 메모</string>
-    <string name="notes_hint">한 줄에 하나씩 입력하세요</string>
-    <string name="drive_auth_denied">Drive 접근 권한을 거부했습니다.</string>
+    <string name="field_record">기록 내용</string>
 </resources>

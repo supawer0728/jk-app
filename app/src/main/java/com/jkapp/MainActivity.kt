@@ -1,4 +1,4 @@
-﻿package com.jkapp
+package com.jkapp
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -74,15 +74,15 @@ class MainActivity : ComponentActivity() {
                                 viewModel = diaryViewModel,
                                 date = route.date,
                                 onBack = { backStack.removeLastOrNull() },
-                                onNavigateToEdit = { date ->
-                                    backStack.add(DiaryFormRoute(date = date))
+                                onNavigateToEdit = { firestoreId ->
+                                    backStack.add(DiaryFormRoute(firestoreId = firestoreId))
                                 }
                             )
                         }
                         entry<DiaryFormRoute> { route ->
                             DiaryFormScreen(
                                 viewModel = diaryViewModel,
-                                date = route.date,
+                                firestoreId = route.firestoreId,
                                 onBack = { backStack.removeLastOrNull() }
                             )
                         }
