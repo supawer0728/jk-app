@@ -2,9 +2,11 @@ package com.jkapp.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.firebase.auth.FirebaseAuth
 import com.jkapp.data.firestore.FirestoreRepository
 import com.jkapp.data.firestore.FirestoreRepositoryImpl
 import com.jkapp.data.model.CatRecord
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -19,41 +21,71 @@ import java.util.Locale
 class DiaryViewModel : ViewModel() {
 
     private val repository: FirestoreRepository = FirestoreRepositoryImpl()
+    private val auth = FirebaseAuth.getInstance()
 
     private val _uiState = MutableStateFlow<DiaryUiState>(DiaryUiState.Loading)
     val uiState: StateFlow<DiaryUiState> = _uiState.asStateFlow()
 
+    private var dataJob: Job? = null
+    private val authListener = FirebaseAuth.AuthStateListener { firebaseAuth ->
+        if (firebaseAuth.currentUser != null) {
+            startDataCollection()
+        } else {
+            dataJob?.cancel()
+            _uiState.value = DiaryUiState.Loading
+        }
+    }
+
     init {
-        viewModelScope.launch {
+        auth.addAuthStateListener(authListener)
+    }
+
+    private fun startDataCollection() {
+        dataJob?.cancel()
+        dataJob = viewModelScope.launch {
             combine(
                 repository.getRecordTypes(),
                 repository.getRecords(),
             ) { types, records ->
                 DiaryUiState.Success(records = records, recordTypes = types) as DiaryUiState
             }
-                .catch { e -> emit(DiaryUiState.Error(e.message ?: "데이터를 불러오지 못했습니다.")) }
+                .catch { e -> 
+                    emit(DiaryUiState.Error("기록을 불러오는 중 오류가 발생했습니다: ${e.localizedMessage ?: "알 수 없는 오류"}")) 
+                }
                 .collect { _uiState.value = it }
         }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        auth.removeAuthStateListener(authListener)
+        dataJob?.cancel()
     }
 
     fun addRecord(record: CatRecord) {
         viewModelScope.launch {
             runCatching { repository.addRecord(record) }
-                .onFailure { _uiState.value = DiaryUiState.Error(it.message ?: "저장에 실패했습니다.") }
+                .onFailure { 
+                    _uiState.value = DiaryUiState.Error("새 기록 저장에 실패했습니다: ${it.localizedMessage ?: "알 수 없는 오류"}") 
+                }
         }
     }
 
     fun updateRecord(record: CatRecord) {
         viewModelScope.launch {
             runCatching { repository.updateRecord(record) }
-                .onFailure { _uiState.value = DiaryUiState.Error(it.message ?: "저장에 실패했습니다.") }
+                .onFailure { 
+                    _uiState.value = DiaryUiState.Error("기록 수정에 실패했습니다: ${it.localizedMessage ?: "알 수 없는 오류"}") 
+                }
         }
     }
 
     fun deleteRecord(firestoreId: String) {
         viewModelScope.launch {
             runCatching { repository.deleteRecord(firestoreId) }
-                .onFailure { _uiState.value = DiaryUiState.Error(it.message ?: "삭제에 실패했습니다.") }
+                .onFailure { 
+                    _uiState.value = DiaryUiState.Error("기록 삭제에 실패했습니다: ${it.localizedMessage ?: "알 수 없는 오류"}") 
+                }
         }
     }
 

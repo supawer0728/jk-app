@@ -15,26 +15,29 @@ import kotlin.coroutines.resumeWithException
 class FirestoreRepositoryImpl : FirestoreRepository {
 
     private val db = FirebaseFirestore.getInstance()
-    private val recordTypesRef = db.collection("cat-record-types")
-    private val recordsRef = db.collection("cat-records")
+    private val recordTypesRef = db.collection(COLLECTION_RECORD_TYPES)
+    private val recordsRef = db.collection(COLLECTION_RECORDS)
 
     override fun getRecordTypes(): Flow<List<CatRecordType>> = callbackFlow {
         val listener = recordTypesRef.addSnapshotListener { snapshot, error ->
-            if (error != null) { close(error); return@addSnapshotListener }
+            if (error != null) {
+                close(error)
+                return@addSnapshotListener
+            }
             val types = snapshot?.documents?.mapNotNull { doc ->
-                val id = doc.getString("id") ?: doc.id
+                val id = doc.getString(FIELD_ID) ?: doc.id
                 CatRecordType(
                     id = id,
-                    name = doc.getString("name") ?: id,
-                    emoji = doc.getString("emoji") ?: "📝",
-                    fontColor = doc.getString("fontColor") ?: doc.getString("font_color") ?: "#000000",
-                    backgroundColor = doc.getString("backgroundColor") ?: doc.getString("background_color") ?: "#FFFFFF",
+                    name = doc.getString(FIELD_NAME) ?: id,
+                    emoji = doc.getString(FIELD_EMOJI) ?: "📝",
+                    fontColor = doc.getString(FIELD_FONT_COLOR_CAMEL) ?: doc.getString(FIELD_FONT_COLOR_SNAKE) ?: "#000000",
+                    backgroundColor = doc.getString(FIELD_BG_COLOR_CAMEL) ?: doc.getString(FIELD_BG_COLOR_SNAKE) ?: "#FFFFFF",
                 )
             } ?: emptyList()
 
-            Log.d("FirestoreRepo", "Loaded RecordTypes: count=${types.size}")
-            types.take(3).forEach { 
-                Log.d("FirestoreRepo", "  Type: id=${it.id}, name=${it.name}, emoji=${it.emoji}")
+            Log.d(TAG, "Loaded RecordTypes: count=${types.size}")
+            types.take(3).forEach {
+                Log.d(TAG, "  Type: id=${it.id}, name=${it.name}, emoji=${it.emoji}")
             }
 
             trySend(types)
@@ -44,21 +47,24 @@ class FirestoreRepositoryImpl : FirestoreRepository {
 
     override fun getRecords(): Flow<List<CatRecord>> = callbackFlow {
         val listener = recordsRef
-            .orderBy("date", Query.Direction.DESCENDING)
+            .orderBy(FIELD_DATE, Query.Direction.DESCENDING)
             .addSnapshotListener { snapshot, error ->
-                if (error != null) { close(error); return@addSnapshotListener }
+                if (error != null) {
+                    close(error)
+                    return@addSnapshotListener
+                }
                 val records = snapshot?.documents?.mapNotNull { doc ->
                     CatRecord(
                         firestoreId = doc.id,
-                        date = doc.getString("date") ?: return@mapNotNull null,
-                        recordType = doc.getString("record_type") ?: "",
-                        record = doc.getString("record") ?: "",
+                        date = doc.getString(FIELD_DATE) ?: return@mapNotNull null,
+                        recordType = doc.getString(FIELD_RECORD_TYPE) ?: "",
+                        record = doc.getString(FIELD_RECORD) ?: "",
                     )
                 } ?: emptyList()
 
-                Log.d("FirestoreRepo", "Loaded Records: count=${records.size}")
-                records.take(3).forEach { 
-                    Log.d("FirestoreRepo", "  Record: date=${it.date}, type=${it.recordType}, content=${it.record.take(20)}...")
+                Log.d(TAG, "Loaded Records: count=${records.size}")
+                records.take(3).forEach {
+                    Log.d(TAG, "  Record: date=${it.date}, type=${it.recordType}, content=${it.record.take(20)}...")
                 }
 
                 trySend(records)
@@ -73,7 +79,10 @@ class FirestoreRepositoryImpl : FirestoreRepository {
     }
 
     override suspend fun updateRecord(record: CatRecord): Unit = suspendCancellableCoroutine { cont ->
-        val id = record.firestoreId ?: run { cont.resume(Unit); return@suspendCancellableCoroutine }
+        val id = record.firestoreId ?: run {
+            cont.resume(Unit)
+            return@suspendCancellableCoroutine
+        }
         recordsRef.document(id).update(record.toMap())
             .addOnSuccessListener { cont.resume(Unit) }
             .addOnFailureListener { cont.resumeWithException(it) }
@@ -86,8 +95,30 @@ class FirestoreRepositoryImpl : FirestoreRepository {
     }
 
     private fun CatRecord.toMap() = mapOf(
-        "date" to date,
-        "record_type" to recordType,
-        "record" to record,
+        FIELD_DATE to date,
+        FIELD_RECORD_TYPE to recordType,
+        FIELD_RECORD to record,
     )
+
+    companion object {
+        private const val TAG = "FirestoreRepo"
+
+        // Collections
+        private const val COLLECTION_RECORD_TYPES = "cat-record-types"
+        private const val COLLECTION_RECORDS = "cat-records"
+
+        // Field names - CatRecordType
+        private const val FIELD_ID = "id"
+        private const val FIELD_NAME = "name"
+        private const val FIELD_EMOJI = "emoji"
+        private const val FIELD_FONT_COLOR_CAMEL = "fontColor"
+        private const val FIELD_FONT_COLOR_SNAKE = "font_color"
+        private const val FIELD_BG_COLOR_CAMEL = "backgroundColor"
+        private const val FIELD_BG_COLOR_SNAKE = "background_color"
+
+        // Field names - CatRecord
+        private const val FIELD_DATE = "date"
+        private const val FIELD_RECORD_TYPE = "record_type"
+        private const val FIELD_RECORD = "record"
+    }
 }
