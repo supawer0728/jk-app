@@ -55,7 +55,7 @@ import com.jkapp.data.model.CatRecordType
 @Composable
 fun RecordTypeManagementScreen(
     viewModel: DiaryViewModel,
-    onBack: () -> Unit
+    onBack: () -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var showAddDialog by rememberSaveable { mutableStateOf(false) }
@@ -159,10 +159,12 @@ private fun RecordTypeItem(
     var showDeleteRestricted by remember { mutableStateOf(false) }
 
     LaunchedEffect(type.name, type.emoji, type.fontColor, type.backgroundColor) {
-        name = type.name
-        emoji = type.emoji
-        fontColor = type.fontColor
-        backgroundColor = type.backgroundColor
+        if (!isExpanded) {
+            name = type.name
+            emoji = type.emoji
+            fontColor = type.fontColor
+            backgroundColor = type.backgroundColor
+        }
     }
 
     Card(modifier = Modifier.fillMaxWidth()) {

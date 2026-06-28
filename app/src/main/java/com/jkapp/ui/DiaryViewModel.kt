@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -49,13 +50,13 @@ class DiaryViewModel : ViewModel() {
         dataJob?.cancel()
         dataJob = viewModelScope.launch {
             combine(
-                repository.getRecordTypes(),
+                repository.getRecordTypes().onStart { emit(emptyList()) },
                 repository.getRecords(),
             ) { types, records ->
                 DiaryUiState.Success(records = records, recordTypes = types) as DiaryUiState
             }
-                .catch { e -> 
-                    emit(DiaryUiState.Error("기록을 불러오는 중 오류가 발생했습니다: ${e.localizedMessage ?: "알 수 없는 오류"}")) 
+                .catch { e ->
+                    emit(DiaryUiState.Error("기록을 불러오는 중 오류가 발생했습니다: ${e.localizedMessage ?: "알 수 없는 오류"}"))
                 }
                 .collect { _uiState.value = it }
         }
@@ -70,8 +71,8 @@ class DiaryViewModel : ViewModel() {
     fun addRecord(record: CatRecord) {
         viewModelScope.launch {
             runCatching { repository.addRecord(record) }
-                .onFailure { 
-                    _uiState.value = DiaryUiState.Error("새 기록 저장에 실패했습니다: ${it.localizedMessage ?: "알 수 없는 오류"}") 
+                .onFailure {
+                    _uiState.value = DiaryUiState.Error("새 기록 저장에 실패했습니다: ${it.localizedMessage ?: "알 수 없는 오류"}")
                 }
         }
     }
@@ -79,8 +80,8 @@ class DiaryViewModel : ViewModel() {
     fun updateRecord(record: CatRecord) {
         viewModelScope.launch {
             runCatching { repository.updateRecord(record) }
-                .onFailure { 
-                    _uiState.value = DiaryUiState.Error("기록 수정에 실패했습니다: ${it.localizedMessage ?: "알 수 없는 오류"}") 
+                .onFailure {
+                    _uiState.value = DiaryUiState.Error("기록 수정에 실패했습니다: ${it.localizedMessage ?: "알 수 없는 오류"}")
                 }
         }
     }
@@ -107,6 +108,11 @@ class DiaryViewModel : ViewModel() {
             _uiState.value = DiaryUiState.Error("시스템 필수 유형 ID는 사용할 수 없습니다.")
             return
         }
+        val existingIds = (uiState.value as? DiaryUiState.Success)?.recordTypes?.map { it.id }.orEmpty()
+        if (type.id in existingIds) {
+            _uiState.value = DiaryUiState.Error("이미 존재하는 기록유형 ID입니다: ${type.id}")
+            return
+        }
         viewModelScope.launch {
             runCatching { repository.addRecordType(type) }
                 .onFailure {
@@ -125,11 +131,10 @@ class DiaryViewModel : ViewModel() {
     }
 
     fun deleteRecordType(docId: String) {
-        val typeId = (uiState.value as? DiaryUiState.Success)
-            ?.recordTypes?.find { it.docId == docId || it.id == docId }?.id
-        val isSystemType = docId in SYSTEM_TYPE_IDS || typeId in SYSTEM_TYPE_IDS
-        if (typeId == null || isSystemType) {
-            if (isSystemType) _uiState.value = DiaryUiState.Error("시스템 필수 유형은 삭제할 수 없습니다.")
+        val type = (uiState.value as? DiaryUiState.Success)
+            ?.recordTypes?.find { it.docId == docId }
+        if (type?.id in SYSTEM_TYPE_IDS) {
+            _uiState.value = DiaryUiState.Error("시스템 필수 유형은 삭제할 수 없습니다.")
             return
         }
         viewModelScope.launch {

@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.\\gradlew.bat *)",
+      "Bash(./gradlew *)",
+      "Bash(adb *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(git pull *)",
+      "Bash(git checkout *)",
+      "Bash(git restore *)",
+      "Bash(gh repo *)",
+      "Bash(gh issue *)",
+      "Bash(gh pr *)",
+      "Bash(gh api *)",
+      "Bash(gh auth *)",
+      "Bash(gh label *)",
+      "Bash(jar tf *)",
+      "mcp__claude_ai_Google_Drive__read_file_content",
+      "mcp__claude_ai_Google_Drive__get_file_metadata",
+      "mcp__claude_ai_Google_Drive__list_recent_files",
+      "mcp__claude_ai_Google_Drive__search_files",
+      "mcp__plugin_oh-my-claudecode_t__lsp_diagnostics",
+      "Skill(run)",
+      "Skill(code-review)"
+    ]
+  }
+}

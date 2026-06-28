@@ -36,22 +36,22 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.core.graphics.toColorInt
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jkapp.R
 import com.jkapp.data.model.CatRecord
 import com.jkapp.data.model.CatRecordType
+
+private const val PREVIEW_RECORD_LIMIT = 3
 
 @Composable
 fun DiaryScreen(
     viewModel: DiaryViewModel,
     onNavigateToDetail: (String) -> Unit,
     onNavigateToAdd: () -> Unit,
-    onNavigateToRecordTypeManagement: () -> Unit
+    onNavigateToRecordTypeManagement: () -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val selectedTypeIds by viewModel.selectedTypeIds.collectAsStateWithLifecycle()
@@ -156,7 +156,7 @@ private fun RecordTypeFilterRow(
             FilterChip(
                 selected = selectedTypeIds.isEmpty(),
                 onClick = onClearFilter,
-                label = { Text("전체") }
+                label = { Text(stringResource(R.string.filter_all)) }
             )
         }
         items(recordTypes, key = { it.id }) { type ->
@@ -205,7 +205,7 @@ private fun DiaryListItem(
             }
             if (records.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(6.dp))
-                records.take(3).forEach { record ->
+                records.take(PREVIEW_RECORD_LIMIT).forEach { record ->
                     val type = recordTypes.find { it.id.trim().equals(record.recordType.trim(), ignoreCase = true) }
                     Text(
                         text = "• ${type?.let { "${it.emoji} ${it.name}" } ?: record.recordType}: ${record.record}",
@@ -215,7 +215,7 @@ private fun DiaryListItem(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                if (records.size > 3) {
+                if (records.size > PREVIEW_RECORD_LIMIT) {
                     Text(
                         text = "...",
                         style = MaterialTheme.typography.bodySmall,
@@ -230,12 +230,10 @@ private fun DiaryListItem(
 
 @Composable
 private fun RecordTypeBadge(type: CatRecordType?, fallbackId: String) {
-    val bgColor = runCatching {
-        type?.backgroundColor?.let { Color(it.toColorInt()) }
-    }.getOrNull() ?: MaterialTheme.colorScheme.secondaryContainer
-    val fontColor = runCatching {
-        type?.fontColor?.let { Color(it.toColorInt()) }
-    }.getOrNull() ?: MaterialTheme.colorScheme.onSecondaryContainer
+    val bgColor = type?.backgroundColor?.toComposeColorOrNull()
+        ?: MaterialTheme.colorScheme.secondaryContainer
+    val fontColor = type?.fontColor?.toComposeColorOrNull()
+        ?: MaterialTheme.colorScheme.onSecondaryContainer
 
     SuggestionChip(
         onClick = {},

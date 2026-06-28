@@ -33,10 +33,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.core.graphics.toColorInt
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jkapp.R
 import com.jkapp.data.model.CatRecord
@@ -74,7 +72,8 @@ fun DiaryFormScreen(
     }
 
     val selectedType = recordTypes.find { it.id == selectedTypeId }
-    val isValid = recordDate.isNotBlank() && selectedTypeId.isNotEmpty() && recordText.isNotBlank()
+    val isDataReady = !isEditMode || existingRecord != null
+    val isValid = isDataReady && recordDate.isNotBlank() && selectedTypeId.isNotEmpty() && recordText.isNotBlank()
 
     Scaffold(
         topBar = {
@@ -115,12 +114,10 @@ fun DiaryFormScreen(
                 expanded = typeDropdownExpanded,
                 onExpandedChange = { typeDropdownExpanded = !typeDropdownExpanded }
             ) {
-                val bgColor = selectedType?.let {
-                    runCatching { Color(it.backgroundColor.toColorInt()) }.getOrNull()
-                } ?: MaterialTheme.colorScheme.surface
-                val fontColor = selectedType?.let {
-                    runCatching { Color(it.fontColor.toColorInt()) }.getOrNull()
-                } ?: MaterialTheme.colorScheme.onSurface
+                val bgColor = selectedType?.backgroundColor?.toComposeColorOrNull()
+                    ?: MaterialTheme.colorScheme.surface
+                val fontColor = selectedType?.fontColor?.toComposeColorOrNull()
+                    ?: MaterialTheme.colorScheme.onSurface
 
                 OutlinedTextField(
                     value = selectedType?.let { "${it.emoji} ${it.name}" } ?: "",
@@ -143,9 +140,9 @@ fun DiaryFormScreen(
                     onDismissRequest = { typeDropdownExpanded = false }
                 ) {
                     recordTypes.forEach { type ->
-                        val itemBgColor = runCatching { Color(type.backgroundColor.toColorInt()) }.getOrNull()
+                        val itemBgColor = type.backgroundColor.toComposeColorOrNull()
                             ?: MaterialTheme.colorScheme.surface
-                        val itemFontColor = runCatching { Color(type.fontColor.toColorInt()) }.getOrNull()
+                        val itemFontColor = type.fontColor.toComposeColorOrNull()
                             ?: MaterialTheme.colorScheme.onSurface
 
                         DropdownMenuItem(

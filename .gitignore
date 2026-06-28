@@ -8,7 +8,6 @@
 .externalNativeBuild
 .cxx
 local.properties
-.claude
+.claude/settings.local.json
 .omc
 .kotlin
-.agent/

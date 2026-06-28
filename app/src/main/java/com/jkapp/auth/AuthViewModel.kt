@@ -13,6 +13,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 class AuthViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -24,13 +27,20 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
 
     fun firebaseAuthWithGoogle(idToken: String, onResult: (Boolean) -> Unit) {
         val credential = GoogleAuthProvider.getCredential(idToken, null)
-        auth.signInWithCredential(credential).addOnCompleteListener { task ->
-            if (task.isSuccessful) {
-                _user.value = auth.currentUser
-                onResult(true)
-            } else {
-                onResult(false)
-            }
+        viewModelScope.launch {
+            runCatching {
+                suspendCancellableCoroutine { cont ->
+                    auth.signInWithCredential(credential)
+                        .addOnSuccessListener {
+                            _user.value = auth.currentUser
+                            cont.resume(Unit)
+                        }
+                        .addOnFailureListener { cont.resumeWithException(it) }
+                }
+            }.fold(
+                onSuccess = { onResult(true) },
+                onFailure = { onResult(false) },
+            )
         }
     }
 

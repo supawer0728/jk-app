@@ -32,10 +32,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.core.graphics.toColorInt
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jkapp.R
 import com.jkapp.data.model.CatRecord
@@ -47,7 +45,7 @@ fun DiaryDetailScreen(
     viewModel: DiaryViewModel,
     date: String,
     onBack: () -> Unit,
-    onNavigateToEdit: (firestoreId: String) -> Unit
+    onNavigateToEdit: (firestoreId: String) -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val success = uiState as? DiaryUiState.Success
@@ -96,7 +94,7 @@ fun DiaryDetailScreen(
                     RecordDetailItem(
                         record = record,
                         type = recordTypes.find { it.id.trim().equals(record.recordType.trim(), ignoreCase = true) },
-                        onEdit = { onNavigateToEdit(record.firestoreId!!) },
+                        onEdit = { record.firestoreId?.let(onNavigateToEdit) },
                         onDeleteRequest = { pendingDeleteId = record.firestoreId }
                     )
                 }
@@ -133,12 +131,10 @@ private fun RecordDetailItem(
     onEdit: () -> Unit,
     onDeleteRequest: () -> Unit
 ) {
-    val bgColor = type?.let {
-        runCatching { Color(it.backgroundColor.toColorInt()) }.getOrNull()
-    } ?: MaterialTheme.colorScheme.secondaryContainer
-    val fontColor = type?.let {
-        runCatching { Color(it.fontColor.toColorInt()) }.getOrNull()
-    } ?: MaterialTheme.colorScheme.onSecondaryContainer
+    val bgColor = type?.backgroundColor?.toComposeColorOrNull()
+        ?: MaterialTheme.colorScheme.secondaryContainer
+    val fontColor = type?.fontColor?.toComposeColorOrNull()
+        ?: MaterialTheme.colorScheme.onSecondaryContainer
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(
