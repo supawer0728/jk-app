@@ -1,5 +1,6 @@
 package com.jkapp.ui
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.jkapp.auth.AuthRepository
@@ -114,6 +115,7 @@ class DiaryViewModel(
                     list.map { if (it.fileId == tempId) attachment else it }
                 }
             }.onFailure { e ->
+                Log.e(TAG, "Drive 업로드 실패: fileName=$fileName", e)
                 _pendingAttachments.update { list -> list.filter { it.fileId != tempId } }
                 _attachmentUploadError.value =
                     "파일 업로드에 실패했습니다: ${e.localizedMessage ?: "알 수 없는 오류"}"
@@ -126,6 +128,7 @@ class DiaryViewModel(
         _pendingAttachments.update { it.filter { a -> a.fileId != fileId } }
         viewModelScope.launch {
             runCatching { driveRepository.deleteFile(fileId) }
+                .onFailure { e -> Log.w(TAG, "Drive 파일 삭제 실패 (pending 제거): fileId=$fileId", e) }
         }
     }
 
@@ -134,7 +137,10 @@ class DiaryViewModel(
         _pendingAttachments.value = emptyList()
         resetPendingRecordFolder()
         viewModelScope.launch {
-            toDelete.forEach { runCatching { driveRepository.deleteFile(it.fileId) } }
+            toDelete.forEach { attachment ->
+                runCatching { driveRepository.deleteFile(attachment.fileId) }
+                    .onFailure { e -> Log.w(TAG, "Drive 파일 삭제 실패 (cancel): fileId=${attachment.fileId}", e) }
+            }
         }
     }
 
@@ -148,6 +154,9 @@ class DiaryViewModel(
             driveRepository.downloadFile(fileId).use { input ->
                 destFile.outputStream().use { output -> input.copyTo(output) }
             }
+        } catch (e: Exception) {
+            Log.e(TAG, "Drive 다운로드 실패: fileId=$fileId", e)
+            throw e
         } finally {
             _downloadingAttachmentIds.update { it - fileId }
         }
@@ -182,7 +191,10 @@ class DiaryViewModel(
         viewModelScope.launch {
             runCatching { repository.updateRecord(finalRecord) }
                 .onSuccess {
-                    removedAttachments.forEach { runCatching { driveRepository.deleteFile(it.fileId) } }
+                    removedAttachments.forEach { attachment ->
+                        runCatching { driveRepository.deleteFile(attachment.fileId) }
+                            .onFailure { e -> Log.w(TAG, "Drive GC 실패 (record 수정): fileId=${attachment.fileId}", e) }
+                    }
                 }
                 .onFailure {
                     _uiState.value = DiaryUiState.Error(
@@ -198,7 +210,10 @@ class DiaryViewModel(
         viewModelScope.launch {
             runCatching { repository.deleteRecord(firestoreId) }
                 .onSuccess {
-                    record?.attachments?.forEach { runCatching { driveRepository.deleteFile(it.fileId) } }
+                    record?.attachments?.forEach { attachment ->
+                        runCatching { driveRepository.deleteFile(attachment.fileId) }
+                            .onFailure { e -> Log.w(TAG, "Drive GC 실패 (record 삭제): fileId=${attachment.fileId}", e) }
+                    }
                 }
                 .onFailure {
                     _uiState.value = DiaryUiState.Error(
@@ -267,6 +282,7 @@ class DiaryViewModel(
     }
 
     companion object {
+        private const val TAG = "DiaryViewModel"
         val SYSTEM_TYPE_IDS = setOf("DAILY_NOTE", "HOSPITAL_VISIT")
         const val FALLBACK_RECORD_TYPE_ID = "DAILY_NOTE"
 
