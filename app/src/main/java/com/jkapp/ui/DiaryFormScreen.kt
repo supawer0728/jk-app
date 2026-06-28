@@ -103,6 +103,14 @@ fun DiaryFormScreen(
         }
     }
 
+    val driveAuthRecoveryIntent by viewModel.driveAuthRecoveryIntent.collectAsStateWithLifecycle()
+    val driveAuthLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { viewModel.clearDriveAuthRecoveryIntent() }
+    LaunchedEffect(driveAuthRecoveryIntent) {
+        driveAuthRecoveryIntent?.let { driveAuthLauncher.launch(it) }
+    }
+
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->

@@ -19,8 +19,8 @@ class FakeDriveRepository : DriveRepository {
         deleteError = null
     }
 
-    override fun setAccessToken(accessToken: String) {
-        this.accessToken = accessToken
+    override fun setAccount(accountName: String) {
+        this.accessToken = accountName
     }
 
     override suspend fun uploadFile(

@@ -1,23 +1,29 @@
 package com.jkapp.data.drive
 
-import com.google.api.client.googleapis.auth.oauth2.GoogleCredential
+import android.content.Context
+import com.google.api.client.googleapis.extensions.android.gms.auth.GoogleAccountCredential
+import com.google.api.client.googleapis.extensions.android.gms.auth.UserRecoverableAuthIOException
 import com.google.api.client.http.InputStreamContent
 import com.google.api.client.http.javanet.NetHttpTransport
 import com.google.api.client.json.gson.GsonFactory
 import com.google.api.services.drive.Drive
+import com.google.api.services.drive.DriveScopes
 import com.google.api.services.drive.model.File as DriveFile
 import com.jkapp.data.model.Attachment
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.InputStream
 
-class DriveRepositoryImpl : DriveRepository {
+class DriveRepositoryImpl(context: Context) : DriveRepository {
 
-    private var accessToken: String = ""
+    private val credential = GoogleAccountCredential.usingOAuth2(
+        context.applicationContext,
+        listOf(DriveScopes.DRIVE_FILE),
+    )
     private val folderIdCache = mutableMapOf<String, String>()
 
-    override fun setAccessToken(accessToken: String) {
-        this.accessToken = accessToken
+    override fun setAccount(accountName: String) {
+        credential.selectedAccountName = accountName
         folderIdCache.clear()
     }
 
@@ -27,41 +33,53 @@ class DriveRepositoryImpl : DriveRepository {
         fileName: String,
         mimeType: String,
     ): Attachment = withContext(Dispatchers.IO) {
-        val drive = buildDriveService()
-        val folderId = getOrCreateAttachmentFolder(drive, recordId)
-
-        val fileMetadata = DriveFile().apply {
-            name = fileName
-            parents = listOf(folderId)
+        checkNotNull(credential.selectedAccountName) { "Drive 계정이 설정되지 않았습니다." }
+        try {
+            val drive = buildDriveService()
+            val folderId = getOrCreateAttachmentFolder(drive, recordId)
+            val fileMetadata = DriveFile().apply {
+                name = fileName
+                parents = listOf(folderId)
+            }
+            val uploaded = inputStream.use { stream ->
+                drive.files().create(fileMetadata, InputStreamContent(mimeType, stream))
+                    .setFields("id,name,mimeType,size")
+                    .execute()
+            }
+            Attachment(
+                fileId = uploaded.id,
+                name = uploaded.name ?: fileName,
+                mimeType = uploaded.mimeType ?: mimeType,
+                size = uploaded.getSize() ?: 0L,
+            )
+        } catch (e: UserRecoverableAuthIOException) {
+            throw DriveAuthRequiredException(e.intent)
         }
-        val uploaded = inputStream.use { stream ->
-            drive.files().create(fileMetadata, InputStreamContent(mimeType, stream))
-                .setFields("id,name,mimeType,size")
-                .execute()
-        }
-
-        Attachment(
-            fileId = uploaded.id,
-            name = uploaded.name ?: fileName,
-            mimeType = uploaded.mimeType ?: mimeType,
-            size = uploaded.getSize() ?: 0L,
-        )
     }
 
     override suspend fun deleteFile(fileId: String): Unit = withContext(Dispatchers.IO) {
-        buildDriveService().files().delete(fileId).execute()
+        if (credential.selectedAccountName == null) return@withContext
+        try {
+            buildDriveService().files().delete(fileId).execute()
+        } catch (_: UserRecoverableAuthIOException) {
+            // GC best-effort: 인증 동의 미완료 시 무시
+        }
     }
 
     override suspend fun downloadFile(fileId: String): InputStream = withContext(Dispatchers.IO) {
-        buildDriveService().files().get(fileId).executeMediaAsInputStream()
+        checkNotNull(credential.selectedAccountName) { "Drive 계정이 설정되지 않았습니다." }
+        try {
+            buildDriveService().files().get(fileId).executeMediaAsInputStream()
+        } catch (e: UserRecoverableAuthIOException) {
+            throw DriveAuthRequiredException(e.intent)
+        }
     }
 
-    @Suppress("DEPRECATION")
     private fun buildDriveService(): Drive =
         Drive.Builder(
             NetHttpTransport(),
             GsonFactory.getDefaultInstance(),
-            GoogleCredential().setAccessToken(accessToken),
+            credential,
         ).setApplicationName("jkapp").build()
 
     private fun getOrCreateAttachmentFolder(drive: Drive, recordId: String): String {

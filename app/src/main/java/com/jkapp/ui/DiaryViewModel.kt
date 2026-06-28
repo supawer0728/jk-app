@@ -1,12 +1,16 @@
 package com.jkapp.ui
 
+import android.content.Intent
 import android.util.Log
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import com.jkapp.auth.AuthRepository
 import com.jkapp.auth.FirebaseAuthRepository
+import com.jkapp.data.drive.DriveAuthRequiredException
 import com.jkapp.data.drive.DriveRepository
-import com.jkapp.data.drive.DriveRepositoryImpl
 import com.jkapp.data.firestore.FirestoreRepository
 import com.jkapp.data.firestore.FirestoreRepositoryImpl
 import com.jkapp.data.model.Attachment
@@ -30,7 +34,7 @@ import java.util.UUID
 
 class DiaryViewModel(
     private val repository: FirestoreRepository = FirestoreRepositoryImpl(),
-    private val driveRepository: DriveRepository = DriveRepositoryImpl(),
+    private val driveRepository: DriveRepository = DriveRepository.NoOp,
     authRepository: AuthRepository = FirebaseAuthRepository(),
 ) : ViewModel() {
 
@@ -52,8 +56,15 @@ class DiaryViewModel(
     private val _attachmentUploadError = MutableStateFlow<String?>(null)
     val attachmentUploadError: StateFlow<String?> = _attachmentUploadError.asStateFlow()
 
+    private val _driveAuthRecoveryIntent = MutableStateFlow<Intent?>(null)
+    val driveAuthRecoveryIntent: StateFlow<Intent?> = _driveAuthRecoveryIntent.asStateFlow()
+
     fun clearAttachmentUploadError() {
         _attachmentUploadError.value = null
+    }
+
+    fun clearDriveAuthRecoveryIntent() {
+        _driveAuthRecoveryIntent.value = null
     }
 
     // Temporary folder path used while a new record is being composed
@@ -65,6 +76,7 @@ class DiaryViewModel(
         viewModelScope.launch {
             authRepository.observeAuthState().collect { isLoggedIn ->
                 if (isLoggedIn) {
+                    authRepository.getCurrentUserEmail()?.let { driveRepository.setAccount(it) }
                     startDataCollection()
                 } else {
                     dataJob?.cancel()
@@ -97,8 +109,8 @@ class DiaryViewModel(
 
     // ── Drive 인증 ──────────────────────────────────────────────────────────────
 
-    fun onDriveAccessTokenReceived(accessToken: String) {
-        driveRepository.setAccessToken(accessToken)
+    fun onDriveAccountSelected(accountName: String) {
+        driveRepository.setAccount(accountName)
     }
 
     // ── 첨부파일 관리 ────────────────────────────────────────────────────────────
@@ -117,8 +129,12 @@ class DiaryViewModel(
             }.onFailure { e ->
                 Log.e(TAG, "Drive 업로드 실패: fileName=$fileName", e)
                 _pendingAttachments.update { list -> list.filter { it.fileId != tempId } }
-                _attachmentUploadError.value =
-                    "파일 업로드에 실패했습니다: ${e.localizedMessage ?: "알 수 없는 오류"}"
+                if (e is DriveAuthRequiredException) {
+                    _driveAuthRecoveryIntent.value = e.recoveryIntent
+                } else {
+                    _attachmentUploadError.value =
+                        "파일 업로드에 실패했습니다: ${e.localizedMessage ?: "알 수 없는 오류"}"
+                }
             }
             _isUploadingAttachment.value = false
         }
@@ -154,6 +170,9 @@ class DiaryViewModel(
             driveRepository.downloadFile(fileId).use { input ->
                 destFile.outputStream().use { output -> input.copyTo(output) }
             }
+        } catch (e: DriveAuthRequiredException) {
+            Log.w(TAG, "Drive 다운로드 인증 필요: fileId=$fileId")
+            _driveAuthRecoveryIntent.value = e.recoveryIntent
         } catch (e: Exception) {
             Log.e(TAG, "Drive 다운로드 실패: fileId=$fileId", e)
             throw e
@@ -284,6 +303,9 @@ class DiaryViewModel(
     companion object {
         private const val TAG = "DiaryViewModel"
         val SYSTEM_TYPE_IDS = setOf("DAILY_NOTE", "HOSPITAL_VISIT")
+
+        fun factory(driveRepository: DriveRepository): ViewModelProvider.Factory =
+            viewModelFactory { initializer { DiaryViewModel(driveRepository = driveRepository) } }
         const val FALLBACK_RECORD_TYPE_ID = "DAILY_NOTE"
 
         fun toggleInSet(id: String, current: Set<String>): Set<String> =
