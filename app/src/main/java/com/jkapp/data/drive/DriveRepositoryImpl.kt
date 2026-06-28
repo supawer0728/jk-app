@@ -21,10 +21,11 @@ class DriveRepositoryImpl(context: Context) : DriveRepository {
         listOf(DriveScopes.DRIVE_FILE),
     )
     private val folderIdCache = mutableMapOf<String, String>()
+    private val folderCacheLock = Any()
 
     override fun setAccount(accountName: String) {
         credential.selectedAccountName = accountName
-        folderIdCache.clear()
+        synchronized(folderCacheLock) { folderIdCache.clear() }
     }
 
     override suspend fun uploadFile(
@@ -86,20 +87,21 @@ class DriveRepositoryImpl(context: Context) : DriveRepository {
             credential,
         ).setApplicationName("jkapp").build()
 
-    private fun getOrCreateAttachmentFolder(drive: Drive, recordId: String): String {
-        val jkappId = folderIdCache.getOrPut("jkapp") {
-            getOrCreateFolder(drive, "jkapp", null)
+    private fun getOrCreateAttachmentFolder(drive: Drive, recordId: String): String =
+        synchronized(folderCacheLock) {
+            val jkappId = folderIdCache.getOrPut("jkapp") {
+                getOrCreateFolder(drive, "jkapp", null)
+            }
+            val catRecordId = folderIdCache.getOrPut("cat-record") {
+                getOrCreateFolder(drive, "cat-record", jkappId)
+            }
+            val recordDirId = folderIdCache.getOrPut("record/$recordId") {
+                getOrCreateFolder(drive, recordId, catRecordId)
+            }
+            folderIdCache.getOrPut("attachment/$recordId") {
+                getOrCreateFolder(drive, "attachment", recordDirId)
+            }
         }
-        val catRecordId = folderIdCache.getOrPut("cat-record") {
-            getOrCreateFolder(drive, "cat-record", jkappId)
-        }
-        val recordDirId = folderIdCache.getOrPut("record/$recordId") {
-            getOrCreateFolder(drive, recordId, catRecordId)
-        }
-        return folderIdCache.getOrPut("attachment/$recordId") {
-            getOrCreateFolder(drive, "attachment", recordDirId)
-        }
-    }
 
     private fun getOrCreateFolder(drive: Drive, name: String, parentId: String?): String {
         val query = buildString {

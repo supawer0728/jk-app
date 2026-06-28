@@ -1,7 +1,6 @@
 package com.jkapp.ui
 
 import android.content.Intent
-import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -184,8 +183,6 @@ private fun RecordDetailItem(
 
     val imageAttachments = record.attachments.filter { it.mimeType.startsWith("image/") }
     val otherAttachments = record.attachments.filter { !it.mimeType.startsWith("image/") }
-    Log.d("DiaryDetail", "첨부파일 분류: 전체=${record.attachments.size}, 이미지=${imageAttachments.size}, 기타=${otherAttachments.size}")
-    imageAttachments.forEach { Log.d("DiaryDetail", "  이미지 첨부: id=${it.fileId}, name=${it.name}, mime=${it.mimeType}") }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(
@@ -248,19 +245,21 @@ private fun RecordDetailItem(
                     isDownloading = isDownloading,
                     onClick = {
                         scope.launch {
-                            val destFile = attachmentCacheFile(context.cacheDir, attachment)
-                            onOpenNonImageAttachment(attachment, context.cacheDir)
-                            val uri = FileProvider.getUriForFile(
-                                context,
-                                "${context.packageName}.provider",
-                                destFile,
-                            )
-                            val intent = Intent(Intent.ACTION_VIEW).apply {
-                                setDataAndType(uri, attachment.mimeType)
-                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            }
-                            if (intent.resolveActivity(context.packageManager) != null) {
-                                context.startActivity(intent)
+                            runCatching {
+                                val destFile = attachmentCacheFile(context.cacheDir, attachment)
+                                onOpenNonImageAttachment(attachment, context.cacheDir)
+                                val uri = FileProvider.getUriForFile(
+                                    context,
+                                    "${context.packageName}.provider",
+                                    destFile,
+                                )
+                                val intent = Intent(Intent.ACTION_VIEW).apply {
+                                    setDataAndType(uri, attachment.mimeType)
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                if (intent.resolveActivity(context.packageManager) != null) {
+                                    context.startActivity(intent)
+                                }
                             }
                         }
                     },
@@ -332,17 +331,11 @@ private fun ImageThumbnailItem(
     val destFile = remember(attachment.fileId) { attachmentCacheFile(cacheDir, attachment) }
 
     LaunchedEffect(attachment.fileId) {
-        Log.d("DiaryDetail", "썸네일 LaunchedEffect: id=${attachment.fileId}, name=${attachment.name}, destFile=${destFile.absolutePath}, exists=${destFile.exists()}")
         if (!destFile.exists()) {
-            Log.d("DiaryDetail", "썸네일 다운로드 시작: id=${attachment.fileId}")
             onDownloadAttachment(attachment, destFile)
-            Log.d("DiaryDetail", "썸네일 다운로드 완료: id=${attachment.fileId}, exists=${destFile.exists()}, size=${if (destFile.exists()) destFile.length() else -1}")
         }
         if (destFile.exists()) {
-            Log.d("DiaryDetail", "onFileReady 호출: id=${attachment.fileId}")
             onFileReady(attachment.fileId, destFile)
-        } else {
-            Log.w("DiaryDetail", "다운로드 후에도 파일 없음: id=${attachment.fileId}")
         }
     }
 
@@ -354,16 +347,12 @@ private fun ImageThumbnailItem(
         contentAlignment = Alignment.Center,
     ) {
         val displayFile = cachedFile ?: if (destFile.exists()) destFile else null
-        Log.d("DiaryDetail", "썸네일 렌더링: id=${attachment.fileId}, cachedFile=$cachedFile, displayFile=$displayFile, isDownloading=$isDownloading")
         when {
             displayFile != null -> AsyncImage(
                 model = displayFile,
                 contentDescription = attachment.name,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
-                onLoading = { Log.d("DiaryDetail", "Coil 로딩 중: ${attachment.fileId}, path=${displayFile.absolutePath}") },
-                onSuccess = { Log.d("DiaryDetail", "Coil 로드 성공: ${attachment.fileId}") },
-                onError = { Log.e("DiaryDetail", "Coil 로드 실패: ${attachment.fileId}, error=${it.result.throwable}") },
             )
             isDownloading -> Box(
                 modifier = Modifier
@@ -472,17 +461,12 @@ private fun ImageViewerPage(
     var fileReady by remember(attachment.fileId) { mutableStateOf(cachedFile != null || destFile.exists()) }
 
     LaunchedEffect(attachment.fileId) {
-        Log.d("DiaryDetail", "뷰어 LaunchedEffect: id=${attachment.fileId}, destFile=${destFile.absolutePath}, exists=${destFile.exists()}, cachedFile=$cachedFile")
         if (!destFile.exists()) {
-            Log.d("DiaryDetail", "뷰어 다운로드 시작: id=${attachment.fileId}")
             onDownloadAttachment(attachment, destFile)
-            Log.d("DiaryDetail", "뷰어 다운로드 완료: id=${attachment.fileId}, exists=${destFile.exists()}")
         }
         if (destFile.exists()) {
             onFileReady(attachment.fileId, destFile)
             fileReady = true
-        } else {
-            Log.w("DiaryDetail", "뷰어: 다운로드 후에도 파일 없음: id=${attachment.fileId}")
         }
     }
 
@@ -542,7 +526,7 @@ private fun AttachmentDetailRow(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = formatAttachmentSize(attachment.size),
+                text = attachment.size.formatFileSize(),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -556,8 +540,3 @@ private fun attachmentCacheFile(cacheDir: File, attachment: Attachment): File {
     return File(cacheDir, name)
 }
 
-private fun formatAttachmentSize(bytes: Long): String = when {
-    bytes < 1024L -> "${bytes}B"
-    bytes < 1024L * 1024 -> "${bytes / 1024}KB"
-    else -> "${"%.1f".format(bytes / (1024.0 * 1024))}MB"
-}

@@ -47,60 +47,51 @@ class DiaryViewModelAttachmentTest {
         Dispatchers.resetMain()
     }
 
-    // --- uploadAttachment ---
+    // --- addLocalFile ---
 
     @Test
-    fun `uploadAttachment 성공 시 pendingAttachments에 추가된다`() = runTest {
+    fun `addLocalFile 호출 시 pendingAttachments에 추가된다`() = runTest {
         advanceUntilIdle()
 
-        viewModel.uploadAttachment({ "test".byteInputStream() }, "test.jpg", "image/jpeg")
-        advanceUntilIdle()
+        viewModel.addLocalFile({ "test".byteInputStream() }, "test.jpg", "image/jpeg", 100L)
 
         assertEquals(1, viewModel.pendingAttachments.value.size)
         assertEquals("test.jpg", viewModel.pendingAttachments.value[0].name)
     }
 
     @Test
-    fun `uploadAttachment 성공 시 isUploadingAttachment가 false로 복귀한다`() = runTest {
+    fun `addLocalFile 후 isUploadingAttachment는 false이다`() = runTest {
         advanceUntilIdle()
 
-        viewModel.uploadAttachment({ "test".byteInputStream() }, "test.jpg", "image/jpeg")
-        advanceUntilIdle()
+        viewModel.addLocalFile({ "test".byteInputStream() }, "test.jpg", "image/jpeg", 100L)
 
         assertFalse(viewModel.isUploadingAttachment.value)
     }
 
+    // --- addRecord Drive 업로드 ---
+
     @Test
-    fun `uploadAttachment 실패 시 attachmentUploadError에 메시지가 설정된다`() = runTest {
+    fun `addRecord 시 Drive 업로드 실패하면 attachmentUploadError에 메시지가 설정된다`() = runTest {
         advanceUntilIdle()
 
         fakeDriveRepository.uploadError = RuntimeException("업로드 실패")
-        viewModel.uploadAttachment({ "test".byteInputStream() }, "test.jpg", "image/jpeg")
+        viewModel.addLocalFile({ "test".byteInputStream() }, "test.jpg", "image/jpeg", 100L)
+        viewModel.addRecord(makeRecord("2024-01-01"))
         advanceUntilIdle()
 
         assertTrue(viewModel.attachmentUploadError.value?.contains("파일 업로드에 실패했습니다") == true)
     }
 
     @Test
-    fun `uploadAttachment 실패 시 uiState는 Error가 되지 않는다`() = runTest {
+    fun `addRecord 시 Drive 업로드 실패해도 uiState는 Error가 되지 않는다`() = runTest {
         advanceUntilIdle()
 
         fakeDriveRepository.uploadError = RuntimeException("업로드 실패")
-        viewModel.uploadAttachment({ "test".byteInputStream() }, "test.jpg", "image/jpeg")
+        viewModel.addLocalFile({ "test".byteInputStream() }, "test.jpg", "image/jpeg", 100L)
+        viewModel.addRecord(makeRecord("2024-01-01"))
         advanceUntilIdle()
 
         assertTrue(viewModel.uiState.value is DiaryUiState.Success)
-    }
-
-    @Test
-    fun `uploadAttachment 실패 시 pendingAttachments가 비어있다`() = runTest {
-        advanceUntilIdle()
-
-        fakeDriveRepository.uploadError = RuntimeException("업로드 실패")
-        viewModel.uploadAttachment({ "test".byteInputStream() }, "test.jpg", "image/jpeg")
-        advanceUntilIdle()
-
-        assertTrue(viewModel.pendingAttachments.value.isEmpty())
     }
 
     // --- removePendingAttachment ---
@@ -108,39 +99,22 @@ class DiaryViewModelAttachmentTest {
     @Test
     fun `removePendingAttachment 호출 시 pendingAttachments에서 제거된다`() = runTest {
         advanceUntilIdle()
-        viewModel.uploadAttachment({ "test".byteInputStream() }, "test.jpg", "image/jpeg")
-        advanceUntilIdle()
+        viewModel.addLocalFile({ "test".byteInputStream() }, "test.jpg", "image/jpeg", 100L)
 
         val fileId = viewModel.pendingAttachments.value[0].fileId
         viewModel.removePendingAttachment(fileId)
-        advanceUntilIdle()
 
         assertTrue(viewModel.pendingAttachments.value.isEmpty())
     }
 
     @Test
-    fun `removePendingAttachment 호출 시 Drive에서 파일이 삭제된다`() = runTest {
-        advanceUntilIdle()
-        viewModel.uploadAttachment({ "test".byteInputStream() }, "test.jpg", "image/jpeg")
-        advanceUntilIdle()
-
-        val fileId = viewModel.pendingAttachments.value[0].fileId
-        viewModel.removePendingAttachment(fileId)
-        advanceUntilIdle()
-
-        assertTrue(fileId in fakeDriveRepository.deletedFileIds)
-    }
-
-    @Test
     fun `removePendingAttachment는 대상 파일만 제거하고 나머지는 유지한다`() = runTest {
         advanceUntilIdle()
-        viewModel.uploadAttachment({ "a".byteInputStream() }, "a.jpg", "image/jpeg")
-        viewModel.uploadAttachment({ "b".byteInputStream() }, "b.jpg", "image/jpeg")
-        advanceUntilIdle()
+        viewModel.addLocalFile({ "a".byteInputStream() }, "a.jpg", "image/jpeg", 100L)
+        viewModel.addLocalFile({ "b".byteInputStream() }, "b.jpg", "image/jpeg", 200L)
 
         val firstId = viewModel.pendingAttachments.value[0].fileId
         viewModel.removePendingAttachment(firstId)
-        advanceUntilIdle()
 
         assertEquals(1, viewModel.pendingAttachments.value.size)
         assertEquals("b.jpg", viewModel.pendingAttachments.value[0].name)
@@ -151,28 +125,12 @@ class DiaryViewModelAttachmentTest {
     @Test
     fun `cancelPendingAttachments 호출 시 pendingAttachments가 비워진다`() = runTest {
         advanceUntilIdle()
-        viewModel.uploadAttachment({ "a".byteInputStream() }, "a.jpg", "image/jpeg")
-        viewModel.uploadAttachment({ "b".byteInputStream() }, "b.jpg", "image/jpeg")
-        advanceUntilIdle()
+        viewModel.addLocalFile({ "a".byteInputStream() }, "a.jpg", "image/jpeg", 100L)
+        viewModel.addLocalFile({ "b".byteInputStream() }, "b.jpg", "image/jpeg", 200L)
 
         viewModel.cancelPendingAttachments()
-        advanceUntilIdle()
 
         assertTrue(viewModel.pendingAttachments.value.isEmpty())
-    }
-
-    @Test
-    fun `cancelPendingAttachments 호출 시 모든 pending 파일이 Drive에서 삭제된다`() = runTest {
-        advanceUntilIdle()
-        viewModel.uploadAttachment({ "a".byteInputStream() }, "a.jpg", "image/jpeg")
-        viewModel.uploadAttachment({ "b".byteInputStream() }, "b.jpg", "image/jpeg")
-        advanceUntilIdle()
-
-        val uploadedIds = viewModel.pendingAttachments.value.map { it.fileId }
-        viewModel.cancelPendingAttachments()
-        advanceUntilIdle()
-
-        assertTrue(fakeDriveRepository.deletedFileIds.containsAll(uploadedIds))
     }
 
     // --- addRecord with pending attachments ---
@@ -180,23 +138,21 @@ class DiaryViewModelAttachmentTest {
     @Test
     fun `addRecord 시 pendingAttachments가 record에 포함된다`() = runTest {
         advanceUntilIdle()
-        viewModel.uploadAttachment({ "test".byteInputStream() }, "test.jpg", "image/jpeg")
-        advanceUntilIdle()
+        viewModel.addLocalFile({ "test".byteInputStream() }, "test.jpg", "image/jpeg", 100L)
 
         viewModel.addRecord(makeRecord("2024-01-01"))
         advanceUntilIdle()
 
-        val state = viewModel.uiState.value as DiaryUiState.Success
-        assertEquals(1, state.records.size)
-        assertEquals(1, state.records[0].attachments.size)
-        assertEquals("test.jpg", state.records[0].attachments[0].name)
+        val saved = fakeRepository.lastUpdatedRecord
+        assertNotNull(saved)
+        assertEquals(1, saved!!.attachments.size)
+        assertEquals("test.jpg", saved.attachments[0].name)
     }
 
     @Test
     fun `addRecord 후 pendingAttachments가 비워진다`() = runTest {
         advanceUntilIdle()
-        viewModel.uploadAttachment({ "test".byteInputStream() }, "test.jpg", "image/jpeg")
-        advanceUntilIdle()
+        viewModel.addLocalFile({ "test".byteInputStream() }, "test.jpg", "image/jpeg", 100L)
 
         viewModel.addRecord(makeRecord("2024-01-01"))
         advanceUntilIdle()
@@ -212,8 +168,8 @@ class DiaryViewModelAttachmentTest {
 
         val oldAttachment = Attachment("old-id", "old.jpg", "image/jpeg", 1024L)
         val keptAttachment = Attachment("kept-id", "kept.jpg", "image/jpeg", 2048L)
-        val original = makeRecord("2024-01-01", attachments = listOf(oldAttachment, keptAttachment))
-        val updated = makeRecord("2024-01-01", attachments = listOf(keptAttachment))
+        val original = makeRecord("2024-01-01", firestoreId = "rec-1", attachments = listOf(oldAttachment, keptAttachment))
+        val updated = makeRecord("2024-01-01", firestoreId = "rec-1", attachments = listOf(keptAttachment))
 
         viewModel.updateRecord(original, updated)
         advanceUntilIdle()
@@ -225,11 +181,10 @@ class DiaryViewModelAttachmentTest {
     @Test
     fun `updateRecord 시 pendingAttachments가 updated record에 추가된다`() = runTest {
         advanceUntilIdle()
-        viewModel.uploadAttachment({ "new".byteInputStream() }, "new.jpg", "image/jpeg")
-        advanceUntilIdle()
+        viewModel.addLocalFile({ "new".byteInputStream() }, "new.jpg", "image/jpeg", 100L)
 
-        val original = makeRecord("2024-01-01")
-        val updated = makeRecord("2024-01-01")
+        val original = makeRecord("2024-01-01", firestoreId = "rec-1")
+        val updated = makeRecord("2024-01-01", firestoreId = "rec-1")
         viewModel.updateRecord(original, updated)
         advanceUntilIdle()
 
@@ -242,10 +197,12 @@ class DiaryViewModelAttachmentTest {
     @Test
     fun `updateRecord 후 pendingAttachments가 비워진다`() = runTest {
         advanceUntilIdle()
-        viewModel.uploadAttachment({ "test".byteInputStream() }, "test.jpg", "image/jpeg")
-        advanceUntilIdle()
+        viewModel.addLocalFile({ "test".byteInputStream() }, "test.jpg", "image/jpeg", 100L)
 
-        viewModel.updateRecord(makeRecord("2024-01-01"), makeRecord("2024-01-01"))
+        viewModel.updateRecord(
+            makeRecord("2024-01-01", firestoreId = "rec-1"),
+            makeRecord("2024-01-01", firestoreId = "rec-1"),
+        )
         advanceUntilIdle()
 
         assertTrue(viewModel.pendingAttachments.value.isEmpty())
@@ -256,8 +213,8 @@ class DiaryViewModelAttachmentTest {
         advanceUntilIdle()
 
         val oldAttachment = Attachment("old-id", "old.jpg", "image/jpeg", 1024L)
-        val original = makeRecord("2024-01-01", attachments = listOf(oldAttachment))
-        val updated = makeRecord("2024-01-01", attachments = emptyList())
+        val original = makeRecord("2024-01-01", firestoreId = "rec-1", attachments = listOf(oldAttachment))
+        val updated = makeRecord("2024-01-01", firestoreId = "rec-1", attachments = emptyList())
 
         fakeRepository.updateRecordError = RuntimeException("수정 실패")
         viewModel.updateRecord(original, updated)

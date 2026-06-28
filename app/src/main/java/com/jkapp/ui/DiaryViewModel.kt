@@ -150,6 +150,7 @@ class DiaryViewModel(
     private data class UploadOutcome(
         val uploaded: List<Attachment>,
         val authRequired: Boolean,
+        val errors: List<String> = emptyList(),
     )
 
     private sealed class FileUploadResult {
@@ -158,7 +159,7 @@ class DiaryViewModel(
             val file: PendingLocalFile,
             val exception: DriveAuthRequiredException,
         ) : FileUploadResult()
-        data object Failed : FileUploadResult()
+        data class Failed(val error: String) : FileUploadResult()
     }
 
     private val pendingLocalFiles = mutableListOf<PendingLocalFile>()
@@ -280,8 +281,7 @@ class DiaryViewModel(
                     val stream = file.openStream()
                     if (stream == null) {
                         _pendingAttachments.update { it.filter { a -> a.fileId != file.tempId } }
-                        _attachmentUploadError.value = "파일을 열 수 없습니다: ${file.fileName}"
-                        return@async FileUploadResult.Failed
+                        return@async FileUploadResult.Failed("파일을 열 수 없습니다: ${file.fileName}")
                     }
                     try {
                         val attachment = driveRepository.uploadFile(recordId, stream, file.fileName, file.mimeType)
@@ -295,13 +295,13 @@ class DiaryViewModel(
                     } catch (e: Exception) {
                         Log.e(TAG, "Drive 업로드 실패: fileName=${file.fileName}", e)
                         _pendingAttachments.update { it.filter { a -> a.fileId != file.tempId } }
-                        _attachmentUploadError.value = "파일 업로드에 실패했습니다: ${e.localizedMessage ?: "알 수 없는 오류"}"
-                        FileUploadResult.Failed
+                        FileUploadResult.Failed("파일 업로드에 실패했습니다: ${e.localizedMessage ?: "알 수 없는 오류"}")
                     }
                 }
             }.awaitAll()
         }
 
+        val errors = results.filterIsInstance<FileUploadResult.Failed>().map { it.error }
         val authFailures = results.filterIsInstance<FileUploadResult.AuthRequired>()
         if (authFailures.isNotEmpty()) {
             authFailures.forEach { r ->
@@ -309,11 +309,11 @@ class DiaryViewModel(
             }
             _driveAuthRecoveryIntent.value = authFailures.first().exception.recoveryIntent
             val uploaded = results.filterIsInstance<FileUploadResult.Success>().map { it.attachment }
-            return UploadOutcome(uploaded = uploaded, authRequired = true)
+            return UploadOutcome(uploaded = uploaded, authRequired = true, errors = errors)
         }
 
         val uploaded = results.filterIsInstance<FileUploadResult.Success>().map { it.attachment }
-        return UploadOutcome(uploaded = uploaded, authRequired = false)
+        return UploadOutcome(uploaded = uploaded, authRequired = false, errors = errors)
     }
 
     private fun deleteFilesFromDrive(fileIds: List<String>, label: String) {
@@ -344,6 +344,9 @@ class DiaryViewModel(
                     // 인증 완료 후 재시도 시 Firestore 업데이트를 위해 컨텍스트 보관
                     retryCompletionRecord = record.copy(firestoreId = firestoreId, attachments = outcome.uploaded)
                 } else {
+                    if (outcome.errors.isNotEmpty()) {
+                        _attachmentUploadError.value = outcome.errors.joinToString("\n")
+                    }
                     // 3. 업로드된 첨부파일로 Firestore 업데이트
                     if (outcome.uploaded.isNotEmpty()) {
                         repository.updateRecord(record.copy(firestoreId = firestoreId, attachments = outcome.uploaded))
@@ -379,6 +382,9 @@ class DiaryViewModel(
                     // 인증 완료 후 재시도 시 Firestore 업데이트를 위해 컨텍스트 보관
                     retryCompletionRecord = updated.copy(attachments = finalAttachments)
                 } else {
+                    if (outcome.errors.isNotEmpty()) {
+                        _attachmentUploadError.value = outcome.errors.joinToString("\n")
+                    }
                     // 2. Firestore 업데이트
                     val finalRecord = updated.copy(attachments = finalAttachments)
                     repository.updateRecord(finalRecord)

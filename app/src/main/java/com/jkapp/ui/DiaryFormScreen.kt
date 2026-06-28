@@ -438,7 +438,7 @@ private fun AttachmentRow(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = formatFileSize(attachment.size),
+                text = attachment.size.formatFileSize(),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -449,8 +449,3 @@ private fun AttachmentRow(
     }
 }
 
-private fun formatFileSize(bytes: Long): String = when {
-    bytes < 1024L -> "${bytes}B"
-    bytes < 1024L * 1024 -> "${bytes / 1024}KB"
-    else -> "${"%.1f".format(bytes / (1024.0 * 1024))}MB"
-}
