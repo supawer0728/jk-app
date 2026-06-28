@@ -1,5 +1,6 @@
 package com.jkapp.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -18,6 +19,7 @@ import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -31,8 +33,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.core.graphics.toColorInt
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jkapp.R
 import com.jkapp.data.model.CatRecord
@@ -111,6 +115,13 @@ fun DiaryFormScreen(
                 expanded = typeDropdownExpanded,
                 onExpandedChange = { typeDropdownExpanded = !typeDropdownExpanded }
             ) {
+                val bgColor = selectedType?.let {
+                    runCatching { Color(it.backgroundColor.toColorInt()) }.getOrNull()
+                } ?: MaterialTheme.colorScheme.surface
+                val fontColor = selectedType?.let {
+                    runCatching { Color(it.fontColor.toColorInt()) }.getOrNull()
+                } ?: MaterialTheme.colorScheme.onSurface
+
                 OutlinedTextField(
                     value = selectedType?.let { "${it.emoji} ${it.name}" } ?: "",
                     onValueChange = {},
@@ -119,19 +130,36 @@ fun DiaryFormScreen(
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = typeDropdownExpanded) },
                     modifier = Modifier
                         .menuAnchor(MenuAnchorType.PrimaryNotEditable)
-                        .fillMaxWidth()
+                        .fillMaxWidth(),
+                    colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = fontColor,
+                        unfocusedTextColor = fontColor,
+                        focusedContainerColor = bgColor.copy(alpha = 0.2f),
+                        unfocusedContainerColor = bgColor.copy(alpha = 0.1f)
+                    )
                 )
                 ExposedDropdownMenu(
                     expanded = typeDropdownExpanded,
                     onDismissRequest = { typeDropdownExpanded = false }
                 ) {
                     recordTypes.forEach { type ->
+                        val itemBgColor = runCatching { Color(type.backgroundColor.toColorInt()) }.getOrNull()
+                            ?: MaterialTheme.colorScheme.surface
+                        val itemFontColor = runCatching { Color(type.fontColor.toColorInt()) }.getOrNull()
+                            ?: MaterialTheme.colorScheme.onSurface
+
                         DropdownMenuItem(
-                            text = { Text("${type.emoji} ${type.name}") },
+                            text = {
+                                Text(
+                                    text = "${type.emoji} ${type.name}",
+                                    color = itemFontColor
+                                )
+                            },
                             onClick = {
                                 selectedTypeId = type.id
                                 typeDropdownExpanded = false
-                            }
+                            },
+                            modifier = Modifier.background(itemBgColor.copy(alpha = 0.2f))
                         )
                     }
                 }

@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -33,6 +34,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.graphics.toColorInt
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jkapp.R
 import com.jkapp.data.model.CatRecord
@@ -111,50 +113,70 @@ private fun DiaryListItem(
             .clickable(onClick = onClick)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = "${date} (${DiaryViewModel.computeDayOfWeek(date)})",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                records.forEach { record ->
-                    RecordTypeBadge(recordTypes.find { it.id == record.recordType })
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "${date} (${DiaryViewModel.computeDayOfWeek(date)})",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    val uniqueTypeIds = records.map { it.recordType }.distinct()
+                    uniqueTypeIds.forEach { typeId ->
+                        RecordTypeBadge(
+                            type = recordTypes.find { it.id.trim().equals(typeId.trim(), ignoreCase = true) },
+                            fallbackId = typeId
+                        )
+                    }
                 }
             }
             if (records.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = records.first().record,
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Spacer(modifier = Modifier.height(6.dp))
+                records.take(3).forEach { record ->
+                    val type = recordTypes.find { it.id.trim().equals(record.recordType.trim(), ignoreCase = true) }
+                    Text(
+                        text = "• ${type?.let { "${it.emoji} ${it.name}" } ?: record.recordType}: ${record.record}",
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (records.size > 3) {
+                    Text(
+                        text = "...",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 12.dp)
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-private fun RecordTypeBadge(type: CatRecordType?) {
-    if (type == null) return
+private fun RecordTypeBadge(type: CatRecordType?, fallbackId: String) {
     val bgColor = runCatching {
-        Color(android.graphics.Color.parseColor(type.backgroundColor))
-    }.getOrElse { MaterialTheme.colorScheme.secondaryContainer }
+        type?.backgroundColor?.let { Color(it.toColorInt()) }
+    }.getOrNull() ?: MaterialTheme.colorScheme.secondaryContainer
     val fontColor = runCatching {
-        Color(android.graphics.Color.parseColor(type.fontColor))
-    }.getOrElse { MaterialTheme.colorScheme.onSecondaryContainer }
+        type?.fontColor?.let { Color(it.toColorInt()) }
+    }.getOrNull() ?: MaterialTheme.colorScheme.onSecondaryContainer
 
     SuggestionChip(
         onClick = {},
         label = {
             Text(
-                text = "${type.emoji} ${type.name}",
+                text = type?.let { "${it.emoji} ${it.name}" } ?: fallbackId,
                 style = MaterialTheme.typography.labelSmall,
                 color = fontColor
             )
         },
-        colors = SuggestionChipDefaults.suggestionChipColors(containerColor = bgColor)
+        colors = SuggestionChipDefaults.suggestionChipColors(containerColor = bgColor),
+        border = null
     )
 }

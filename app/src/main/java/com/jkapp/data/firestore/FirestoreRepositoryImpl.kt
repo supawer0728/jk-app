@@ -1,5 +1,6 @@
 package com.jkapp.data.firestore
 
+import android.util.Log
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import com.jkapp.data.model.CatRecord
@@ -21,15 +22,21 @@ class FirestoreRepositoryImpl : FirestoreRepository {
         val listener = recordTypesRef.addSnapshotListener { snapshot, error ->
             if (error != null) { close(error); return@addSnapshotListener }
             val types = snapshot?.documents?.mapNotNull { doc ->
-                val id = doc.getString("id") ?: return@mapNotNull null
+                val id = doc.getString("id") ?: doc.id
                 CatRecordType(
                     id = id,
-                    name = doc.getString("name") ?: "",
-                    emoji = doc.getString("emoji") ?: "",
-                    fontColor = doc.getString("font_color") ?: "#000000",
-                    backgroundColor = doc.getString("background_color") ?: "#FFFFFF",
+                    name = doc.getString("name") ?: id,
+                    emoji = doc.getString("emoji") ?: "📝",
+                    fontColor = doc.getString("fontColor") ?: doc.getString("font_color") ?: "#000000",
+                    backgroundColor = doc.getString("backgroundColor") ?: doc.getString("background_color") ?: "#FFFFFF",
                 )
             } ?: emptyList()
+
+            Log.d("FirestoreRepo", "Loaded RecordTypes: count=${types.size}")
+            types.take(3).forEach { 
+                Log.d("FirestoreRepo", "  Type: id=${it.id}, name=${it.name}, emoji=${it.emoji}")
+            }
+
             trySend(types)
         }
         awaitClose { listener.remove() }
@@ -48,6 +55,12 @@ class FirestoreRepositoryImpl : FirestoreRepository {
                         record = doc.getString("record") ?: "",
                     )
                 } ?: emptyList()
+
+                Log.d("FirestoreRepo", "Loaded Records: count=${records.size}")
+                records.take(3).forEach { 
+                    Log.d("FirestoreRepo", "  Record: date=${it.date}, type=${it.recordType}, content=${it.record.take(20)}...")
+                }
+
                 trySend(records)
             }
         awaitClose { listener.remove() }

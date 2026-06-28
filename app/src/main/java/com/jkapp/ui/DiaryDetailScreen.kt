@@ -19,6 +19,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SuggestionChip
+import androidx.compose.material3.SuggestionChipDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -28,11 +30,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.graphics.toColorInt
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jkapp.R
 import com.jkapp.data.model.CatRecord
@@ -92,7 +95,7 @@ fun DiaryDetailScreen(
                     if (index > 0) HorizontalDivider()
                     RecordDetailItem(
                         record = record,
-                        type = recordTypes.find { it.id == record.recordType },
+                        type = recordTypes.find { it.id.trim().equals(record.recordType.trim(), ignoreCase = true) },
                         onEdit = { onNavigateToEdit(record.firestoreId!!) },
                         onDeleteRequest = { pendingDeleteId = record.firestoreId }
                     )
@@ -130,23 +133,32 @@ private fun RecordDetailItem(
     onEdit: () -> Unit,
     onDeleteRequest: () -> Unit
 ) {
+    val bgColor = type?.let {
+        runCatching { Color(it.backgroundColor.toColorInt()) }.getOrNull()
+    } ?: MaterialTheme.colorScheme.secondaryContainer
     val fontColor = type?.let {
-        runCatching { Color(android.graphics.Color.parseColor(it.fontColor)) }.getOrNull()
-    }
+        runCatching { Color(it.fontColor.toColorInt()) }.getOrNull()
+    } ?: MaterialTheme.colorScheme.onSecondaryContainer
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = type?.let { "${it.emoji} ${it.name}" } ?: record.recordType,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                color = fontColor ?: MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(top = 12.dp)
+            SuggestionChip(
+                onClick = {},
+                label = {
+                    Text(
+                        text = type?.let { "${it.emoji} ${it.name}" } ?: record.recordType,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = fontColor
+                    )
+                },
+                colors = SuggestionChipDefaults.suggestionChipColors(
+                    containerColor = bgColor
+                ),
+                border = null
             )
             Row {
                 IconButton(onClick = onEdit) {
@@ -163,7 +175,8 @@ private fun RecordDetailItem(
         }
         Text(
             text = record.record,
-            style = MaterialTheme.typography.bodyMedium
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(horizontal = 4.dp)
         )
     }
 }
