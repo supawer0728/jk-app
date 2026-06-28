@@ -1,7 +1,9 @@
 package com.jkapp.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -12,7 +14,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material3.Button
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -24,7 +29,9 @@ import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -38,6 +45,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jkapp.R
 import com.jkapp.data.model.CatRecord
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -56,6 +67,7 @@ fun DiaryFormScreen(
     var selectedTypeId by rememberSaveable { mutableStateOf(existingRecord?.recordType ?: "") }
     var recordText by rememberSaveable { mutableStateOf(existingRecord?.record ?: "") }
     var typeDropdownExpanded by remember { mutableStateOf(false) }
+    var showDatePicker by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(existingRecord) {
         existingRecord?.let { r ->
@@ -74,6 +86,37 @@ fun DiaryFormScreen(
     val selectedType = recordTypes.find { it.id == selectedTypeId }
     val isDataReady = !isEditMode || existingRecord != null
     val isValid = isDataReady && recordDate.isNotBlank() && selectedTypeId.isNotEmpty() && recordText.isNotBlank()
+
+    if (showDatePicker) {
+        // DatePickerState.selectedDateMillis는 UTC 자정 기준 epoch millis를 반환하므로
+        // 초기값 변환과 확인 버튼 변환 모두 ZoneOffset.UTC로 통일한다.
+        // DiaryViewModel.todayDate()는 시스템 시간대를 사용하므로 UTC±12h 경계 조건에서
+        // 하루 차이가 날 수 있다. 이는 의도적인 tradeoff다.
+        val initialMillis = runCatching {
+            LocalDate.parse(recordDate).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+        }.getOrElse { System.currentTimeMillis() }
+        val datePickerState = rememberDatePickerState(initialSelectedDateMillis = initialMillis)
+        DatePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    datePickerState.selectedDateMillis?.let { millis ->
+                        recordDate = Instant.ofEpochMilli(millis)
+                            .atZone(ZoneOffset.UTC).toLocalDate()
+                            .format(DateTimeFormatter.ISO_LOCAL_DATE)
+                    }
+                    showDatePicker = false
+                }) { Text(stringResource(android.R.string.ok)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDatePicker = false }) {
+                    Text(stringResource(android.R.string.cancel))
+                }
+            }
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -100,15 +143,23 @@ fun DiaryFormScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            OutlinedTextField(
-                value = recordDate,
-                onValueChange = { recordDate = it },
-                label = { Text(stringResource(R.string.field_date)) },
-                placeholder = { Text("YYYY-MM-DD") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                enabled = !isEditMode
-            )
+            Box {
+                OutlinedTextField(
+                    value = recordDate,
+                    onValueChange = {},
+                    label = { Text(stringResource(R.string.field_date)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    readOnly = true,
+                    enabled = !isEditMode,
+                    singleLine = true,
+                    trailingIcon = {
+                        if (!isEditMode) Icon(Icons.Default.DateRange, contentDescription = null)
+                    }
+                )
+                if (!isEditMode) {
+                    Box(modifier = Modifier.matchParentSize().clickable { showDatePicker = true })
+                }
+            }
 
             ExposedDropdownMenuBox(
                 expanded = typeDropdownExpanded,

@@ -1,6 +1,9 @@
 package com.jkapp.ui
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,14 +14,20 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -45,11 +54,95 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.core.graphics.toColorInt
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jkapp.R
 import com.jkapp.data.model.CatRecordType
+import java.util.UUID
+
+private val PALETTE_COLORS = listOf(
+    "#F44336", "#E91E63", "#9C27B0", "#673AB7",
+    "#3F51B5", "#2196F3", "#03A9F4", "#00BCD4",
+    "#009688", "#4CAF50", "#8BC34A", "#CDDC39",
+    "#FFEB3B", "#FFC107", "#FF9800", "#FF5722",
+    "#795548", "#9E9E9E", "#607D8B", "#000000",
+    "#FFFFFF",
+)
+
+@Composable
+private fun ColorPickerField(
+    label: String,
+    value: String,
+    onColorSelected: (String) -> Unit
+) {
+    var showPicker by remember { mutableStateOf(false) }
+    val fallbackColor = MaterialTheme.colorScheme.surfaceVariant
+    val color = runCatching { Color(value.toColorInt()) }.getOrElse { fallbackColor }
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .background(color, shape = CircleShape)
+                .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
+                .clickable { showPicker = true }
+        )
+        Spacer(Modifier.width(8.dp))
+        OutlinedTextField(
+            value = value,
+            onValueChange = {},
+            label = { Text(label) },
+            readOnly = true,
+            modifier = Modifier
+                .weight(1f)
+                .clickable { showPicker = true },
+            trailingIcon = {
+                Icon(Icons.Default.Palette, contentDescription = null,
+                    modifier = Modifier.clickable { showPicker = true })
+            }
+        )
+    }
+
+    if (showPicker) {
+        AlertDialog(
+            onDismissRequest = { showPicker = false },
+            title = { Text(label) },
+            text = {
+                LazyVerticalGrid(columns = GridCells.Fixed(4)) {
+                    items(PALETTE_COLORS) { hex ->
+                        Box(
+                            modifier = Modifier
+                                .padding(4.dp)
+                                .size(40.dp)
+                                .background(Color(hex.toColorInt()), CircleShape)
+                                .border(
+                                    width = if (hex.equals(value, ignoreCase = true)) 3.dp else 1.dp,
+                                    color = if (hex.equals(value, ignoreCase = true)) MaterialTheme.colorScheme.primary
+                                            else MaterialTheme.colorScheme.outline,
+                                    shape = CircleShape
+                                )
+                                .clickable {
+                                    onColorSelected(hex)
+                                    showPicker = false
+                                }
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showPicker = false }) {
+                    Text(stringResource(android.R.string.cancel))
+                }
+            }
+        )
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -170,7 +263,9 @@ private fun RecordTypeItem(
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onToggleExpand),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -178,12 +273,10 @@ private fun RecordTypeItem(
                     text = "${type.emoji} ${type.name}",
                     style = MaterialTheme.typography.bodyLarge
                 )
-                IconButton(onClick = onToggleExpand) {
-                    Icon(
-                        imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                        contentDescription = null
-                    )
-                }
+                Icon(
+                    imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = null
+                )
             }
 
             AnimatedVisibility(visible = isExpanded) {
@@ -205,20 +298,16 @@ private fun RecordTypeItem(
                         modifier = Modifier.fillMaxWidth()
                     )
                     Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
+                    ColorPickerField(
+                        label = stringResource(R.string.record_type_font_color),
                         value = fontColor,
-                        onValueChange = { fontColor = it },
-                        label = { Text(stringResource(R.string.record_type_font_color)) },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                        onColorSelected = { fontColor = it }
                     )
                     Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
+                    ColorPickerField(
+                        label = stringResource(R.string.record_type_bg_color),
                         value = backgroundColor,
-                        onValueChange = { backgroundColor = it },
-                        label = { Text(stringResource(R.string.record_type_bg_color)) },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                        onColorSelected = { backgroundColor = it }
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
@@ -293,9 +382,8 @@ private fun AddRecordTypeDialog(
     onDismiss: () -> Unit,
     onConfirm: (CatRecordType) -> Unit
 ) {
-    var id by rememberSaveable { mutableStateOf("") }
     var name by rememberSaveable { mutableStateOf("") }
-    var emoji by rememberSaveable { mutableStateOf("📝") }
+    var emoji by rememberSaveable { mutableStateOf("") }
     var fontColor by rememberSaveable { mutableStateOf("#000000") }
     var backgroundColor by rememberSaveable { mutableStateOf("#FFFFFF") }
 
@@ -304,13 +392,6 @@ private fun AddRecordTypeDialog(
         title = { Text(stringResource(R.string.add_record_type)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = id,
-                    onValueChange = { id = it },
-                    label = { Text("ID") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
@@ -321,33 +402,29 @@ private fun AddRecordTypeDialog(
                 OutlinedTextField(
                     value = emoji,
                     onValueChange = { emoji = it },
-                    label = { Text(stringResource(R.string.record_type_emoji)) },
+                    label = { Text("${stringResource(R.string.record_type_emoji)} (선택)") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                OutlinedTextField(
+                ColorPickerField(
+                    label = stringResource(R.string.record_type_font_color),
                     value = fontColor,
-                    onValueChange = { fontColor = it },
-                    label = { Text(stringResource(R.string.record_type_font_color)) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    onColorSelected = { fontColor = it }
                 )
-                OutlinedTextField(
+                ColorPickerField(
+                    label = stringResource(R.string.record_type_bg_color),
                     value = backgroundColor,
-                    onValueChange = { backgroundColor = it },
-                    label = { Text(stringResource(R.string.record_type_bg_color)) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    onColorSelected = { backgroundColor = it }
                 )
             }
         },
         confirmButton = {
             TextButton(
-                enabled = id.isNotBlank() && name.isNotBlank(),
+                enabled = name.isNotBlank(),
                 onClick = {
                     onConfirm(
                         CatRecordType(
-                            id = id.trim(),
+                            id = UUID.randomUUID().toString(),
                             name = name.trim(),
                             emoji = emoji.trim(),
                             fontColor = fontColor.trim(),
