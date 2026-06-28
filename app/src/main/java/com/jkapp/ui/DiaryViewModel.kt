@@ -103,6 +103,10 @@ class DiaryViewModel : ViewModel() {
     }
 
     fun addRecordType(type: CatRecordType) {
+        if (type.id in SYSTEM_TYPE_IDS) {
+            _uiState.value = DiaryUiState.Error("시스템 필수 유형 ID는 사용할 수 없습니다.")
+            return
+        }
         viewModelScope.launch {
             runCatching { repository.addRecordType(type) }
                 .onFailure {
@@ -123,8 +127,9 @@ class DiaryViewModel : ViewModel() {
     fun deleteRecordType(docId: String) {
         val typeId = (uiState.value as? DiaryUiState.Success)
             ?.recordTypes?.find { it.docId == docId || it.id == docId }?.id
-        if (typeId != null && typeId in SYSTEM_TYPE_IDS) {
-            _uiState.value = DiaryUiState.Error("시스템 필수 유형은 삭제할 수 없습니다.")
+        val isSystemType = docId in SYSTEM_TYPE_IDS || typeId in SYSTEM_TYPE_IDS
+        if (typeId == null || isSystemType) {
+            if (isSystemType) _uiState.value = DiaryUiState.Error("시스템 필수 유형은 삭제할 수 없습니다.")
             return
         }
         viewModelScope.launch {

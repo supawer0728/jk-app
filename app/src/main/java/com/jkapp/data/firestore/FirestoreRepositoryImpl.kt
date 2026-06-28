@@ -3,7 +3,6 @@ package com.jkapp.data.firestore
 import android.util.Log
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
-import com.google.firebase.firestore.SetOptions
 import com.jkapp.data.model.CatRecord
 import com.jkapp.data.model.CatRecordType
 import kotlinx.coroutines.channels.awaitClose
@@ -105,7 +104,7 @@ class FirestoreRepositoryImpl : FirestoreRepository {
 
     override suspend fun updateRecordType(type: CatRecordType): Unit = suspendCancellableCoroutine { cont ->
         val docId = type.docId.ifBlank { type.id }
-        recordTypesRef.document(docId).set(type.toMap(), SetOptions.merge())
+        recordTypesRef.document(docId).set(type.toMap())
             .addOnSuccessListener { cont.resume(Unit) }
             .addOnFailureListener { cont.resumeWithException(it) }
     }

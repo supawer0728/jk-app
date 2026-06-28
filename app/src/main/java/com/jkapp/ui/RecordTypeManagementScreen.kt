@@ -36,6 +36,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -156,6 +157,13 @@ private fun RecordTypeItem(
     var backgroundColor by rememberSaveable(type.id) { mutableStateOf(type.backgroundColor) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showDeleteRestricted by remember { mutableStateOf(false) }
+
+    LaunchedEffect(type.name, type.emoji, type.fontColor, type.backgroundColor) {
+        name = type.name
+        emoji = type.emoji
+        fontColor = type.fontColor
+        backgroundColor = type.backgroundColor
+    }
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {

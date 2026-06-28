@@ -113,7 +113,7 @@ fun DiaryScreen(
                         .padding(16.dp)
                 ) {
                     FloatingActionButton(onClick = { showFabMenu = true }) {
-                        Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.add_record))
+                        Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.manage_record_types))
                     }
                     DropdownMenu(
                         expanded = showFabMenu,
