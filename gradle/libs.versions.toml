@@ -46,6 +46,8 @@ firebaseAuthKtx = "23.2.0"
 firebaseFirestoreKtx = "25.1.1"
 googleServices = "4.4.2"
 googleIdentityGoogleid = "1.1.1"
+googleApiServicesDrive = "v3-rev20231128-2.0.0"
+googleApiClientAndroid = "2.4.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -100,6 +102,8 @@ play-auth = { group = "com.google.android.gms", name = "play-services-auth", ver
 firebase-auth-ktx = { group = "com.google.firebase", name = "firebase-auth-ktx", version.ref = "firebaseAuthKtx" }
 firebase-firestore-ktx = { group = "com.google.firebase", name = "firebase-firestore-ktx", version.ref = "firebaseFirestoreKtx" }
 google-identity-googleid = { group = "com.google.android.libraries.identity.googleid", name = "googleid", version.ref = "googleIdentityGoogleid" }
+google-api-services-drive = { group = "com.google.apis", name = "google-api-services-drive", version.ref = "googleApiServicesDrive" }
+google-api-client-android = { group = "com.google.api-client", name = "google-api-client-android", version.ref = "googleApiClientAndroid" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

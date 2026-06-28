@@ -23,13 +23,18 @@ class FakeFirestoreRepository : FirestoreRepository {
     override fun getRecordTypes(): Flow<List<CatRecordType>> = _recordTypes
     override fun getRecords(): Flow<List<CatRecord>> = _records
 
-    override suspend fun addRecord(record: CatRecord) {
+    override suspend fun addRecord(record: CatRecord): String {
         addRecordError?.let { throw it }
-        _records.value = _records.value + record
+        val id = "fake-id-${_records.value.size}"
+        _records.value = _records.value + record.copy(firestoreId = id)
+        return id
     }
+
+    var lastUpdatedRecord: CatRecord? = null
 
     override suspend fun updateRecord(record: CatRecord) {
         updateRecordError?.let { throw it }
+        lastUpdatedRecord = record
     }
 
     override suspend fun deleteRecord(firestoreId: String) {

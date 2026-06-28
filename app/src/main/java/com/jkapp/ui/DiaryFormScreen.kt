@@ -1,31 +1,47 @@
 package com.jkapp.ui
 
+import android.accounts.AccountManager
+import android.provider.OpenableColumns
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -39,11 +55,15 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jkapp.R
+import com.jkapp.data.model.Attachment
 import com.jkapp.data.model.CatRecord
 import java.time.Instant
 import java.time.LocalDate
@@ -57,23 +77,98 @@ fun DiaryFormScreen(
     firestoreId: String?,
     onBack: () -> Unit
 ) {
+    val context = LocalContext.current
     val isEditMode = firestoreId != null
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val success = uiState as? DiaryUiState.Success
     val recordTypes = success?.recordTypes ?: emptyList()
     val existingRecord = if (isEditMode) success?.records?.find { it.firestoreId == firestoreId } else null
 
+    val pendingAttachments by viewModel.pendingAttachments.collectAsStateWithLifecycle()
+    val isUploadingAttachment by viewModel.isUploadingAttachment.collectAsStateWithLifecycle()
+
     var recordDate by rememberSaveable { mutableStateOf(existingRecord?.date ?: DiaryViewModel.todayDate()) }
     var selectedTypeId by rememberSaveable { mutableStateOf(existingRecord?.recordType ?: "") }
     var recordText by rememberSaveable { mutableStateOf(existingRecord?.record ?: "") }
     var typeDropdownExpanded by remember { mutableStateOf(false) }
     var showDatePicker by rememberSaveable { mutableStateOf(false) }
+    // Existing attachments the user keeps during editing (starts empty, populated when record loads)
+    var keptExistingAttachments by remember { mutableStateOf(existingRecord?.attachments ?: emptyList<Attachment>()) }
+
+    val attachmentUploadError by viewModel.attachmentUploadError.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(attachmentUploadError) {
+        attachmentUploadError?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.clearAttachmentUploadError()
+        }
+    }
+
+    val saveCompleted by viewModel.saveCompleted.collectAsStateWithLifecycle()
+    LaunchedEffect(saveCompleted) {
+        if (saveCompleted) {
+            viewModel.consumeSaveCompleted()
+            onBack()
+        }
+    }
+
+    val driveAuthRecoveryIntent by viewModel.driveAuthRecoveryIntent.collectAsStateWithLifecycle()
+    val driveAuthLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        result.data?.getStringExtra(AccountManager.KEY_ACCOUNT_NAME)?.let { accountName ->
+            viewModel.onDriveAccountSelected(accountName)
+        }
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            viewModel.retryFailedUploads()
+        } else {
+            viewModel.cancelFailedUploads()
+        }
+        viewModel.clearDriveAuthRecoveryIntent()
+    }
+    LaunchedEffect(driveAuthRecoveryIntent) {
+        driveAuthRecoveryIntent?.let { driveAuthLauncher.launch(it) }
+    }
+
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        val contentResolver = context.contentResolver
+        uris.forEach { uri ->
+            val mimeType = contentResolver.getType(uri) ?: "application/octet-stream"
+            var resolvedName = uri.lastPathSegment ?: "attachment"
+            var resolvedSize = 0L
+            contentResolver.query(
+                uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val nameIdx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    val sizeIdx = cursor.getColumnIndex(OpenableColumns.SIZE)
+                    if (nameIdx >= 0) resolvedName = cursor.getString(nameIdx) ?: resolvedName
+                    if (sizeIdx >= 0 && !cursor.isNull(sizeIdx)) resolvedSize = cursor.getLong(sizeIdx)
+                }
+            }
+            viewModel.addLocalFile(
+                openStream = { contentResolver.openInputStream(uri) },
+                fileName = resolvedName,
+                mimeType = mimeType,
+                size = resolvedSize,
+            )
+        }
+    }
+
+    val onCancel = {
+        viewModel.cancelPendingAttachments()
+        onBack()
+    }
 
     LaunchedEffect(existingRecord) {
         existingRecord?.let { r ->
             recordDate = r.date
             selectedTypeId = r.recordType
             recordText = r.record
+            keptExistingAttachments = r.attachments
         }
     }
 
@@ -119,13 +214,14 @@ fun DiaryFormScreen(
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
                     Text(stringResource(if (isEditMode) R.string.edit_record else R.string.add_record))
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = onCancel) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = stringResource(R.string.back)
@@ -221,6 +317,18 @@ fun DiaryFormScreen(
                 minLines = 5
             )
 
+            // ── 첨부파일 섹션 ──────────────────────────────────────────────────────
+            AttachmentSection(
+                existingAttachments = keptExistingAttachments,
+                pendingAttachments = pendingAttachments,
+                isUploading = isUploadingAttachment,
+                onRemoveExisting = { fileId ->
+                    keptExistingAttachments = keptExistingAttachments.filter { it.fileId != fileId }
+                },
+                onRemovePending = { fileId -> viewModel.removePendingAttachment(fileId) },
+                onAddFile = { filePickerLauncher.launch("*/*") },
+            )
+
             Spacer(modifier = Modifier.height(8.dp))
             Button(
                 onClick = {
@@ -228,12 +336,16 @@ fun DiaryFormScreen(
                         firestoreId = firestoreId,
                         date = recordDate,
                         recordType = selectedTypeId,
-                        record = recordText.trim()
+                        record = recordText.trim(),
+                        attachments = keptExistingAttachments,
                     )
-                    if (isEditMode) viewModel.updateRecord(record) else viewModel.addRecord(record)
-                    onBack()
+                    if (isEditMode && existingRecord != null) {
+                        viewModel.updateRecord(existingRecord, record)
+                    } else {
+                        viewModel.addRecord(record)
+                    }
                 },
-                enabled = isValid,
+                enabled = isValid && !isUploadingAttachment,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(stringResource(R.string.save))
@@ -241,3 +353,99 @@ fun DiaryFormScreen(
         }
     }
 }
+
+@Composable
+private fun AttachmentSection(
+    existingAttachments: List<Attachment>,
+    pendingAttachments: List<Attachment>,
+    isUploading: Boolean,
+    onRemoveExisting: (String) -> Unit,
+    onRemovePending: (String) -> Unit,
+    onAddFile: () -> Unit,
+) {
+    val totalCount = existingAttachments.size + pendingAttachments.size
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            text = "첨부파일${if (totalCount > 0) " ($totalCount)" else ""}",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (totalCount > 0) {
+            HorizontalDivider()
+            existingAttachments.forEach { attachment ->
+                AttachmentRow(
+                    attachment = attachment,
+                    onRemove = { onRemoveExisting(attachment.fileId) },
+                )
+            }
+            pendingAttachments.forEach { attachment ->
+                AttachmentRow(
+                    attachment = attachment,
+                    onRemove = { onRemovePending(attachment.fileId) },
+                )
+            }
+            HorizontalDivider()
+        }
+        if (isUploading) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(vertical = 4.dp)
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("업로드 중...", style = MaterialTheme.typography.bodySmall)
+            }
+        }
+        OutlinedButton(
+            onClick = onAddFile,
+            enabled = !isUploading,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Icon(Icons.Default.AttachFile, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("파일 추가")
+        }
+    }
+}
+
+@Composable
+private fun AttachmentRow(
+    attachment: Attachment,
+    onRemove: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        val icon = when {
+            attachment.mimeType.startsWith("image/") -> Icons.Default.Image
+            else -> Icons.Default.AttachFile
+        }
+        Icon(
+            icon,
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+            tint = MaterialTheme.colorScheme.primary,
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = attachment.name,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = attachment.size.formatFileSize(),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        IconButton(onClick = onRemove) {
+            Icon(Icons.Default.Close, contentDescription = "첨부파일 삭제")
+        }
+    }
+}
+

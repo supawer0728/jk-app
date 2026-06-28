@@ -13,6 +13,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.ui.NavDisplay
 import com.jkapp.auth.AuthViewModel
+import com.jkapp.data.drive.DriveRepositoryImpl
 import com.jkapp.nav.DiaryDetailRoute
 import com.jkapp.nav.DiaryFormRoute
 import com.jkapp.nav.HomeRoute
@@ -29,7 +30,7 @@ import com.jkapp.ui.theme.JkappTheme
 class MainActivity : ComponentActivity() {
 
     private val authViewModel: AuthViewModel by viewModels()
-    private val diaryViewModel: DiaryViewModel by viewModels()
+    private val diaryViewModel: DiaryViewModel by viewModels { DiaryViewModel.factory(DriveRepositoryImpl(this)) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
