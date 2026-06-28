@@ -13,6 +13,8 @@
   <div id="viewer"></div>
   <script src="file:///android_asset/toastui-editor-viewer.min.js"></script>
   <script>
+    var ALLOWED_IFRAME_HOSTS = ['www.youtube.com', 'youtube.com', 'youtu.be', 'player.vimeo.com'];
+
     var viewer = toastui.Editor.factory({
       el: document.querySelector('#viewer'),
       viewer: true,
@@ -20,6 +22,13 @@
       customHTMLRenderer: {
         htmlBlock: {
           iframe: function(node) {
+            var src = (node.attrs && node.attrs.src) || '';
+            var allowed = false;
+            try {
+              var url = new URL(src);
+              allowed = url.protocol === 'https:' && ALLOWED_IFRAME_HOSTS.indexOf(url.hostname) >= 0;
+            } catch (e) {}
+            if (!allowed) return [];
             return [
               { type: 'openTag', tagName: 'iframe', selfClose: false, attributes: node.attrs },
               { type: 'closeTag', tagName: 'iframe' }
@@ -29,11 +38,14 @@
       }
     });
 
+    function reportHeight() {
+      Android.onHeightChanged(document.body.scrollHeight);
+    }
+
     function setContent(markdown) {
       viewer.setMarkdown(markdown);
-      setTimeout(function() {
-        Android.onHeightChanged(document.body.scrollHeight);
-      }, 150);
+      requestAnimationFrame(function() { requestAnimationFrame(reportHeight); });
+      setTimeout(reportHeight, 400);
     }
   </script>
 </body>

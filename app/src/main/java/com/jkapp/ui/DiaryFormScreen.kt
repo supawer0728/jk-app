@@ -66,7 +66,7 @@ fun DiaryFormScreen(
 
     var recordDate by rememberSaveable { mutableStateOf(existingRecord?.date ?: DiaryViewModel.todayDate()) }
     var selectedTypeId by rememberSaveable { mutableStateOf(existingRecord?.recordType ?: "") }
-    var recordText by rememberSaveable { mutableStateOf(existingRecord?.record ?: "") }
+    var recordText by rememberSaveable(existingRecord?.firestoreId) { mutableStateOf(existingRecord?.record ?: "") }
     var typeDropdownExpanded by remember { mutableStateOf(false) }
     var showDatePicker by rememberSaveable { mutableStateOf(false) }
 
@@ -74,7 +74,6 @@ fun DiaryFormScreen(
         existingRecord?.let { r ->
             recordDate = r.date
             selectedTypeId = r.recordType
-            recordText = r.record
         }
     }
 

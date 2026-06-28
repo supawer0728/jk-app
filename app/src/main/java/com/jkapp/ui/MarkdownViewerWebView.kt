@@ -1,9 +1,11 @@
 package com.jkapp.ui
 
+import android.content.Intent
 import android.os.Handler
 import android.os.Looper
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.layout.height
@@ -41,18 +43,22 @@ fun MarkdownViewerWebView(
                     "Android"
                 )
                 webViewClient = object : WebViewClient() {
+                    override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                        val uri = request.url
+                        if (uri.scheme == "file") return false
+                        try { view.context.startActivity(Intent(Intent.ACTION_VIEW, uri)) } catch (e: Exception) {}
+                        return true
+                    }
                     override fun onPageFinished(view: WebView, url: String) {
                         isPageLoaded.value = true
-                        view.evaluateJavascript(
-                            "setContent(${JSONObject.quote(markdown)})", null
-                        )
                     }
                 }
                 loadUrl("file:///android_asset/viewer.html")
             }
         },
         update = { webView ->
-            if (isPageLoaded.value) {
+            if (isPageLoaded.value && webView.tag != markdown) {
+                webView.tag = markdown
                 webView.evaluateJavascript(
                     "setContent(${JSONObject.quote(markdown)})", null
                 )
