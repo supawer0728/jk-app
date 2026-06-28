@@ -190,6 +190,27 @@ class DiaryViewModelTest {
         assertTrue(error.message.contains("기록유형 삭제에 실패했습니다"))
     }
 
+    @Test
+    fun `deleteRecordType 시 해당 타입의 레코드가 FALLBACK 타입으로 재배정된다`() = runTest {
+        val customType = makeType("CUSTOM", "커스텀", docId = "doc-custom")
+        val affected1 = CatRecord(firestoreId = "rec-1", date = "2024-01-01", recordType = "CUSTOM", record = "기록1")
+        val affected2 = CatRecord(firestoreId = "rec-2", date = "2024-01-02", recordType = "CUSTOM", record = "기록2")
+        val unaffected = CatRecord(firestoreId = "rec-3", date = "2024-01-03", recordType = "DAILY_NOTE", record = "기록3")
+        fakeAuth.setLoggedIn(true)
+        fakeRepository.setRecordTypes(listOf(customType))
+        fakeRepository.setRecords(listOf(affected1, affected2, unaffected))
+        advanceUntilIdle()
+
+        viewModel.deleteRecordType("doc-custom")
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as DiaryUiState.Success
+        assertTrue(state.recordTypes.none { it.id == "CUSTOM" })
+        assertTrue(state.records.filter { it.firestoreId in listOf("rec-1", "rec-2") }
+            .all { it.recordType == DiaryViewModel.FALLBACK_RECORD_TYPE_ID })
+        assertEquals("DAILY_NOTE", state.records.find { it.firestoreId == "rec-3" }?.recordType)
+    }
+
     // --- toggleTypeFilter ---
 
     @Test

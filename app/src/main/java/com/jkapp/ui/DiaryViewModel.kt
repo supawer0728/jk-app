@@ -129,23 +129,28 @@ class DiaryViewModel(
     }
 
     fun deleteRecordType(docId: String) {
-        val typeId = (uiState.value as? DiaryUiState.Success)
-            ?.recordTypes?.find { it.docId == docId }?.id
-        val error = validateDeleteRecordType(typeId)
+        val state = uiState.value as? DiaryUiState.Success ?: return
+        val type = state.recordTypes.find { it.docId == docId }
+        val error = validateDeleteRecordType(type?.id)
         if (error != null) {
             _uiState.value = DiaryUiState.Error(error)
             return
         }
+        val affectedRecordIds = state.records
+            .filter { it.recordType == type?.id }
+            .mapNotNull { it.firestoreId }
         viewModelScope.launch {
-            runCatching { repository.deleteRecordType(docId) }
-                .onFailure {
-                    _uiState.value = DiaryUiState.Error("기록유형 삭제에 실패했습니다: ${it.localizedMessage ?: "알 수 없는 오류"}")
-                }
+            runCatching {
+                repository.deleteRecordTypeAndReassignRecords(docId, affectedRecordIds, FALLBACK_RECORD_TYPE_ID)
+            }.onFailure {
+                _uiState.value = DiaryUiState.Error("기록유형 삭제에 실패했습니다: ${it.localizedMessage ?: "알 수 없는 오류"}")
+            }
         }
     }
 
     companion object {
         val SYSTEM_TYPE_IDS = setOf("DAILY_NOTE", "HOSPITAL_VISIT")
+        const val FALLBACK_RECORD_TYPE_ID = "DAILY_NOTE"
 
         fun toggleInSet(id: String, current: Set<String>): Set<String> =
             if (id in current) current - id else current + id

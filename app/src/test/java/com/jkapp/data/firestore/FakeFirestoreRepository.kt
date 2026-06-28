@@ -46,8 +46,16 @@ class FakeFirestoreRepository : FirestoreRepository {
         updateRecordTypeError?.let { throw it }
     }
 
-    override suspend fun deleteRecordType(docId: String) {
+    override suspend fun deleteRecordTypeAndReassignRecords(
+        typeDocId: String,
+        affectedRecordIds: List<String>,
+        fallbackTypeId: String,
+    ) {
         deleteRecordTypeError?.let { throw it }
-        _recordTypes.value = _recordTypes.value.filter { it.docId != docId }
+        _records.value = _records.value.map { record ->
+            if (record.firestoreId in affectedRecordIds) record.copy(recordType = fallbackTypeId)
+            else record
+        }
+        _recordTypes.value = _recordTypes.value.filter { it.docId != typeDocId }
     }
 }

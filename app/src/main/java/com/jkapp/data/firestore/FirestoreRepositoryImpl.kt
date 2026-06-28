@@ -96,8 +96,17 @@ class FirestoreRepositoryImpl : FirestoreRepository {
             .addOnFailureListener { cont.resumeWithException(it) }
     }
 
-    override suspend fun deleteRecordType(docId: String): Unit = suspendCancellableCoroutine { cont ->
-        recordTypesRef.document(docId).delete()
+    override suspend fun deleteRecordTypeAndReassignRecords(
+        typeDocId: String,
+        affectedRecordIds: List<String>,
+        fallbackTypeId: String,
+    ): Unit = suspendCancellableCoroutine { cont ->
+        val batch = db.batch()
+        affectedRecordIds.forEach { recordId ->
+            batch.update(recordsRef.document(recordId), FIELD_RECORD_TYPE, fallbackTypeId)
+        }
+        batch.delete(recordTypesRef.document(typeDocId))
+        batch.commit()
             .addOnSuccessListener { cont.resume(Unit) }
             .addOnFailureListener { cont.resumeWithException(it) }
     }

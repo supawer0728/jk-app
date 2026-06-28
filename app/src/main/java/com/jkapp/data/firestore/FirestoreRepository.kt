@@ -12,5 +12,5 @@ interface FirestoreRepository {
     suspend fun deleteRecord(firestoreId: String)
     suspend fun addRecordType(type: CatRecordType)
     suspend fun updateRecordType(type: CatRecordType)
-    suspend fun deleteRecordType(docId: String)
+    suspend fun deleteRecordTypeAndReassignRecords(typeDocId: String, affectedRecordIds: List<String>, fallbackTypeId: String)
 }
