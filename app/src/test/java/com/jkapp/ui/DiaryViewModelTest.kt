@@ -191,6 +191,45 @@ class DiaryViewModelTest {
     }
 
     @Test
+    fun `deleteRecordType이 Success 상태가 아닐 때 아무 동작도 하지 않는다`() = runTest {
+        // 로그인하지 않아 Loading 상태 유지
+        viewModel.deleteRecordType("doc-custom")
+        advanceUntilIdle()
+
+        assertEquals(DiaryUiState.Loading, viewModel.uiState.value)
+    }
+
+    @Test
+    fun `deleteRecordType 호출 시 docId가 존재하지 않으면 에러 없이 처리된다`() = runTest {
+        val customType = makeType("CUSTOM", "커스텀", docId = "doc-custom")
+        fakeAuth.setLoggedIn(true)
+        fakeRepository.setRecordTypes(listOf(customType))
+        advanceUntilIdle()
+
+        viewModel.deleteRecordType("doc-nonexistent")
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value is DiaryUiState.Success)
+    }
+
+    @Test
+    fun `deleteRecordType 시 연관 레코드가 없어도 타입이 정상 삭제된다`() = runTest {
+        val customType = makeType("CUSTOM", "커스텀", docId = "doc-custom")
+        val unrelated = CatRecord(firestoreId = "rec-1", date = "2024-01-01", recordType = "DAILY_NOTE", record = "기록")
+        fakeAuth.setLoggedIn(true)
+        fakeRepository.setRecordTypes(listOf(customType))
+        fakeRepository.setRecords(listOf(unrelated))
+        advanceUntilIdle()
+
+        viewModel.deleteRecordType("doc-custom")
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as DiaryUiState.Success
+        assertTrue(state.recordTypes.none { it.id == "CUSTOM" })
+        assertEquals(1, state.records.size)
+    }
+
+    @Test
     fun `deleteRecordType 시 해당 타입의 레코드가 FALLBACK 타입으로 재배정된다`() = runTest {
         val customType = makeType("CUSTOM", "커스텀", docId = "doc-custom")
         val affected1 = CatRecord(firestoreId = "rec-1", date = "2024-01-01", recordType = "CUSTOM", record = "기록1")
