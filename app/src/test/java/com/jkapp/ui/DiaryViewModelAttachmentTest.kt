@@ -53,7 +53,7 @@ class DiaryViewModelAttachmentTest {
     fun `uploadAttachment 성공 시 pendingAttachments에 추가된다`() = runTest {
         advanceUntilIdle()
 
-        viewModel.uploadAttachment("test".byteInputStream(), "test.jpg", "image/jpeg")
+        viewModel.uploadAttachment({ "test".byteInputStream() }, "test.jpg", "image/jpeg")
         advanceUntilIdle()
 
         assertEquals(1, viewModel.pendingAttachments.value.size)
@@ -64,7 +64,7 @@ class DiaryViewModelAttachmentTest {
     fun `uploadAttachment 성공 시 isUploadingAttachment가 false로 복귀한다`() = runTest {
         advanceUntilIdle()
 
-        viewModel.uploadAttachment("test".byteInputStream(), "test.jpg", "image/jpeg")
+        viewModel.uploadAttachment({ "test".byteInputStream() }, "test.jpg", "image/jpeg")
         advanceUntilIdle()
 
         assertFalse(viewModel.isUploadingAttachment.value)
@@ -75,7 +75,7 @@ class DiaryViewModelAttachmentTest {
         advanceUntilIdle()
 
         fakeDriveRepository.uploadError = RuntimeException("업로드 실패")
-        viewModel.uploadAttachment("test".byteInputStream(), "test.jpg", "image/jpeg")
+        viewModel.uploadAttachment({ "test".byteInputStream() }, "test.jpg", "image/jpeg")
         advanceUntilIdle()
 
         assertTrue(viewModel.attachmentUploadError.value?.contains("파일 업로드에 실패했습니다") == true)
@@ -86,7 +86,7 @@ class DiaryViewModelAttachmentTest {
         advanceUntilIdle()
 
         fakeDriveRepository.uploadError = RuntimeException("업로드 실패")
-        viewModel.uploadAttachment("test".byteInputStream(), "test.jpg", "image/jpeg")
+        viewModel.uploadAttachment({ "test".byteInputStream() }, "test.jpg", "image/jpeg")
         advanceUntilIdle()
 
         assertTrue(viewModel.uiState.value is DiaryUiState.Success)
@@ -97,7 +97,7 @@ class DiaryViewModelAttachmentTest {
         advanceUntilIdle()
 
         fakeDriveRepository.uploadError = RuntimeException("업로드 실패")
-        viewModel.uploadAttachment("test".byteInputStream(), "test.jpg", "image/jpeg")
+        viewModel.uploadAttachment({ "test".byteInputStream() }, "test.jpg", "image/jpeg")
         advanceUntilIdle()
 
         assertTrue(viewModel.pendingAttachments.value.isEmpty())
@@ -108,7 +108,7 @@ class DiaryViewModelAttachmentTest {
     @Test
     fun `removePendingAttachment 호출 시 pendingAttachments에서 제거된다`() = runTest {
         advanceUntilIdle()
-        viewModel.uploadAttachment("test".byteInputStream(), "test.jpg", "image/jpeg")
+        viewModel.uploadAttachment({ "test".byteInputStream() }, "test.jpg", "image/jpeg")
         advanceUntilIdle()
 
         val fileId = viewModel.pendingAttachments.value[0].fileId
@@ -121,7 +121,7 @@ class DiaryViewModelAttachmentTest {
     @Test
     fun `removePendingAttachment 호출 시 Drive에서 파일이 삭제된다`() = runTest {
         advanceUntilIdle()
-        viewModel.uploadAttachment("test".byteInputStream(), "test.jpg", "image/jpeg")
+        viewModel.uploadAttachment({ "test".byteInputStream() }, "test.jpg", "image/jpeg")
         advanceUntilIdle()
 
         val fileId = viewModel.pendingAttachments.value[0].fileId
@@ -134,8 +134,8 @@ class DiaryViewModelAttachmentTest {
     @Test
     fun `removePendingAttachment는 대상 파일만 제거하고 나머지는 유지한다`() = runTest {
         advanceUntilIdle()
-        viewModel.uploadAttachment("a".byteInputStream(), "a.jpg", "image/jpeg")
-        viewModel.uploadAttachment("b".byteInputStream(), "b.jpg", "image/jpeg")
+        viewModel.uploadAttachment({ "a".byteInputStream() }, "a.jpg", "image/jpeg")
+        viewModel.uploadAttachment({ "b".byteInputStream() }, "b.jpg", "image/jpeg")
         advanceUntilIdle()
 
         val firstId = viewModel.pendingAttachments.value[0].fileId
@@ -151,8 +151,8 @@ class DiaryViewModelAttachmentTest {
     @Test
     fun `cancelPendingAttachments 호출 시 pendingAttachments가 비워진다`() = runTest {
         advanceUntilIdle()
-        viewModel.uploadAttachment("a".byteInputStream(), "a.jpg", "image/jpeg")
-        viewModel.uploadAttachment("b".byteInputStream(), "b.jpg", "image/jpeg")
+        viewModel.uploadAttachment({ "a".byteInputStream() }, "a.jpg", "image/jpeg")
+        viewModel.uploadAttachment({ "b".byteInputStream() }, "b.jpg", "image/jpeg")
         advanceUntilIdle()
 
         viewModel.cancelPendingAttachments()
@@ -164,8 +164,8 @@ class DiaryViewModelAttachmentTest {
     @Test
     fun `cancelPendingAttachments 호출 시 모든 pending 파일이 Drive에서 삭제된다`() = runTest {
         advanceUntilIdle()
-        viewModel.uploadAttachment("a".byteInputStream(), "a.jpg", "image/jpeg")
-        viewModel.uploadAttachment("b".byteInputStream(), "b.jpg", "image/jpeg")
+        viewModel.uploadAttachment({ "a".byteInputStream() }, "a.jpg", "image/jpeg")
+        viewModel.uploadAttachment({ "b".byteInputStream() }, "b.jpg", "image/jpeg")
         advanceUntilIdle()
 
         val uploadedIds = viewModel.pendingAttachments.value.map { it.fileId }
@@ -180,7 +180,7 @@ class DiaryViewModelAttachmentTest {
     @Test
     fun `addRecord 시 pendingAttachments가 record에 포함된다`() = runTest {
         advanceUntilIdle()
-        viewModel.uploadAttachment("test".byteInputStream(), "test.jpg", "image/jpeg")
+        viewModel.uploadAttachment({ "test".byteInputStream() }, "test.jpg", "image/jpeg")
         advanceUntilIdle()
 
         viewModel.addRecord(makeRecord("2024-01-01"))
@@ -195,7 +195,7 @@ class DiaryViewModelAttachmentTest {
     @Test
     fun `addRecord 후 pendingAttachments가 비워진다`() = runTest {
         advanceUntilIdle()
-        viewModel.uploadAttachment("test".byteInputStream(), "test.jpg", "image/jpeg")
+        viewModel.uploadAttachment({ "test".byteInputStream() }, "test.jpg", "image/jpeg")
         advanceUntilIdle()
 
         viewModel.addRecord(makeRecord("2024-01-01"))
@@ -225,7 +225,7 @@ class DiaryViewModelAttachmentTest {
     @Test
     fun `updateRecord 시 pendingAttachments가 updated record에 추가된다`() = runTest {
         advanceUntilIdle()
-        viewModel.uploadAttachment("new".byteInputStream(), "new.jpg", "image/jpeg")
+        viewModel.uploadAttachment({ "new".byteInputStream() }, "new.jpg", "image/jpeg")
         advanceUntilIdle()
 
         val original = makeRecord("2024-01-01")
@@ -242,7 +242,7 @@ class DiaryViewModelAttachmentTest {
     @Test
     fun `updateRecord 후 pendingAttachments가 비워진다`() = runTest {
         advanceUntilIdle()
-        viewModel.uploadAttachment("test".byteInputStream(), "test.jpg", "image/jpeg")
+        viewModel.uploadAttachment({ "test".byteInputStream() }, "test.jpg", "image/jpeg")
         advanceUntilIdle()
 
         viewModel.updateRecord(makeRecord("2024-01-01"), makeRecord("2024-01-01"))

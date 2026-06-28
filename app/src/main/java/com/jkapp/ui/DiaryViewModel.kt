@@ -120,23 +120,45 @@ class DiaryViewModel(
 
     // ── 첨부파일 관리 ────────────────────────────────────────────────────────────
 
-    fun uploadAttachment(inputStream: InputStream, fileName: String, mimeType: String, size: Long = 0L) {
+    private data class PendingRetryUpload(
+        val tempId: String,
+        val openStream: () -> InputStream?,
+        val fileName: String,
+        val mimeType: String,
+    )
+
+    private val pendingRetries = mutableListOf<PendingRetryUpload>()
+
+    fun uploadAttachment(openStream: () -> InputStream?, fileName: String, mimeType: String, size: Long = 0L) {
         val tempId = "upload-pending-${UUID.randomUUID()}"
         _pendingAttachments.update { it + Attachment(tempId, fileName, mimeType, size) }
+        doUpload(tempId, openStream, fileName, mimeType)
+    }
+
+    private fun doUpload(tempId: String, openStream: () -> InputStream?, fileName: String, mimeType: String) {
         viewModelScope.launch {
             _isUploadingAttachment.value = true
+            val stream = openStream()
+            if (stream == null) {
+                _pendingAttachments.update { list -> list.filter { it.fileId != tempId } }
+                _attachmentUploadError.value = "파일을 열 수 없습니다."
+                _isUploadingAttachment.value = false
+                return@launch
+            }
             runCatching {
-                driveRepository.uploadFile(pendingRecordFolderId, inputStream, fileName, mimeType)
+                driveRepository.uploadFile(pendingRecordFolderId, stream, fileName, mimeType)
             }.onSuccess { attachment ->
+                pendingRetries.removeAll { it.tempId == tempId }
                 _pendingAttachments.update { list ->
                     list.map { if (it.fileId == tempId) attachment else it }
                 }
             }.onFailure { e ->
                 Log.e(TAG, "Drive 업로드 실패: fileName=$fileName", e)
-                _pendingAttachments.update { list -> list.filter { it.fileId != tempId } }
                 if (e is DriveAuthRequiredException) {
+                    pendingRetries.add(PendingRetryUpload(tempId, openStream, fileName, mimeType))
                     _driveAuthRecoveryIntent.value = e.recoveryIntent
                 } else {
+                    _pendingAttachments.update { list -> list.filter { it.fileId != tempId } }
                     _attachmentUploadError.value =
                         "파일 업로드에 실패했습니다: ${e.localizedMessage ?: "알 수 없는 오류"}"
                 }
@@ -145,8 +167,21 @@ class DiaryViewModel(
         }
     }
 
+    fun retryFailedUploads() {
+        val retries = pendingRetries.toList()
+        pendingRetries.clear()
+        retries.forEach { retry -> doUpload(retry.tempId, retry.openStream, retry.fileName, retry.mimeType) }
+    }
+
+    fun cancelFailedUploads() {
+        val failedIds = pendingRetries.map { it.tempId }.toSet()
+        pendingRetries.clear()
+        _pendingAttachments.update { list -> list.filter { it.fileId !in failedIds } }
+    }
+
     fun removePendingAttachment(fileId: String) {
         _pendingAttachments.update { it.filter { a -> a.fileId != fileId } }
+        pendingRetries.removeAll { it.tempId == fileId }
         viewModelScope.launch {
             runCatching { driveRepository.deleteFile(fileId) }
                 .onFailure { e -> Log.w(TAG, "Drive 파일 삭제 실패 (pending 제거): fileId=$fileId", e) }
@@ -156,6 +191,7 @@ class DiaryViewModel(
     fun cancelPendingAttachments() {
         val toDelete = _pendingAttachments.value
         _pendingAttachments.value = emptyList()
+        pendingRetries.clear()
         resetPendingRecordFolder()
         viewModelScope.launch {
             toDelete.forEach { attachment ->

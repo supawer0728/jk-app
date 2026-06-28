@@ -111,6 +111,11 @@ fun DiaryFormScreen(
         result.data?.getStringExtra(AccountManager.KEY_ACCOUNT_NAME)?.let { accountName ->
             viewModel.onDriveAccountSelected(accountName)
         }
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            viewModel.retryFailedUploads()
+        } else {
+            viewModel.cancelFailedUploads()
+        }
         viewModel.clearDriveAuthRecoveryIntent()
     }
     LaunchedEffect(driveAuthRecoveryIntent) {
@@ -134,9 +139,13 @@ fun DiaryFormScreen(
                 if (sizeIdx >= 0 && !cursor.isNull(sizeIdx)) resolvedSize = cursor.getLong(sizeIdx)
             }
         }
-        context.contentResolver.openInputStream(uri)?.let { inputStream ->
-            viewModel.uploadAttachment(inputStream, resolvedName, mimeType, resolvedSize)
-        }
+        val contentResolver = context.contentResolver
+        viewModel.uploadAttachment(
+            openStream = { contentResolver.openInputStream(uri) },
+            fileName = resolvedName,
+            mimeType = mimeType,
+            size = resolvedSize,
+        )
     }
 
     val onCancel = {
