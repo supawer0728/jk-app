@@ -6,4 +6,5 @@ data class CatRecordType(
     val emoji: String,
     val fontColor: String,
     val backgroundColor: String,
+    val docId: String = "",
 )

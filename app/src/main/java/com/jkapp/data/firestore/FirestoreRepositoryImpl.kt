@@ -32,6 +32,7 @@ class FirestoreRepositoryImpl : FirestoreRepository {
                     emoji = doc.getString(FIELD_EMOJI) ?: "📝",
                     fontColor = doc.getString(FIELD_FONT_COLOR_CAMEL) ?: doc.getString(FIELD_FONT_COLOR_SNAKE) ?: "#000000",
                     backgroundColor = doc.getString(FIELD_BG_COLOR_CAMEL) ?: doc.getString(FIELD_BG_COLOR_SNAKE) ?: "#FFFFFF",
+                    docId = doc.id,
                 )
             } ?: emptyList()
 
@@ -94,10 +95,38 @@ class FirestoreRepositoryImpl : FirestoreRepository {
             .addOnFailureListener { cont.resumeWithException(it) }
     }
 
+    override suspend fun addRecordType(type: CatRecordType): Unit = suspendCancellableCoroutine { cont ->
+        val ref = if (type.id.isNotBlank()) recordTypesRef.document(type.id) else recordTypesRef.document()
+        ref.set(type.toMap())
+            .addOnSuccessListener { cont.resume(Unit) }
+            .addOnFailureListener { cont.resumeWithException(it) }
+    }
+
+    override suspend fun updateRecordType(type: CatRecordType): Unit = suspendCancellableCoroutine { cont ->
+        val docId = type.docId.ifBlank { type.id }
+        recordTypesRef.document(docId).set(type.toMap())
+            .addOnSuccessListener { cont.resume(Unit) }
+            .addOnFailureListener { cont.resumeWithException(it) }
+    }
+
+    override suspend fun deleteRecordType(docId: String): Unit = suspendCancellableCoroutine { cont ->
+        recordTypesRef.document(docId).delete()
+            .addOnSuccessListener { cont.resume(Unit) }
+            .addOnFailureListener { cont.resumeWithException(it) }
+    }
+
     private fun CatRecord.toMap() = mapOf(
         FIELD_DATE to date,
         FIELD_RECORD_TYPE to recordType,
         FIELD_RECORD to record,
+    )
+
+    private fun CatRecordType.toMap() = mapOf(
+        FIELD_ID to id,
+        FIELD_NAME to name,
+        FIELD_EMOJI to emoji,
+        FIELD_FONT_COLOR_CAMEL to fontColor,
+        FIELD_BG_COLOR_CAMEL to backgroundColor,
     )
 
     companion object {

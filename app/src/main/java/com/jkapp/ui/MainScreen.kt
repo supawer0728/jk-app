@@ -53,7 +53,8 @@ fun MainScreen(
     viewModel: AuthViewModel,
     diaryViewModel: DiaryViewModel,
     onNavigateToDetail: (String) -> Unit,
-    onNavigateToAdd: () -> Unit
+    onNavigateToAdd: () -> Unit,
+    onNavigateToRecordTypeManagement: () -> Unit
 ) {
     val user by viewModel.user.collectAsStateWithLifecycle()
     val currentUser = user ?: return
@@ -119,7 +120,8 @@ fun MainScreen(
                 MainTab.DIARY -> DiaryScreen(
                     viewModel = diaryViewModel,
                     onNavigateToDetail = onNavigateToDetail,
-                    onNavigateToAdd = onNavigateToAdd
+                    onNavigateToAdd = onNavigateToAdd,
+                    onNavigateToRecordTypeManagement = onNavigateToRecordTypeManagement
                 )
             }
         }

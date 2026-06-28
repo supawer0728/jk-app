@@ -13,3 +13,6 @@ data class DiaryDetailRoute(val date: String)
 
 @Serializable
 data class DiaryFormRoute(val firestoreId: String? = null)
+
+@Serializable
+data object RecordTypeManagementRoute

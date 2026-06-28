@@ -14,11 +14,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -27,7 +31,9 @@ import androidx.compose.material3.SuggestionChipDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -44,9 +50,11 @@ import com.jkapp.data.model.CatRecordType
 fun DiaryScreen(
     viewModel: DiaryViewModel,
     onNavigateToDetail: (String) -> Unit,
-    onNavigateToAdd: () -> Unit
+    onNavigateToAdd: () -> Unit,
+    onNavigateToRecordTypeManagement: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val selectedTypeIds by viewModel.selectedTypeIds.collectAsStateWithLifecycle()
 
     Box(modifier = Modifier.fillMaxSize()) {
         when (val state = uiState) {
@@ -64,8 +72,11 @@ fun DiaryScreen(
                 )
             }
             is DiaryUiState.Success -> {
-                val groupedDates = remember(state.records) {
-                    state.records
+                val filteredRecords = remember(state.records, selectedTypeIds) {
+                    DiaryViewModel.filterRecords(state.records, selectedTypeIds)
+                }
+                val groupedDates = remember(filteredRecords) {
+                    filteredRecords
                         .groupBy { it.date }
                         .entries
                         .sortedByDescending { it.key }
@@ -77,6 +88,14 @@ fun DiaryScreen(
                     ),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    item {
+                        RecordTypeFilterRow(
+                            recordTypes = state.recordTypes,
+                            selectedTypeIds = selectedTypeIds,
+                            onToggle = { viewModel.toggleTypeFilter(it) },
+                            onClearFilter = { viewModel.clearTypeFilter() }
+                        )
+                    }
                     items(groupedDates, key = { it.first }) { (date, records) ->
                         DiaryListItem(
                             date = date,
@@ -86,15 +105,66 @@ fun DiaryScreen(
                         )
                     }
                 }
-                FloatingActionButton(
-                    onClick = onNavigateToAdd,
+
+                var showFabMenu by remember { mutableStateOf(false) }
+                Box(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
                         .padding(16.dp)
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.add_record))
+                    FloatingActionButton(onClick = { showFabMenu = true }) {
+                        Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.manage_record_types))
+                    }
+                    DropdownMenu(
+                        expanded = showFabMenu,
+                        onDismissRequest = { showFabMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.write_diary)) },
+                            onClick = {
+                                showFabMenu = false
+                                onNavigateToAdd()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.manage_record_types)) },
+                            onClick = {
+                                showFabMenu = false
+                                onNavigateToRecordTypeManagement()
+                            }
+                        )
+                    }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun RecordTypeFilterRow(
+    recordTypes: List<CatRecordType>,
+    selectedTypeIds: Set<String>,
+    onToggle: (String) -> Unit,
+    onClearFilter: () -> Unit
+) {
+    if (recordTypes.isEmpty()) return
+    LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(vertical = 4.dp)
+    ) {
+        item {
+            FilterChip(
+                selected = selectedTypeIds.isEmpty(),
+                onClick = onClearFilter,
+                label = { Text("전체") }
+            )
+        }
+        items(recordTypes, key = { it.id }) { type ->
+            FilterChip(
+                selected = type.id in selectedTypeIds,
+                onClick = { onToggle(type.id) },
+                label = { Text("${type.emoji} ${type.name}") }
+            )
         }
     }
 }

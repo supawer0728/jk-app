@@ -17,6 +17,8 @@ import com.jkapp.nav.DiaryDetailRoute
 import com.jkapp.nav.DiaryFormRoute
 import com.jkapp.nav.HomeRoute
 import com.jkapp.nav.LoginRoute
+import com.jkapp.nav.RecordTypeManagementRoute
+import com.jkapp.ui.RecordTypeManagementScreen
 import com.jkapp.ui.DiaryDetailScreen
 import com.jkapp.ui.DiaryFormScreen
 import com.jkapp.ui.DiaryViewModel
@@ -66,6 +68,9 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onNavigateToAdd = {
                                     backStack.add(DiaryFormRoute())
+                                },
+                                onNavigateToRecordTypeManagement = {
+                                    backStack.add(RecordTypeManagementRoute)
                                 }
                             )
                         }
@@ -83,6 +88,12 @@ class MainActivity : ComponentActivity() {
                             DiaryFormScreen(
                                 viewModel = diaryViewModel,
                                 firestoreId = route.firestoreId,
+                                onBack = { backStack.removeLastOrNull() }
+                            )
+                        }
+                        entry<RecordTypeManagementRoute> {
+                            RecordTypeManagementScreen(
+                                viewModel = diaryViewModel,
                                 onBack = { backStack.removeLastOrNull() }
                             )
                         }
