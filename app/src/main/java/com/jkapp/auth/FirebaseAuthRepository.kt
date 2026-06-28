@@ -16,4 +16,12 @@ class FirebaseAuthRepository : AuthRepository {
         FirebaseAuth.getInstance().addAuthStateListener(listener)
         awaitClose { FirebaseAuth.getInstance().removeAuthStateListener(listener) }
     }
+
+    override fun observeCurrentUserEmail(): Flow<String?> = callbackFlow {
+        val listener = FirebaseAuth.AuthStateListener { auth ->
+            trySend(auth.currentUser?.email)
+        }
+        FirebaseAuth.getInstance().addAuthStateListener(listener)
+        awaitClose { FirebaseAuth.getInstance().removeAuthStateListener(listener) }
+    }
 }

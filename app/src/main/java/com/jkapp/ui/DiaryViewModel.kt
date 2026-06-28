@@ -76,14 +76,17 @@ class DiaryViewModel(
         viewModelScope.launch {
             authRepository.observeAuthState().collect { isLoggedIn ->
                 if (isLoggedIn) {
-                    val email = authRepository.getCurrentUserEmail()
-                    Log.d(TAG, "로그인 감지: email=$email")
-                    email?.let { driveRepository.setAccount(it) }
                     startDataCollection()
                 } else {
                     dataJob?.cancel()
                     _uiState.value = DiaryUiState.Loading
                 }
+            }
+        }
+        viewModelScope.launch {
+            authRepository.observeCurrentUserEmail().collect { email ->
+                Log.d(TAG, "Drive 계정 이메일: $email")
+                email?.let { driveRepository.setAccount(it) }
             }
         }
     }
