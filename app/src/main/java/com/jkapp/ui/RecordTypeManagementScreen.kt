@@ -61,6 +61,7 @@ import androidx.core.graphics.toColorInt
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jkapp.R
 import com.jkapp.data.model.CatRecordType
+import java.util.UUID
 
 private val PALETTE_COLORS = listOf(
     "#F44336", "#E91E63", "#9C27B0", "#673AB7",
@@ -381,9 +382,8 @@ private fun AddRecordTypeDialog(
     onDismiss: () -> Unit,
     onConfirm: (CatRecordType) -> Unit
 ) {
-    var id by rememberSaveable { mutableStateOf("") }
     var name by rememberSaveable { mutableStateOf("") }
-    var emoji by rememberSaveable { mutableStateOf("📝") }
+    var emoji by rememberSaveable { mutableStateOf("") }
     var fontColor by rememberSaveable { mutableStateOf("#000000") }
     var backgroundColor by rememberSaveable { mutableStateOf("#FFFFFF") }
 
@@ -392,13 +392,6 @@ private fun AddRecordTypeDialog(
         title = { Text(stringResource(R.string.add_record_type)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = id,
-                    onValueChange = { id = it },
-                    label = { Text("ID") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
@@ -409,7 +402,7 @@ private fun AddRecordTypeDialog(
                 OutlinedTextField(
                     value = emoji,
                     onValueChange = { emoji = it },
-                    label = { Text(stringResource(R.string.record_type_emoji)) },
+                    label = { Text("${stringResource(R.string.record_type_emoji)} (선택)") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -427,11 +420,11 @@ private fun AddRecordTypeDialog(
         },
         confirmButton = {
             TextButton(
-                enabled = id.isNotBlank() && name.isNotBlank(),
+                enabled = name.isNotBlank(),
                 onClick = {
                     onConfirm(
                         CatRecordType(
-                            id = id.trim(),
+                            id = UUID.randomUUID().toString(),
                             name = name.trim(),
                             emoji = emoji.trim(),
                             fontColor = fontColor.trim(),
