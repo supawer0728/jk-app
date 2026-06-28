@@ -16,7 +16,12 @@ import com.jkapp.data.firestore.FirestoreRepositoryImpl
 import com.jkapp.data.model.Attachment
 import com.jkapp.data.model.CatRecord
 import com.jkapp.data.model.CatRecordType
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -59,6 +64,9 @@ class DiaryViewModel(
     private val _driveAuthRecoveryIntent = MutableStateFlow<Intent?>(null)
     val driveAuthRecoveryIntent: StateFlow<Intent?> = _driveAuthRecoveryIntent.asStateFlow()
 
+    private val _saveCompleted = MutableStateFlow(false)
+    val saveCompleted: StateFlow<Boolean> = _saveCompleted.asStateFlow()
+
     fun clearAttachmentUploadError() {
         _attachmentUploadError.value = null
     }
@@ -67,8 +75,9 @@ class DiaryViewModel(
         _driveAuthRecoveryIntent.value = null
     }
 
-    // Temporary folder path used while a new record is being composed
-    private var pendingRecordFolderId: String = UUID.randomUUID().toString()
+    fun consumeSaveCompleted() {
+        _saveCompleted.value = false
+    }
 
     private var dataJob: Job? = null
 
@@ -120,96 +129,131 @@ class DiaryViewModel(
 
     // ── 첨부파일 관리 ────────────────────────────────────────────────────────────
 
+    // 저장 전 로컬에만 보관하는 파일 정보
+    private data class PendingLocalFile(
+        val tempId: String,
+        val openStream: () -> InputStream?,
+        val fileName: String,
+        val mimeType: String,
+        val size: Long,
+    )
+
+    // Drive 인증 실패 후 재시도 대기 중인 업로드
     private data class PendingRetryUpload(
         val tempId: String,
         val openStream: () -> InputStream?,
         val fileName: String,
         val mimeType: String,
+        val recordId: String,
     )
 
-    private val pendingRetries = mutableListOf<PendingRetryUpload>()
+    private data class UploadOutcome(
+        val uploaded: List<Attachment>,
+        val authRequired: Boolean,
+    )
 
-    fun uploadAttachment(openStream: () -> InputStream?, fileName: String, mimeType: String, size: Long = 0L) {
-        val tempId = "upload-pending-${UUID.randomUUID()}"
-        _pendingAttachments.update { it + Attachment(tempId, fileName, mimeType, size) }
-        doUpload(tempId, openStream, fileName, mimeType)
+    private sealed class FileUploadResult {
+        data class Success(val attachment: Attachment) : FileUploadResult()
+        data class AuthRequired(
+            val file: PendingLocalFile,
+            val exception: DriveAuthRequiredException,
+        ) : FileUploadResult()
+        data object Failed : FileUploadResult()
     }
 
-    private fun doUpload(tempId: String, openStream: () -> InputStream?, fileName: String, mimeType: String) {
-        viewModelScope.launch {
-            _isUploadingAttachment.value = true
-            val stream = openStream()
-            if (stream == null) {
-                _pendingAttachments.update { list -> list.filter { it.fileId != tempId } }
-                _attachmentUploadError.value = "파일을 열 수 없습니다."
-                _isUploadingAttachment.value = false
-                return@launch
-            }
-            runCatching {
-                driveRepository.uploadFile(pendingRecordFolderId, stream, fileName, mimeType)
-            }.onSuccess { attachment ->
-                pendingRetries.removeAll { it.tempId == tempId }
-                _pendingAttachments.update { list ->
-                    list.map { if (it.fileId == tempId) attachment else it }
-                }
-            }.onFailure { e ->
-                Log.e(TAG, "Drive 업로드 실패: fileName=$fileName", e)
-                if (e is DriveAuthRequiredException) {
-                    pendingRetries.add(PendingRetryUpload(tempId, openStream, fileName, mimeType))
-                    _driveAuthRecoveryIntent.value = e.recoveryIntent
-                } else {
-                    _pendingAttachments.update { list -> list.filter { it.fileId != tempId } }
-                    _attachmentUploadError.value =
-                        "파일 업로드에 실패했습니다: ${e.localizedMessage ?: "알 수 없는 오류"}"
-                }
-            }
-            _isUploadingAttachment.value = false
-        }
+    private val pendingLocalFiles = mutableListOf<PendingLocalFile>()
+    private val pendingRetries = mutableListOf<PendingRetryUpload>()
+
+    // 재시도 완료 후 Firestore 업데이트할 record 컨텍스트
+    private var retryCompletionRecord: CatRecord? = null
+
+    fun addLocalFile(openStream: () -> InputStream?, fileName: String, mimeType: String, size: Long) {
+        val tempId = "local-${UUID.randomUUID()}"
+        pendingLocalFiles.add(PendingLocalFile(tempId, openStream, fileName, mimeType, size))
+        _pendingAttachments.update { it + Attachment(tempId, fileName, mimeType, size) }
     }
 
     fun retryFailedUploads() {
         val retries = pendingRetries.toList()
         pendingRetries.clear()
-        retries.forEach { retry -> doUpload(retry.tempId, retry.openStream, retry.fileName, retry.mimeType) }
+
+        viewModelScope.launch {
+            _isUploadingAttachment.value = true
+            val uploaded = mutableListOf<Attachment>()
+
+            for ((index, retry) in retries.withIndex()) {
+                val stream = retry.openStream()
+                if (stream == null) {
+                    _pendingAttachments.update { it.filter { a -> a.fileId != retry.tempId } }
+                    continue
+                }
+                try {
+                    val attachment = driveRepository.uploadFile(retry.recordId, stream, retry.fileName, retry.mimeType)
+                    _pendingAttachments.update { list ->
+                        list.map { if (it.fileId == retry.tempId) attachment else it }
+                    }
+                    uploaded.add(attachment)
+                } catch (e: DriveAuthRequiredException) {
+                    Log.e(TAG, "Drive 재업로드 인증 필요: fileName=${retry.fileName}", e)
+                    pendingRetries.addAll(retries.drop(index))
+                    _driveAuthRecoveryIntent.value = e.recoveryIntent
+                    _isUploadingAttachment.value = false
+                    return@launch
+                } catch (e: Exception) {
+                    Log.e(TAG, "Drive 재업로드 실패: fileName=${retry.fileName}", e)
+                    _pendingAttachments.update { it.filter { a -> a.fileId != retry.tempId } }
+                    _attachmentUploadError.value = "파일 업로드에 실패했습니다: ${e.localizedMessage ?: "알 수 없는 오류"}"
+                }
+            }
+
+            // 모든 재시도 완료 → Firestore 업데이트
+            retryCompletionRecord?.let { ctx ->
+                retryCompletionRecord = null
+                val finalRecord = ctx.copy(attachments = ctx.attachments + uploaded)
+                runCatching { repository.updateRecord(finalRecord) }
+                    .onSuccess {
+                        _pendingAttachments.value = emptyList()
+                        _saveCompleted.value = true
+                    }
+                    .onFailure { e ->
+                        Log.e(TAG, "재시도 후 record 업데이트 실패", e)
+                        _uiState.value = DiaryUiState.Error("기록 업데이트에 실패했습니다: ${e.localizedMessage ?: "알 수 없는 오류"}")
+                    }
+            } ?: run {
+                _pendingAttachments.value = emptyList()
+            }
+
+            _isUploadingAttachment.value = false
+        }
     }
 
     fun cancelFailedUploads() {
         val failedIds = pendingRetries.map { it.tempId }.toSet()
         pendingRetries.clear()
+        retryCompletionRecord = null
         _pendingAttachments.update { list -> list.filter { it.fileId !in failedIds } }
     }
 
     fun removePendingAttachment(fileId: String) {
         _pendingAttachments.update { it.filter { a -> a.fileId != fileId } }
+        pendingLocalFiles.removeAll { it.tempId == fileId }
         pendingRetries.removeAll { it.tempId == fileId }
-        viewModelScope.launch {
-            runCatching { driveRepository.deleteFile(fileId) }
-                .onFailure { e -> Log.w(TAG, "Drive 파일 삭제 실패 (pending 제거): fileId=$fileId", e) }
-        }
     }
 
     fun cancelPendingAttachments() {
-        val toDelete = _pendingAttachments.value
         _pendingAttachments.value = emptyList()
+        pendingLocalFiles.clear()
         pendingRetries.clear()
-        resetPendingRecordFolder()
-        viewModelScope.launch {
-            toDelete.forEach { attachment ->
-                runCatching { driveRepository.deleteFile(attachment.fileId) }
-                    .onFailure { e -> Log.w(TAG, "Drive 파일 삭제 실패 (cancel): fileId=${attachment.fileId}", e) }
-            }
-        }
-    }
-
-    private fun resetPendingRecordFolder() {
-        pendingRecordFolderId = UUID.randomUUID().toString()
+        retryCompletionRecord = null
     }
 
     suspend fun downloadAttachment(fileId: String, destFile: java.io.File) {
         _downloadingAttachmentIds.update { it + fileId }
         try {
-            driveRepository.downloadFile(fileId).use { input ->
-                destFile.outputStream().use { output -> input.copyTo(output) }
+            withContext(Dispatchers.IO) {
+                driveRepository.downloadFile(fileId).use { input ->
+                    destFile.outputStream().use { output -> input.copyTo(output) }
+                }
             }
         } catch (e: DriveAuthRequiredException) {
             Log.w(TAG, "Drive 다운로드 인증 필요: fileId=$fileId")
@@ -222,45 +266,138 @@ class DiaryViewModel(
         }
     }
 
+    // recordId 기준으로 로컬 파일들을 Drive에 병렬 업로드한다.
+    // DriveAuthRequiredException 발생 파일은 pendingRetries에 추가하고 authRequired=true 반환.
+    private suspend fun uploadFilesToDrive(
+        recordId: String,
+        localFiles: List<PendingLocalFile>,
+    ): UploadOutcome {
+        if (localFiles.isEmpty()) return UploadOutcome(emptyList(), false)
+
+        val results: List<FileUploadResult> = coroutineScope {
+            localFiles.map { file ->
+                async {
+                    val stream = file.openStream()
+                    if (stream == null) {
+                        _pendingAttachments.update { it.filter { a -> a.fileId != file.tempId } }
+                        _attachmentUploadError.value = "파일을 열 수 없습니다: ${file.fileName}"
+                        return@async FileUploadResult.Failed
+                    }
+                    try {
+                        val attachment = driveRepository.uploadFile(recordId, stream, file.fileName, file.mimeType)
+                        _pendingAttachments.update { list ->
+                            list.map { if (it.fileId == file.tempId) attachment else it }
+                        }
+                        FileUploadResult.Success(attachment)
+                    } catch (e: DriveAuthRequiredException) {
+                        Log.e(TAG, "Drive 업로드 인증 필요: fileName=${file.fileName}", e)
+                        FileUploadResult.AuthRequired(file, e)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Drive 업로드 실패: fileName=${file.fileName}", e)
+                        _pendingAttachments.update { it.filter { a -> a.fileId != file.tempId } }
+                        _attachmentUploadError.value = "파일 업로드에 실패했습니다: ${e.localizedMessage ?: "알 수 없는 오류"}"
+                        FileUploadResult.Failed
+                    }
+                }
+            }.awaitAll()
+        }
+
+        val authFailures = results.filterIsInstance<FileUploadResult.AuthRequired>()
+        if (authFailures.isNotEmpty()) {
+            authFailures.forEach { r ->
+                pendingRetries.add(PendingRetryUpload(r.file.tempId, r.file.openStream, r.file.fileName, r.file.mimeType, recordId))
+            }
+            _driveAuthRecoveryIntent.value = authFailures.first().exception.recoveryIntent
+            val uploaded = results.filterIsInstance<FileUploadResult.Success>().map { it.attachment }
+            return UploadOutcome(uploaded = uploaded, authRequired = true)
+        }
+
+        val uploaded = results.filterIsInstance<FileUploadResult.Success>().map { it.attachment }
+        return UploadOutcome(uploaded = uploaded, authRequired = false)
+    }
+
+    private fun deleteFilesFromDrive(fileIds: List<String>, label: String) {
+        fileIds.forEach { fileId ->
+            viewModelScope.launch {
+                runCatching { driveRepository.deleteFile(fileId) }
+                    .onFailure { e -> Log.w(TAG, "Drive GC 실패 ($label): fileId=$fileId", e) }
+            }
+        }
+    }
+
     // ── CRUD ─────────────────────────────────────────────────────────────────────
 
     fun addRecord(record: CatRecord) {
-        val attachments = _pendingAttachments.value
-        _pendingAttachments.value = emptyList()
-        resetPendingRecordFolder()
+        val localFiles = pendingLocalFiles.toList()
+        pendingLocalFiles.clear()
+
         viewModelScope.launch {
-            runCatching { repository.addRecord(record.copy(attachments = attachments)) }
-                .onFailure {
-                    _uiState.value = DiaryUiState.Error(
-                        "새 기록 저장에 실패했습니다: ${it.localizedMessage ?: "알 수 없는 오류"}"
-                    )
+            _isUploadingAttachment.value = true
+            runCatching {
+                // 1. Firestore에 첨부파일 없이 저장 → firestoreId 반환
+                val firestoreId = repository.addRecord(record.copy(attachments = emptyList()))
+
+                // 2. firestoreId 기준으로 Drive 업로드
+                val outcome = uploadFilesToDrive(firestoreId, localFiles)
+
+                if (outcome.authRequired) {
+                    // 인증 완료 후 재시도 시 Firestore 업데이트를 위해 컨텍스트 보관
+                    retryCompletionRecord = record.copy(firestoreId = firestoreId, attachments = outcome.uploaded)
+                } else {
+                    // 3. 업로드된 첨부파일로 Firestore 업데이트
+                    if (outcome.uploaded.isNotEmpty()) {
+                        repository.updateRecord(record.copy(firestoreId = firestoreId, attachments = outcome.uploaded))
+                    }
+                    _pendingAttachments.value = emptyList()
+                    _saveCompleted.value = true
                 }
+            }.onFailure { e ->
+                _uiState.value = DiaryUiState.Error(
+                    "새 기록 저장에 실패했습니다: ${e.localizedMessage ?: "알 수 없는 오류"}"
+                )
+            }
+            _isUploadingAttachment.value = false
         }
     }
 
     fun updateRecord(original: CatRecord, updated: CatRecord) {
-        val newAttachments = _pendingAttachments.value
-        _pendingAttachments.value = emptyList()
-        resetPendingRecordFolder()
-
-        val finalRecord = updated.copy(attachments = updated.attachments + newAttachments)
-        val removedAttachments = original.attachments.filter { orig ->
-            finalRecord.attachments.none { it.fileId == orig.fileId }
-        }
+        val localFiles = pendingLocalFiles.toList()
+        pendingLocalFiles.clear()
 
         viewModelScope.launch {
-            runCatching { repository.updateRecord(finalRecord) }
-                .onSuccess {
-                    removedAttachments.forEach { attachment ->
-                        runCatching { driveRepository.deleteFile(attachment.fileId) }
-                            .onFailure { e -> Log.w(TAG, "Drive GC 실패 (record 수정): fileId=${attachment.fileId}", e) }
-                    }
+            _isUploadingAttachment.value = true
+            runCatching {
+                val firestoreId = updated.firestoreId
+                    ?: throw IllegalArgumentException("수정할 기록의 ID가 없습니다")
+
+                // 1. 새 파일들을 firestoreId 기준으로 Drive 업로드
+                val outcome = uploadFilesToDrive(firestoreId, localFiles)
+
+                val finalAttachments = updated.attachments + outcome.uploaded
+
+                if (outcome.authRequired) {
+                    // 인증 완료 후 재시도 시 Firestore 업데이트를 위해 컨텍스트 보관
+                    retryCompletionRecord = updated.copy(attachments = finalAttachments)
+                } else {
+                    // 2. Firestore 업데이트
+                    val finalRecord = updated.copy(attachments = finalAttachments)
+                    repository.updateRecord(finalRecord)
+
+                    // 3. 삭제된 첨부파일 Drive GC (병렬)
+                    val removedIds = original.attachments
+                        .filter { orig -> finalRecord.attachments.none { it.fileId == orig.fileId } }
+                        .map { it.fileId }
+                    deleteFilesFromDrive(removedIds, "record 수정")
+
+                    _pendingAttachments.value = emptyList()
+                    _saveCompleted.value = true
                 }
-                .onFailure {
-                    _uiState.value = DiaryUiState.Error(
-                        "기록 수정에 실패했습니다: ${it.localizedMessage ?: "알 수 없는 오류"}"
-                    )
-                }
+            }.onFailure { e ->
+                _uiState.value = DiaryUiState.Error(
+                    "기록 수정에 실패했습니다: ${e.localizedMessage ?: "알 수 없는 오류"}"
+                )
+            }
+            _isUploadingAttachment.value = false
         }
     }
 
@@ -270,10 +407,10 @@ class DiaryViewModel(
         viewModelScope.launch {
             runCatching { repository.deleteRecord(firestoreId) }
                 .onSuccess {
-                    record?.attachments?.forEach { attachment ->
-                        runCatching { driveRepository.deleteFile(attachment.fileId) }
-                            .onFailure { e -> Log.w(TAG, "Drive GC 실패 (record 삭제): fileId=${attachment.fileId}", e) }
-                    }
+                    deleteFilesFromDrive(
+                        record?.attachments?.map { it.fileId } ?: emptyList(),
+                        "record 삭제",
+                    )
                 }
                 .onFailure {
                     _uiState.value = DiaryUiState.Error(

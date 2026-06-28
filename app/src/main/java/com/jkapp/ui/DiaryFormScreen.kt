@@ -104,6 +104,14 @@ fun DiaryFormScreen(
         }
     }
 
+    val saveCompleted by viewModel.saveCompleted.collectAsStateWithLifecycle()
+    LaunchedEffect(saveCompleted) {
+        if (saveCompleted) {
+            viewModel.consumeSaveCompleted()
+            onBack()
+        }
+    }
+
     val driveAuthRecoveryIntent by viewModel.driveAuthRecoveryIntent.collectAsStateWithLifecycle()
     val driveAuthLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
@@ -123,29 +131,31 @@ fun DiaryFormScreen(
     }
 
     val filePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri ->
-        uri ?: return@rememberLauncherForActivityResult
-        val mimeType = context.contentResolver.getType(uri) ?: "application/octet-stream"
-        var resolvedName = uri.lastPathSegment ?: "attachment"
-        var resolvedSize = 0L
-        context.contentResolver.query(
-            uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null
-        )?.use { cursor ->
-            if (cursor.moveToFirst()) {
-                val nameIdx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                val sizeIdx = cursor.getColumnIndex(OpenableColumns.SIZE)
-                if (nameIdx >= 0) resolvedName = cursor.getString(nameIdx) ?: resolvedName
-                if (sizeIdx >= 0 && !cursor.isNull(sizeIdx)) resolvedSize = cursor.getLong(sizeIdx)
-            }
-        }
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
         val contentResolver = context.contentResolver
-        viewModel.uploadAttachment(
-            openStream = { contentResolver.openInputStream(uri) },
-            fileName = resolvedName,
-            mimeType = mimeType,
-            size = resolvedSize,
-        )
+        uris.forEach { uri ->
+            val mimeType = contentResolver.getType(uri) ?: "application/octet-stream"
+            var resolvedName = uri.lastPathSegment ?: "attachment"
+            var resolvedSize = 0L
+            contentResolver.query(
+                uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val nameIdx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    val sizeIdx = cursor.getColumnIndex(OpenableColumns.SIZE)
+                    if (nameIdx >= 0) resolvedName = cursor.getString(nameIdx) ?: resolvedName
+                    if (sizeIdx >= 0 && !cursor.isNull(sizeIdx)) resolvedSize = cursor.getLong(sizeIdx)
+                }
+            }
+            viewModel.addLocalFile(
+                openStream = { contentResolver.openInputStream(uri) },
+                fileName = resolvedName,
+                mimeType = mimeType,
+                size = resolvedSize,
+            )
+        }
     }
 
     val onCancel = {
@@ -334,7 +344,6 @@ fun DiaryFormScreen(
                     } else {
                         viewModel.addRecord(record)
                     }
-                    onBack()
                 },
                 enabled = isValid && !isUploadingAttachment,
                 modifier = Modifier.fillMaxWidth()

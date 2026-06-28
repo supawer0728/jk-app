@@ -72,9 +72,9 @@ class FirestoreRepositoryImpl : FirestoreRepository {
         awaitClose { listener.remove() }
     }
 
-    override suspend fun addRecord(record: CatRecord): Unit = suspendCancellableCoroutine { cont ->
+    override suspend fun addRecord(record: CatRecord): String = suspendCancellableCoroutine { cont ->
         recordsRef.add(record.toMap())
-            .addOnSuccessListener { cont.resume(Unit) }
+            .addOnSuccessListener { docRef -> cont.resume(docRef.id) }
             .addOnFailureListener { cont.resumeWithException(it) }
     }
 
