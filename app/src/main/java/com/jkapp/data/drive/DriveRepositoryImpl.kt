@@ -33,7 +33,9 @@ class DriveRepositoryImpl(context: Context) : DriveRepository {
         fileName: String,
         mimeType: String,
     ): Attachment = withContext(Dispatchers.IO) {
-        checkNotNull(credential.selectedAccountName) { "Drive 계정이 설정되지 않았습니다." }
+        if (credential.selectedAccountName == null) {
+            throw DriveAuthRequiredException(credential.newChooseAccountIntent())
+        }
         try {
             val drive = buildDriveService()
             val folderId = getOrCreateAttachmentFolder(drive, recordId)
@@ -67,7 +69,9 @@ class DriveRepositoryImpl(context: Context) : DriveRepository {
     }
 
     override suspend fun downloadFile(fileId: String): InputStream = withContext(Dispatchers.IO) {
-        checkNotNull(credential.selectedAccountName) { "Drive 계정이 설정되지 않았습니다." }
+        if (credential.selectedAccountName == null) {
+            throw DriveAuthRequiredException(credential.newChooseAccountIntent())
+        }
         try {
             buildDriveService().files().get(fileId).executeMediaAsInputStream()
         } catch (e: UserRecoverableAuthIOException) {

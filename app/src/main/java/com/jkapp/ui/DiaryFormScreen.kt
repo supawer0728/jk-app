@@ -1,5 +1,6 @@
 package com.jkapp.ui
 
+import android.accounts.AccountManager
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -106,7 +107,12 @@ fun DiaryFormScreen(
     val driveAuthRecoveryIntent by viewModel.driveAuthRecoveryIntent.collectAsStateWithLifecycle()
     val driveAuthLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
-    ) { viewModel.clearDriveAuthRecoveryIntent() }
+    ) { result ->
+        result.data?.getStringExtra(AccountManager.KEY_ACCOUNT_NAME)?.let { accountName ->
+            viewModel.onDriveAccountSelected(accountName)
+        }
+        viewModel.clearDriveAuthRecoveryIntent()
+    }
     LaunchedEffect(driveAuthRecoveryIntent) {
         driveAuthRecoveryIntent?.let { driveAuthLauncher.launch(it) }
     }

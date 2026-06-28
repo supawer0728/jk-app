@@ -76,7 +76,9 @@ class DiaryViewModel(
         viewModelScope.launch {
             authRepository.observeAuthState().collect { isLoggedIn ->
                 if (isLoggedIn) {
-                    authRepository.getCurrentUserEmail()?.let { driveRepository.setAccount(it) }
+                    val email = authRepository.getCurrentUserEmail()
+                    Log.d(TAG, "로그인 감지: email=$email")
+                    email?.let { driveRepository.setAccount(it) }
                     startDataCollection()
                 } else {
                     dataJob?.cancel()
