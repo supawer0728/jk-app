@@ -1,8 +1,6 @@
 package com.jkapp.data.firestore
 
-import android.util.Log
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.Query
 import com.jkapp.data.model.CatRecord
 import com.jkapp.data.model.CatRecordType
 import kotlinx.coroutines.channels.awaitClose
@@ -24,7 +22,7 @@ class FirestoreRepositoryImpl : FirestoreRepository {
                 close(error)
                 return@addSnapshotListener
             }
-            val types = snapshot?.documents?.mapNotNull { doc ->
+            val types = snapshot?.documents?.map { doc ->
                 val id = doc.getString(FIELD_ID) ?: doc.id
                 CatRecordType(
                     id = id,
@@ -34,12 +32,7 @@ class FirestoreRepositoryImpl : FirestoreRepository {
                     backgroundColor = doc.getString(FIELD_BG_COLOR_CAMEL) ?: doc.getString(FIELD_BG_COLOR_SNAKE) ?: "#FFFFFF",
                     docId = doc.id,
                 )
-            } ?: emptyList()
-
-            Log.d(TAG, "Loaded RecordTypes: count=${types.size}")
-            types.take(3).forEach {
-                Log.d(TAG, "  Type: id=${it.id}, name=${it.name}, emoji=${it.emoji}")
-            }
+            }?.sortedBy { it.name } ?: emptyList()
 
             trySend(types)
         }
@@ -48,7 +41,6 @@ class FirestoreRepositoryImpl : FirestoreRepository {
 
     override fun getRecords(): Flow<List<CatRecord>> = callbackFlow {
         val listener = recordsRef
-            .orderBy(FIELD_DATE, Query.Direction.DESCENDING)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     close(error)
@@ -63,11 +55,6 @@ class FirestoreRepositoryImpl : FirestoreRepository {
                     )
                 } ?: emptyList()
 
-                Log.d(TAG, "Loaded Records: count=${records.size}")
-                records.take(3).forEach {
-                    Log.d(TAG, "  Record: date=${it.date}, type=${it.recordType}, content=${it.record.take(20)}...")
-                }
-
                 trySend(records)
             }
         awaitClose { listener.remove() }
@@ -81,7 +68,7 @@ class FirestoreRepositoryImpl : FirestoreRepository {
 
     override suspend fun updateRecord(record: CatRecord): Unit = suspendCancellableCoroutine { cont ->
         val id = record.firestoreId ?: run {
-            cont.resume(Unit)
+            cont.resumeWithException(IllegalArgumentException("수정할 기록의 ID가 없습니다"))
             return@suspendCancellableCoroutine
         }
         recordsRef.document(id).update(record.toMap())
@@ -130,8 +117,6 @@ class FirestoreRepositoryImpl : FirestoreRepository {
     )
 
     companion object {
-        private const val TAG = "FirestoreRepo"
-
         // Collections
         private const val COLLECTION_RECORD_TYPES = "cat-record-types"
         private const val COLLECTION_RECORDS = "cat-records"

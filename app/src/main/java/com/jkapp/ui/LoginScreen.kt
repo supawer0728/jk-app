@@ -54,6 +54,8 @@ fun LoginScreen(viewModel: AuthViewModel) {
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     val webClientId = stringResource(R.string.default_web_client_id)
+    val loginErrorFailed = stringResource(R.string.login_error_failed)
+    val loginErrorGoogle = stringResource(R.string.login_error_google)
     val credentialManager = remember { CredentialManager.create(context) }
 
     Box(
@@ -80,7 +82,7 @@ fun LoginScreen(viewModel: AuthViewModel) {
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "시작하려면 로그인하세요",
+                    text = stringResource(R.string.login_subtitle),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -104,13 +106,13 @@ fun LoginScreen(viewModel: AuthViewModel) {
                                     .createFrom(result.credential.data)
                                     .idToken
                                 viewModel.firebaseAuthWithGoogle(idToken) { success ->
-                                    if (!success) errorMessage = "로그인에 실패했습니다. 다시 시도해 주세요."
+                                    if (!success) errorMessage = loginErrorFailed
                                     isLoading = false
                                 }
                             } catch (_: GetCredentialCancellationException) {
                                 isLoading = false
                             } catch (_: GetCredentialException) {
-                                errorMessage = "Google 로그인 오류가 발생했습니다."
+                                errorMessage = loginErrorGoogle
                                 isLoading = false
                             }
                         }

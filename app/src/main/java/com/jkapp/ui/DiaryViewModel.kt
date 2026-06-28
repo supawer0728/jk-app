@@ -2,7 +2,8 @@ package com.jkapp.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.google.firebase.auth.FirebaseAuth
+import com.jkapp.auth.AuthRepository
+import com.jkapp.auth.FirebaseAuthRepository
 import com.jkapp.data.firestore.FirestoreRepository
 import com.jkapp.data.firestore.FirestoreRepositoryImpl
 import com.jkapp.data.model.CatRecord
@@ -13,6 +14,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -20,10 +22,10 @@ import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.Locale
 
-class DiaryViewModel : ViewModel() {
-
-    private val repository: FirestoreRepository = FirestoreRepositoryImpl()
-    private val auth = FirebaseAuth.getInstance()
+class DiaryViewModel(
+    private val repository: FirestoreRepository = FirestoreRepositoryImpl(),
+    authRepository: AuthRepository = FirebaseAuthRepository(),
+) : ViewModel() {
 
     private val _uiState = MutableStateFlow<DiaryUiState>(DiaryUiState.Loading)
     val uiState: StateFlow<DiaryUiState> = _uiState.asStateFlow()
@@ -32,30 +34,31 @@ class DiaryViewModel : ViewModel() {
     val selectedTypeIds: StateFlow<Set<String>> = _selectedTypeIds.asStateFlow()
 
     private var dataJob: Job? = null
-    private val authListener = FirebaseAuth.AuthStateListener { firebaseAuth ->
-        if (firebaseAuth.currentUser != null) {
-            startDataCollection()
-        } else {
-            dataJob?.cancel()
-            _uiState.value = DiaryUiState.Loading
-        }
-    }
 
     init {
-        auth.addAuthStateListener(authListener)
+        viewModelScope.launch {
+            authRepository.observeAuthState().collect { isLoggedIn ->
+                if (isLoggedIn) {
+                    startDataCollection()
+                } else {
+                    dataJob?.cancel()
+                    _uiState.value = DiaryUiState.Loading
+                }
+            }
+        }
     }
 
     private fun startDataCollection() {
         dataJob?.cancel()
         dataJob = viewModelScope.launch {
             combine(
-                repository.getRecordTypes(),
+                repository.getRecordTypes().onStart { emit(emptyList()) },
                 repository.getRecords(),
             ) { types, records ->
                 DiaryUiState.Success(records = records, recordTypes = types) as DiaryUiState
             }
-                .catch { e -> 
-                    emit(DiaryUiState.Error("기록을 불러오는 중 오류가 발생했습니다: ${e.localizedMessage ?: "알 수 없는 오류"}")) 
+                .catch { e ->
+                    emit(DiaryUiState.Error("기록을 불러오는 중 오류가 발생했습니다: ${e.localizedMessage ?: "알 수 없는 오류"}"))
                 }
                 .collect { _uiState.value = it }
         }
@@ -63,15 +66,14 @@ class DiaryViewModel : ViewModel() {
 
     override fun onCleared() {
         super.onCleared()
-        auth.removeAuthStateListener(authListener)
         dataJob?.cancel()
     }
 
     fun addRecord(record: CatRecord) {
         viewModelScope.launch {
             runCatching { repository.addRecord(record) }
-                .onFailure { 
-                    _uiState.value = DiaryUiState.Error("새 기록 저장에 실패했습니다: ${it.localizedMessage ?: "알 수 없는 오류"}") 
+                .onFailure {
+                    _uiState.value = DiaryUiState.Error("새 기록 저장에 실패했습니다: ${it.localizedMessage ?: "알 수 없는 오류"}")
                 }
         }
     }
@@ -79,8 +81,8 @@ class DiaryViewModel : ViewModel() {
     fun updateRecord(record: CatRecord) {
         viewModelScope.launch {
             runCatching { repository.updateRecord(record) }
-                .onFailure { 
-                    _uiState.value = DiaryUiState.Error("기록 수정에 실패했습니다: ${it.localizedMessage ?: "알 수 없는 오류"}") 
+                .onFailure {
+                    _uiState.value = DiaryUiState.Error("기록 수정에 실패했습니다: ${it.localizedMessage ?: "알 수 없는 오류"}")
                 }
         }
     }
@@ -103,8 +105,10 @@ class DiaryViewModel : ViewModel() {
     }
 
     fun addRecordType(type: CatRecordType) {
-        if (type.id in SYSTEM_TYPE_IDS) {
-            _uiState.value = DiaryUiState.Error("시스템 필수 유형 ID는 사용할 수 없습니다.")
+        val existingIds = (uiState.value as? DiaryUiState.Success)?.recordTypes?.map { it.id }.orEmpty()
+        val error = validateNewRecordType(type, existingIds)
+        if (error != null) {
+            _uiState.value = DiaryUiState.Error(error)
             return
         }
         viewModelScope.launch {
@@ -126,10 +130,10 @@ class DiaryViewModel : ViewModel() {
 
     fun deleteRecordType(docId: String) {
         val typeId = (uiState.value as? DiaryUiState.Success)
-            ?.recordTypes?.find { it.docId == docId || it.id == docId }?.id
-        val isSystemType = docId in SYSTEM_TYPE_IDS || typeId in SYSTEM_TYPE_IDS
-        if (typeId == null || isSystemType) {
-            if (isSystemType) _uiState.value = DiaryUiState.Error("시스템 필수 유형은 삭제할 수 없습니다.")
+            ?.recordTypes?.find { it.docId == docId }?.id
+        val error = validateDeleteRecordType(typeId)
+        if (error != null) {
+            _uiState.value = DiaryUiState.Error(error)
             return
         }
         viewModelScope.launch {
@@ -159,5 +163,16 @@ class DiaryViewModel : ViewModel() {
             LocalDate.parse(date, DateTimeFormatter.ISO_LOCAL_DATE)
                 .dayOfWeek
                 .getDisplayName(TextStyle.SHORT, Locale.KOREAN)
+
+        fun validateNewRecordType(type: CatRecordType, existingIds: List<String>): String? {
+            if (type.id in SYSTEM_TYPE_IDS) return "시스템 필수 유형 ID는 사용할 수 없습니다."
+            if (type.id in existingIds) return "이미 존재하는 기록유형 ID입니다: ${type.id}"
+            return null
+        }
+
+        fun validateDeleteRecordType(typeId: String?): String? {
+            if (typeId in SYSTEM_TYPE_IDS) return "시스템 필수 유형은 삭제할 수 없습니다."
+            return null
+        }
     }
 }

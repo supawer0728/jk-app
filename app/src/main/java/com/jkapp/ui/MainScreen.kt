@@ -54,7 +54,7 @@ fun MainScreen(
     diaryViewModel: DiaryViewModel,
     onNavigateToDetail: (String) -> Unit,
     onNavigateToAdd: () -> Unit,
-    onNavigateToRecordTypeManagement: () -> Unit
+    onNavigateToRecordTypeManagement: () -> Unit,
 ) {
     val user by viewModel.user.collectAsStateWithLifecycle()
     val currentUser = user ?: return

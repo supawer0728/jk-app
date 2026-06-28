@@ -1,0 +1,243 @@
+package com.jkapp.ui
+
+import com.jkapp.auth.FakeAuthRepository
+import com.jkapp.data.firestore.FakeFirestoreRepository
+import com.jkapp.data.model.CatRecord
+import com.jkapp.data.model.CatRecordType
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class DiaryViewModelTest {
+
+    private val testDispatcher = StandardTestDispatcher()
+    private lateinit var fakeRepository: FakeFirestoreRepository
+    private lateinit var fakeAuth: FakeAuthRepository
+    private lateinit var viewModel: DiaryViewModel
+
+    @Before
+    fun setUp() {
+        Dispatchers.setMain(testDispatcher)
+        fakeRepository = FakeFirestoreRepository()
+        fakeAuth = FakeAuthRepository(initialLoggedIn = false)
+        viewModel = DiaryViewModel(repository = fakeRepository, authRepository = fakeAuth)
+    }
+
+    @After
+    fun tearDown() {
+        Dispatchers.resetMain()
+    }
+
+    // --- 인증 상태 ---
+
+    @Test
+    fun `로그아웃 상태에서 uiState는 Loading이다`() = runTest {
+        advanceUntilIdle()
+        assertEquals(DiaryUiState.Loading, viewModel.uiState.value)
+    }
+
+    @Test
+    fun `로그인하면 데이터 수집이 시작되어 Success 상태가 된다`() = runTest {
+        val types = listOf(makeType("DAILY_NOTE", "일상"))
+        val records = listOf(makeRecord("2024-01-01"))
+        fakeRepository.setRecordTypes(types)
+        fakeRepository.setRecords(records)
+
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as DiaryUiState.Success
+        assertEquals(types, state.recordTypes)
+        assertEquals(records, state.records)
+    }
+
+    @Test
+    fun `로그인 후 로그아웃하면 uiState가 Loading으로 돌아온다`() = runTest {
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+
+        fakeAuth.setLoggedIn(false)
+        advanceUntilIdle()
+
+        assertEquals(DiaryUiState.Loading, viewModel.uiState.value)
+    }
+
+    // --- addRecord ---
+
+    @Test
+    fun `addRecord 실패 시 uiState가 Error가 된다`() = runTest {
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+
+        fakeRepository.addRecordError = RuntimeException("저장 실패")
+        viewModel.addRecord(makeRecord("2024-01-01"))
+        advanceUntilIdle()
+
+        val error = viewModel.uiState.value as DiaryUiState.Error
+        assertTrue(error.message.contains("새 기록 저장에 실패했습니다"))
+    }
+
+    // --- updateRecord ---
+
+    @Test
+    fun `updateRecord 실패 시 uiState가 Error가 된다`() = runTest {
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+
+        fakeRepository.updateRecordError = RuntimeException("수정 실패")
+        viewModel.updateRecord(makeRecord("2024-01-01", firestoreId = "id1"))
+        advanceUntilIdle()
+
+        val error = viewModel.uiState.value as DiaryUiState.Error
+        assertTrue(error.message.contains("기록 수정에 실패했습니다"))
+    }
+
+    // --- deleteRecord ---
+
+    @Test
+    fun `deleteRecord 실패 시 uiState가 Error가 된다`() = runTest {
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+
+        fakeRepository.deleteRecordError = RuntimeException("삭제 실패")
+        viewModel.deleteRecord("nonexistent-id")
+        advanceUntilIdle()
+
+        val error = viewModel.uiState.value as DiaryUiState.Error
+        assertTrue(error.message.contains("기록 삭제에 실패했습니다"))
+    }
+
+    // --- addRecordType ---
+
+    @Test
+    fun `addRecordType에서 시스템 ID 사용 시 Error 상태가 된다`() = runTest {
+        fakeAuth.setLoggedIn(true)
+        fakeRepository.setRecordTypes(emptyList())
+        advanceUntilIdle()
+
+        viewModel.addRecordType(makeType("DAILY_NOTE", "일상"))
+        advanceUntilIdle()
+
+        val error = viewModel.uiState.value as DiaryUiState.Error
+        assertTrue(error.message.contains("시스템 필수 유형 ID"))
+    }
+
+    @Test
+    fun `addRecordType에서 중복 ID 사용 시 Error 상태가 된다`() = runTest {
+        fakeAuth.setLoggedIn(true)
+        fakeRepository.setRecordTypes(listOf(makeType("CUSTOM_TYPE", "커스텀")))
+        advanceUntilIdle()
+
+        viewModel.addRecordType(makeType("CUSTOM_TYPE", "다른 이름"))
+        advanceUntilIdle()
+
+        val error = viewModel.uiState.value as DiaryUiState.Error
+        assertTrue(error.message.contains("이미 존재하는 기록유형 ID"))
+    }
+
+    @Test
+    fun `addRecordType 저장 실패 시 uiState가 Error가 된다`() = runTest {
+        fakeAuth.setLoggedIn(true)
+        fakeRepository.setRecordTypes(emptyList())
+        advanceUntilIdle()
+
+        fakeRepository.addRecordTypeError = RuntimeException("저장 실패")
+        viewModel.addRecordType(makeType("NEW_TYPE", "새 유형"))
+        advanceUntilIdle()
+
+        val error = viewModel.uiState.value as DiaryUiState.Error
+        assertTrue(error.message.contains("기록유형 저장에 실패했습니다"))
+    }
+
+    // --- deleteRecordType ---
+
+    @Test
+    fun `deleteRecordType에서 시스템 유형 삭제 시도 시 Error 상태가 된다`() = runTest {
+        val systemType = makeType("DAILY_NOTE", "일상", docId = "doc-daily")
+        fakeAuth.setLoggedIn(true)
+        fakeRepository.setRecordTypes(listOf(systemType))
+        advanceUntilIdle()
+
+        viewModel.deleteRecordType("doc-daily")
+        advanceUntilIdle()
+
+        val error = viewModel.uiState.value as DiaryUiState.Error
+        assertTrue(error.message.contains("시스템 필수 유형은 삭제할 수 없습니다"))
+    }
+
+    @Test
+    fun `deleteRecordType 저장 실패 시 uiState가 Error가 된다`() = runTest {
+        val customType = makeType("CUSTOM", "커스텀", docId = "doc-custom")
+        fakeAuth.setLoggedIn(true)
+        fakeRepository.setRecordTypes(listOf(customType))
+        advanceUntilIdle()
+
+        fakeRepository.deleteRecordTypeError = RuntimeException("삭제 실패")
+        viewModel.deleteRecordType("doc-custom")
+        advanceUntilIdle()
+
+        val error = viewModel.uiState.value as DiaryUiState.Error
+        assertTrue(error.message.contains("기록유형 삭제에 실패했습니다"))
+    }
+
+    // --- toggleTypeFilter ---
+
+    @Test
+    fun `toggleTypeFilter 호출 시 selectedTypeIds에 ID가 추가된다`() = runTest {
+        viewModel.toggleTypeFilter("DAILY_NOTE")
+        advanceUntilIdle()
+
+        assertTrue("DAILY_NOTE" in viewModel.selectedTypeIds.value)
+    }
+
+    @Test
+    fun `toggleTypeFilter를 같은 ID로 두 번 호출하면 selectedTypeIds에서 제거된다`() = runTest {
+        viewModel.toggleTypeFilter("DAILY_NOTE")
+        viewModel.toggleTypeFilter("DAILY_NOTE")
+        advanceUntilIdle()
+
+        assertTrue("DAILY_NOTE" !in viewModel.selectedTypeIds.value)
+    }
+
+    // --- clearTypeFilter ---
+
+    @Test
+    fun `clearTypeFilter 호출 시 selectedTypeIds가 비워진다`() = runTest {
+        viewModel.toggleTypeFilter("DAILY_NOTE")
+        viewModel.toggleTypeFilter("HOSPITAL_VISIT")
+        advanceUntilIdle()
+
+        viewModel.clearTypeFilter()
+        advanceUntilIdle()
+
+        assertTrue(viewModel.selectedTypeIds.value.isEmpty())
+    }
+
+    // --- helpers ---
+
+    private fun makeRecord(date: String, firestoreId: String? = null) = CatRecord(
+        firestoreId = firestoreId,
+        date = date,
+        recordType = "DAILY_NOTE",
+        record = "테스트 기록",
+    )
+
+    private fun makeType(id: String, name: String, docId: String = "") = CatRecordType(
+        id = id,
+        name = name,
+        emoji = "📝",
+        fontColor = "#000000",
+        backgroundColor = "#FFFFFF",
+        docId = docId,
+    )
+}
