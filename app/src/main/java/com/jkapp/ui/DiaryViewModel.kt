@@ -2,7 +2,8 @@ package com.jkapp.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.google.firebase.auth.FirebaseAuth
+import com.jkapp.auth.AuthRepository
+import com.jkapp.auth.FirebaseAuthRepository
 import com.jkapp.data.firestore.FirestoreRepository
 import com.jkapp.data.firestore.FirestoreRepositoryImpl
 import com.jkapp.data.model.CatRecord
@@ -21,10 +22,10 @@ import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.Locale
 
-class DiaryViewModel : ViewModel() {
-
-    private val repository: FirestoreRepository = FirestoreRepositoryImpl()
-    private val auth = FirebaseAuth.getInstance()
+class DiaryViewModel(
+    private val repository: FirestoreRepository = FirestoreRepositoryImpl(),
+    authRepository: AuthRepository = FirebaseAuthRepository(),
+) : ViewModel() {
 
     private val _uiState = MutableStateFlow<DiaryUiState>(DiaryUiState.Loading)
     val uiState: StateFlow<DiaryUiState> = _uiState.asStateFlow()
@@ -33,17 +34,18 @@ class DiaryViewModel : ViewModel() {
     val selectedTypeIds: StateFlow<Set<String>> = _selectedTypeIds.asStateFlow()
 
     private var dataJob: Job? = null
-    private val authListener = FirebaseAuth.AuthStateListener { firebaseAuth ->
-        if (firebaseAuth.currentUser != null) {
-            startDataCollection()
-        } else {
-            dataJob?.cancel()
-            _uiState.value = DiaryUiState.Loading
-        }
-    }
 
     init {
-        auth.addAuthStateListener(authListener)
+        viewModelScope.launch {
+            authRepository.observeAuthState().collect { isLoggedIn ->
+                if (isLoggedIn) {
+                    startDataCollection()
+                } else {
+                    dataJob?.cancel()
+                    _uiState.value = DiaryUiState.Loading
+                }
+            }
+        }
     }
 
     private fun startDataCollection() {
@@ -64,7 +66,6 @@ class DiaryViewModel : ViewModel() {
 
     override fun onCleared() {
         super.onCleared()
-        auth.removeAuthStateListener(authListener)
         dataJob?.cancel()
     }
 
