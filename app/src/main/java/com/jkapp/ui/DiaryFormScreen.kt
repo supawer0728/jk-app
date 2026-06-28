@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenuItem
@@ -213,13 +214,17 @@ fun DiaryFormScreen(
                 }
             }
 
-            OutlinedTextField(
-                value = recordText,
-                onValueChange = { recordText = it },
-                label = { Text(stringResource(R.string.field_record)) },
-                modifier = Modifier.fillMaxWidth(),
-                minLines = 5
-            )
+            if (!isDataReady) {
+                CircularProgressIndicator(modifier = Modifier.fillMaxWidth())
+            } else {
+                MarkdownEditorWebView(
+                    initialMarkdown = recordText,
+                    onMarkdownChanged = { recordText = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(400.dp)
+                )
+            }
 
             Spacer(modifier = Modifier.height(8.dp))
             Button(

@@ -169,10 +169,9 @@ private fun RecordDetailItem(
                 }
             }
         }
-        Text(
-            text = record.record,
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.padding(horizontal = 4.dp)
+        MarkdownViewerWebView(
+            markdown = record.record,
+            modifier = Modifier.fillMaxWidth()
         )
     }
 }

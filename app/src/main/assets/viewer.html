@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <link rel="stylesheet" href="file:///android_asset/toastui-editor.min.css">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 4px; }
+  </style>
+</head>
+<body>
+  <div id="viewer"></div>
+  <script src="file:///android_asset/toastui-editor-viewer.min.js"></script>
+  <script>
+    var viewer = toastui.Editor.factory({
+      el: document.querySelector('#viewer'),
+      viewer: true,
+      initialValue: '',
+      customHTMLRenderer: {
+        htmlBlock: {
+          iframe: function(node) {
+            return [
+              { type: 'openTag', tagName: 'iframe', selfClose: false, attributes: node.attrs },
+              { type: 'closeTag', tagName: 'iframe' }
+            ];
+          }
+        }
+      }
+    });
+
+    function setContent(markdown) {
+      viewer.setMarkdown(markdown);
+      setTimeout(function() {
+        Android.onHeightChanged(document.body.scrollHeight);
+      }, 150);
+    }
+  </script>
+</body>
+</html>
