@@ -1,6 +1,7 @@
 package com.jkapp.data.firestore
 
 import com.google.firebase.firestore.FirebaseFirestore
+import com.jkapp.data.model.Attachment
 import com.jkapp.data.model.CatRecord
 import com.jkapp.data.model.CatRecordType
 import kotlinx.coroutines.channels.awaitClose
@@ -47,11 +48,22 @@ class FirestoreRepositoryImpl : FirestoreRepository {
                     return@addSnapshotListener
                 }
                 val records = snapshot?.documents?.mapNotNull { doc ->
+                    @Suppress("UNCHECKED_CAST")
+                    val attachments = (doc.get(FIELD_ATTACHMENTS) as? List<Map<String, Any>>)
+                        ?.map { map ->
+                            Attachment(
+                                fileId = map[FIELD_ATTACHMENT_FILE_ID] as? String ?: "",
+                                name = map[FIELD_ATTACHMENT_NAME] as? String ?: "",
+                                mimeType = map[FIELD_ATTACHMENT_MIME_TYPE] as? String ?: "",
+                                size = (map[FIELD_ATTACHMENT_SIZE] as? Long) ?: 0L,
+                            )
+                        } ?: emptyList()
                     CatRecord(
                         firestoreId = doc.id,
                         date = doc.getString(FIELD_DATE) ?: return@mapNotNull null,
                         recordType = doc.getString(FIELD_RECORD_TYPE) ?: "",
                         record = doc.getString(FIELD_RECORD) ?: "",
+                        attachments = attachments,
                     )
                 } ?: emptyList()
 
@@ -115,6 +127,14 @@ class FirestoreRepositoryImpl : FirestoreRepository {
         FIELD_DATE to date,
         FIELD_RECORD_TYPE to recordType,
         FIELD_RECORD to record,
+        FIELD_ATTACHMENTS to attachments.map { it.toMap() },
+    )
+
+    private fun Attachment.toMap() = mapOf(
+        FIELD_ATTACHMENT_FILE_ID to fileId,
+        FIELD_ATTACHMENT_NAME to name,
+        FIELD_ATTACHMENT_MIME_TYPE to mimeType,
+        FIELD_ATTACHMENT_SIZE to size,
     )
 
     private fun CatRecordType.toMap() = mapOf(
@@ -143,5 +163,12 @@ class FirestoreRepositoryImpl : FirestoreRepository {
         private const val FIELD_DATE = "date"
         private const val FIELD_RECORD_TYPE = "record_type"
         private const val FIELD_RECORD = "record"
+        private const val FIELD_ATTACHMENTS = "attachments"
+
+        // Field names - Attachment
+        private const val FIELD_ATTACHMENT_FILE_ID = "fileId"
+        private const val FIELD_ATTACHMENT_NAME = "name"
+        private const val FIELD_ATTACHMENT_MIME_TYPE = "mimeType"
+        private const val FIELD_ATTACHMENT_SIZE = "size"
     }
 }

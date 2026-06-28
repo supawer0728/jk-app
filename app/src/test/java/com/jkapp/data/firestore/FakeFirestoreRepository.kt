@@ -28,8 +28,11 @@ class FakeFirestoreRepository : FirestoreRepository {
         _records.value = _records.value + record
     }
 
+    var lastUpdatedRecord: CatRecord? = null
+
     override suspend fun updateRecord(record: CatRecord) {
         updateRecordError?.let { throw it }
+        lastUpdatedRecord = record
     }
 
     override suspend fun deleteRecord(firestoreId: String) {

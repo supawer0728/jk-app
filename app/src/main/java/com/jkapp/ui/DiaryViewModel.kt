@@ -4,8 +4,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.jkapp.auth.AuthRepository
 import com.jkapp.auth.FirebaseAuthRepository
+import com.jkapp.data.drive.DriveRepository
+import com.jkapp.data.drive.DriveRepositoryImpl
 import com.jkapp.data.firestore.FirestoreRepository
 import com.jkapp.data.firestore.FirestoreRepositoryImpl
+import com.jkapp.data.model.Attachment
 import com.jkapp.data.model.CatRecord
 import com.jkapp.data.model.CatRecordType
 import kotlinx.coroutines.Job
@@ -17,13 +20,16 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.InputStream
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.Locale
+import java.util.UUID
 
 class DiaryViewModel(
     private val repository: FirestoreRepository = FirestoreRepositoryImpl(),
+    private val driveRepository: DriveRepository = DriveRepositoryImpl(),
     authRepository: AuthRepository = FirebaseAuthRepository(),
 ) : ViewModel() {
 
@@ -32,6 +38,18 @@ class DiaryViewModel(
 
     private val _selectedTypeIds = MutableStateFlow<Set<String>>(emptySet())
     val selectedTypeIds: StateFlow<Set<String>> = _selectedTypeIds.asStateFlow()
+
+    private val _pendingAttachments = MutableStateFlow<List<Attachment>>(emptyList())
+    val pendingAttachments: StateFlow<List<Attachment>> = _pendingAttachments.asStateFlow()
+
+    private val _isUploadingAttachment = MutableStateFlow(false)
+    val isUploadingAttachment: StateFlow<Boolean> = _isUploadingAttachment.asStateFlow()
+
+    private val _downloadingAttachmentIds = MutableStateFlow<Set<String>>(emptySet())
+    val downloadingAttachmentIds: StateFlow<Set<String>> = _downloadingAttachmentIds.asStateFlow()
+
+    // Temporary folder path used while a new record is being composed
+    private var pendingRecordFolderId: String = UUID.randomUUID().toString()
 
     private var dataJob: Job? = null
 
@@ -69,29 +87,112 @@ class DiaryViewModel(
         dataJob?.cancel()
     }
 
-    fun addRecord(record: CatRecord) {
+    // ── Drive 인증 ──────────────────────────────────────────────────────────────
+
+    fun onDriveAccessTokenReceived(accessToken: String) {
+        driveRepository.setAccessToken(accessToken)
+    }
+
+    // ── 첨부파일 관리 ────────────────────────────────────────────────────────────
+
+    fun uploadAttachment(inputStream: InputStream, fileName: String, mimeType: String) {
         viewModelScope.launch {
-            runCatching { repository.addRecord(record) }
+            _isUploadingAttachment.value = true
+            runCatching {
+                driveRepository.uploadFile(pendingRecordFolderId, inputStream, fileName, mimeType)
+            }.onSuccess { attachment ->
+                _pendingAttachments.update { it + attachment }
+            }.onFailure {
+                _uiState.value = DiaryUiState.Error(
+                    "파일 업로드에 실패했습니다: ${it.localizedMessage ?: "알 수 없는 오류"}"
+                )
+            }
+            _isUploadingAttachment.value = false
+        }
+    }
+
+    fun removePendingAttachment(fileId: String) {
+        _pendingAttachments.update { it.filter { a -> a.fileId != fileId } }
+        viewModelScope.launch {
+            runCatching { driveRepository.deleteFile(fileId) }
+        }
+    }
+
+    fun cancelPendingAttachments() {
+        val toDelete = _pendingAttachments.value
+        _pendingAttachments.value = emptyList()
+        resetPendingRecordFolder()
+        viewModelScope.launch {
+            toDelete.forEach { runCatching { driveRepository.deleteFile(it.fileId) } }
+        }
+    }
+
+    private fun resetPendingRecordFolder() {
+        pendingRecordFolderId = UUID.randomUUID().toString()
+    }
+
+    suspend fun downloadAttachment(fileId: String, destFile: java.io.File) {
+        _downloadingAttachmentIds.update { it + fileId }
+        try {
+            driveRepository.downloadFile(fileId).use { input ->
+                destFile.outputStream().use { output -> input.copyTo(output) }
+            }
+        } finally {
+            _downloadingAttachmentIds.update { it - fileId }
+        }
+    }
+
+    // ── CRUD ─────────────────────────────────────────────────────────────────────
+
+    fun addRecord(record: CatRecord) {
+        val attachments = _pendingAttachments.value
+        _pendingAttachments.value = emptyList()
+        resetPendingRecordFolder()
+        viewModelScope.launch {
+            runCatching { repository.addRecord(record.copy(attachments = attachments)) }
                 .onFailure {
-                    _uiState.value = DiaryUiState.Error("새 기록 저장에 실패했습니다: ${it.localizedMessage ?: "알 수 없는 오류"}")
+                    _uiState.value = DiaryUiState.Error(
+                        "새 기록 저장에 실패했습니다: ${it.localizedMessage ?: "알 수 없는 오류"}"
+                    )
                 }
         }
     }
 
-    fun updateRecord(record: CatRecord) {
+    fun updateRecord(original: CatRecord, updated: CatRecord) {
+        val newAttachments = _pendingAttachments.value
+        _pendingAttachments.value = emptyList()
+        resetPendingRecordFolder()
+
+        val finalRecord = updated.copy(attachments = updated.attachments + newAttachments)
+        val removedAttachments = original.attachments.filter { orig ->
+            finalRecord.attachments.none { it.fileId == orig.fileId }
+        }
+
         viewModelScope.launch {
-            runCatching { repository.updateRecord(record) }
+            runCatching { repository.updateRecord(finalRecord) }
+                .onSuccess {
+                    removedAttachments.forEach { runCatching { driveRepository.deleteFile(it.fileId) } }
+                }
                 .onFailure {
-                    _uiState.value = DiaryUiState.Error("기록 수정에 실패했습니다: ${it.localizedMessage ?: "알 수 없는 오류"}")
+                    _uiState.value = DiaryUiState.Error(
+                        "기록 수정에 실패했습니다: ${it.localizedMessage ?: "알 수 없는 오류"}"
+                    )
                 }
         }
     }
 
     fun deleteRecord(firestoreId: String) {
+        val record = (uiState.value as? DiaryUiState.Success)
+            ?.records?.find { it.firestoreId == firestoreId }
         viewModelScope.launch {
             runCatching { repository.deleteRecord(firestoreId) }
+                .onSuccess {
+                    record?.attachments?.forEach { runCatching { driveRepository.deleteFile(it.fileId) } }
+                }
                 .onFailure {
-                    _uiState.value = DiaryUiState.Error("기록 삭제에 실패했습니다: ${it.localizedMessage ?: "알 수 없는 오류"}")
+                    _uiState.value = DiaryUiState.Error(
+                        "기록 삭제에 실패했습니다: ${it.localizedMessage ?: "알 수 없는 오류"}"
+                    )
                 }
         }
     }
@@ -114,7 +215,9 @@ class DiaryViewModel(
         viewModelScope.launch {
             runCatching { repository.addRecordType(type) }
                 .onFailure {
-                    _uiState.value = DiaryUiState.Error("기록유형 저장에 실패했습니다: ${it.localizedMessage ?: "알 수 없는 오류"}")
+                    _uiState.value = DiaryUiState.Error(
+                        "기록유형 저장에 실패했습니다: ${it.localizedMessage ?: "알 수 없는 오류"}"
+                    )
                 }
         }
     }
@@ -123,7 +226,9 @@ class DiaryViewModel(
         viewModelScope.launch {
             runCatching { repository.updateRecordType(type) }
                 .onFailure {
-                    _uiState.value = DiaryUiState.Error("기록유형 수정에 실패했습니다: ${it.localizedMessage ?: "알 수 없는 오류"}")
+                    _uiState.value = DiaryUiState.Error(
+                        "기록유형 수정에 실패했습니다: ${it.localizedMessage ?: "알 수 없는 오류"}"
+                    )
                 }
         }
     }
@@ -143,7 +248,9 @@ class DiaryViewModel(
             runCatching {
                 repository.deleteRecordTypeAndReassignRecords(docId, affectedRecordIds, FALLBACK_RECORD_TYPE_ID)
             }.onFailure {
-                _uiState.value = DiaryUiState.Error("기록유형 삭제에 실패했습니다: ${it.localizedMessage ?: "알 수 없는 오류"}")
+                _uiState.value = DiaryUiState.Error(
+                    "기록유형 삭제에 실패했습니다: ${it.localizedMessage ?: "알 수 없는 오류"}"
+                )
             }
         }
     }

@@ -5,4 +5,5 @@ data class CatRecord(
     val date: String,
     val recordType: String,
     val record: String,
+    val attachments: List<Attachment> = emptyList(),
 )

@@ -95,7 +95,8 @@ class DiaryViewModelTest {
         advanceUntilIdle()
 
         fakeRepository.updateRecordError = RuntimeException("수정 실패")
-        viewModel.updateRecord(makeRecord("2024-01-01", firestoreId = "id1"))
+        val record = makeRecord("2024-01-01", firestoreId = "id1")
+        viewModel.updateRecord(original = record, updated = record)
         advanceUntilIdle()
 
         val error = viewModel.uiState.value as DiaryUiState.Error
