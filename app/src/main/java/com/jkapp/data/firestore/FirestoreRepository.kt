@@ -10,4 +10,7 @@ interface FirestoreRepository {
     suspend fun addRecord(record: CatRecord)
     suspend fun updateRecord(record: CatRecord)
     suspend fun deleteRecord(firestoreId: String)
+    suspend fun addRecordType(type: CatRecordType)
+    suspend fun updateRecordType(type: CatRecordType)
+    suspend fun deleteRecordType(docId: String)
 }
