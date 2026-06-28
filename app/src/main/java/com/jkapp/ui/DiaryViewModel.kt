@@ -95,7 +95,7 @@ class DiaryViewModel : ViewModel() {
     }
 
     fun toggleTypeFilter(id: String) {
-        _selectedTypeIds.update { if (id in it) it - id else it + id }
+        _selectedTypeIds.update { toggleInSet(id, it) }
     }
 
     fun clearTypeFilter() {
@@ -137,6 +137,16 @@ class DiaryViewModel : ViewModel() {
 
     companion object {
         val SYSTEM_TYPE_IDS = setOf("DAILY_NOTE", "HOSPITAL_VISIT")
+
+        fun toggleInSet(id: String, current: Set<String>): Set<String> =
+            if (id in current) current - id else current + id
+
+        fun filterRecords(records: List<CatRecord>, selectedTypeIds: Set<String>): List<CatRecord> {
+            if (selectedTypeIds.isEmpty()) return records
+            val normalizedSelected = selectedTypeIds.map { it.trim().lowercase() }.toSet()
+            return records.filter { it.recordType.trim().lowercase() in normalizedSelected }
+        }
+
         fun todayDate(): String =
             LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
 

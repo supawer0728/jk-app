@@ -73,11 +73,7 @@ fun DiaryScreen(
             }
             is DiaryUiState.Success -> {
                 val filteredRecords = remember(state.records, selectedTypeIds) {
-                    if (selectedTypeIds.isEmpty()) state.records
-                    else {
-                        val normalizedSelected = selectedTypeIds.map { it.trim().lowercase() }.toSet()
-                        state.records.filter { it.recordType.trim().lowercase() in normalizedSelected }
-                    }
+                    DiaryViewModel.filterRecords(state.records, selectedTypeIds)
                 }
                 val groupedDates = remember(filteredRecords) {
                     filteredRecords
