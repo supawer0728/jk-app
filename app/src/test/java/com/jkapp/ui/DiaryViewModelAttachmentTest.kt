@@ -71,15 +71,25 @@ class DiaryViewModelAttachmentTest {
     }
 
     @Test
-    fun `uploadAttachment 실패 시 uiState가 Error가 된다`() = runTest {
+    fun `uploadAttachment 실패 시 attachmentUploadError에 메시지가 설정된다`() = runTest {
         advanceUntilIdle()
 
         fakeDriveRepository.uploadError = RuntimeException("업로드 실패")
         viewModel.uploadAttachment("test".byteInputStream(), "test.jpg", "image/jpeg")
         advanceUntilIdle()
 
-        val error = viewModel.uiState.value as DiaryUiState.Error
-        assertTrue(error.message.contains("파일 업로드에 실패했습니다"))
+        assertTrue(viewModel.attachmentUploadError.value?.contains("파일 업로드에 실패했습니다") == true)
+    }
+
+    @Test
+    fun `uploadAttachment 실패 시 uiState는 Error가 되지 않는다`() = runTest {
+        advanceUntilIdle()
+
+        fakeDriveRepository.uploadError = RuntimeException("업로드 실패")
+        viewModel.uploadAttachment("test".byteInputStream(), "test.jpg", "image/jpeg")
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value is DiaryUiState.Success)
     }
 
     @Test

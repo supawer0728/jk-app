@@ -48,6 +48,13 @@ class DiaryViewModel(
     private val _downloadingAttachmentIds = MutableStateFlow<Set<String>>(emptySet())
     val downloadingAttachmentIds: StateFlow<Set<String>> = _downloadingAttachmentIds.asStateFlow()
 
+    private val _attachmentUploadError = MutableStateFlow<String?>(null)
+    val attachmentUploadError: StateFlow<String?> = _attachmentUploadError.asStateFlow()
+
+    fun clearAttachmentUploadError() {
+        _attachmentUploadError.value = null
+    }
+
     // Temporary folder path used while a new record is being composed
     private var pendingRecordFolderId: String = UUID.randomUUID().toString()
 
@@ -95,17 +102,21 @@ class DiaryViewModel(
 
     // ── 첨부파일 관리 ────────────────────────────────────────────────────────────
 
-    fun uploadAttachment(inputStream: InputStream, fileName: String, mimeType: String) {
+    fun uploadAttachment(inputStream: InputStream, fileName: String, mimeType: String, size: Long = 0L) {
+        val tempId = "upload-pending-${UUID.randomUUID()}"
+        _pendingAttachments.update { it + Attachment(tempId, fileName, mimeType, size) }
         viewModelScope.launch {
             _isUploadingAttachment.value = true
             runCatching {
                 driveRepository.uploadFile(pendingRecordFolderId, inputStream, fileName, mimeType)
             }.onSuccess { attachment ->
-                _pendingAttachments.update { it + attachment }
-            }.onFailure {
-                _uiState.value = DiaryUiState.Error(
-                    "파일 업로드에 실패했습니다: ${it.localizedMessage ?: "알 수 없는 오류"}"
-                )
+                _pendingAttachments.update { list ->
+                    list.map { if (it.fileId == tempId) attachment else it }
+                }
+            }.onFailure { e ->
+                _pendingAttachments.update { list -> list.filter { it.fileId != tempId } }
+                _attachmentUploadError.value =
+                    "파일 업로드에 실패했습니다: ${e.localizedMessage ?: "알 수 없는 오류"}"
             }
             _isUploadingAttachment.value = false
         }

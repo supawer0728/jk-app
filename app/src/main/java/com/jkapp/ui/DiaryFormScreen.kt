@@ -26,6 +26,9 @@ import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenuItem
@@ -91,21 +94,34 @@ fun DiaryFormScreen(
     // Existing attachments the user keeps during editing (starts empty, populated when record loads)
     var keptExistingAttachments by remember { mutableStateOf(existingRecord?.attachments ?: emptyList<Attachment>()) }
 
+    val attachmentUploadError by viewModel.attachmentUploadError.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(attachmentUploadError) {
+        attachmentUploadError?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.clearAttachmentUploadError()
+        }
+    }
+
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
         uri ?: return@rememberLauncherForActivityResult
         val mimeType = context.contentResolver.getType(uri) ?: "application/octet-stream"
-        val fileName = context.contentResolver.query(
-            uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null
+        var resolvedName = uri.lastPathSegment ?: "attachment"
+        var resolvedSize = 0L
+        context.contentResolver.query(
+            uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null
         )?.use { cursor ->
             if (cursor.moveToFirst()) {
-                val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                if (idx >= 0) cursor.getString(idx) else null
-            } else null
-        } ?: uri.lastPathSegment ?: "attachment"
+                val nameIdx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                val sizeIdx = cursor.getColumnIndex(OpenableColumns.SIZE)
+                if (nameIdx >= 0) resolvedName = cursor.getString(nameIdx) ?: resolvedName
+                if (sizeIdx >= 0 && !cursor.isNull(sizeIdx)) resolvedSize = cursor.getLong(sizeIdx)
+            }
+        }
         context.contentResolver.openInputStream(uri)?.let { inputStream ->
-            viewModel.uploadAttachment(inputStream, fileName, mimeType)
+            viewModel.uploadAttachment(inputStream, resolvedName, mimeType, resolvedSize)
         }
     }
 
@@ -165,6 +181,7 @@ fun DiaryFormScreen(
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
