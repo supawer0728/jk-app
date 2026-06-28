@@ -104,13 +104,10 @@ class DiaryViewModel : ViewModel() {
     }
 
     fun addRecordType(type: CatRecordType) {
-        if (type.id in SYSTEM_TYPE_IDS) {
-            _uiState.value = DiaryUiState.Error("시스템 필수 유형 ID는 사용할 수 없습니다.")
-            return
-        }
         val existingIds = (uiState.value as? DiaryUiState.Success)?.recordTypes?.map { it.id }.orEmpty()
-        if (type.id in existingIds) {
-            _uiState.value = DiaryUiState.Error("이미 존재하는 기록유형 ID입니다: ${type.id}")
+        val error = validateNewRecordType(type, existingIds)
+        if (error != null) {
+            _uiState.value = DiaryUiState.Error(error)
             return
         }
         viewModelScope.launch {
@@ -131,10 +128,11 @@ class DiaryViewModel : ViewModel() {
     }
 
     fun deleteRecordType(docId: String) {
-        val type = (uiState.value as? DiaryUiState.Success)
-            ?.recordTypes?.find { it.docId == docId }
-        if (type?.id in SYSTEM_TYPE_IDS) {
-            _uiState.value = DiaryUiState.Error("시스템 필수 유형은 삭제할 수 없습니다.")
+        val typeId = (uiState.value as? DiaryUiState.Success)
+            ?.recordTypes?.find { it.docId == docId }?.id
+        val error = validateDeleteRecordType(typeId)
+        if (error != null) {
+            _uiState.value = DiaryUiState.Error(error)
             return
         }
         viewModelScope.launch {
@@ -164,5 +162,16 @@ class DiaryViewModel : ViewModel() {
             LocalDate.parse(date, DateTimeFormatter.ISO_LOCAL_DATE)
                 .dayOfWeek
                 .getDisplayName(TextStyle.SHORT, Locale.KOREAN)
+
+        fun validateNewRecordType(type: CatRecordType, existingIds: List<String>): String? {
+            if (type.id in SYSTEM_TYPE_IDS) return "시스템 필수 유형 ID는 사용할 수 없습니다."
+            if (type.id in existingIds) return "이미 존재하는 기록유형 ID입니다: ${type.id}"
+            return null
+        }
+
+        fun validateDeleteRecordType(typeId: String?): String? {
+            if (typeId in SYSTEM_TYPE_IDS) return "시스템 필수 유형은 삭제할 수 없습니다."
+            return null
+        }
     }
 }
