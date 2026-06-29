@@ -491,8 +491,12 @@ class DiaryViewModel(
         val current = _selectedYearMonth.value
         if (availableMonths.isEmpty()) {
             _selectedYearMonth.value = null
-        } else if (current == null || current !in availableMonths) {
+        } else if (current == null) {
             _selectedYearMonth.value = availableMonths.first()
+        } else if (current !in availableMonths) {
+            _selectedYearMonth.value = availableMonths.minByOrNull { month ->
+                kotlin.math.abs((month.year - current.year) * 12 + (month.monthValue - current.monthValue))
+            }
         }
     }
 

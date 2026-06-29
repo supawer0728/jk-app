@@ -119,7 +119,7 @@ fun DiaryScreen(
                         HorizontalPager(
                             state = pagerState,
                             modifier = Modifier.fillMaxSize(),
-                            key = { availableMonths[it] },
+                            key = { availableMonths.getOrNull(it) ?: it },
                         ) { page ->
                             val pageMonth = availableMonths[page]
                             val filteredRecords = remember(state.records, selectedTypeIds, pageMonth) {
@@ -168,6 +168,14 @@ fun DiaryScreen(
                                 }
                             }
                         }
+                    }
+                } else if (state.records.isNotEmpty()) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(
+                            text = "기록을 표시할 수 없습니다",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
 
