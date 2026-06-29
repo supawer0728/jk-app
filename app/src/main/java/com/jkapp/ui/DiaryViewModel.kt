@@ -26,16 +26,22 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.InputStream
 import java.time.LocalDate
+import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.util.Locale
 import java.util.UUID
+
+private fun String.toYearMonthOrNull(): YearMonth? =
+    runCatching { YearMonth.from(LocalDate.parse(this, DateTimeFormatter.ISO_LOCAL_DATE)) }.getOrNull()
 
 class DiaryViewModel(
     private val repository: FirestoreRepository = FirestoreRepositoryImpl(),
@@ -48,6 +54,19 @@ class DiaryViewModel(
 
     private val _selectedTypeIds = MutableStateFlow<Set<String>>(emptySet())
     val selectedTypeIds: StateFlow<Set<String>> = _selectedTypeIds.asStateFlow()
+
+    private val _selectedYearMonth = MutableStateFlow<YearMonth?>(null)
+    val selectedYearMonth: StateFlow<YearMonth?> = _selectedYearMonth.asStateFlow()
+
+    val canMovePrevious: StateFlow<Boolean> = _uiState.combine(_selectedYearMonth) { state, month ->
+        val months = (state as? DiaryUiState.Success)?.availableMonths ?: emptyList()
+        month != null && months.any { it < month }
+    }.stateIn(viewModelScope, SharingStarted.Lazily, false)
+
+    val canMoveNext: StateFlow<Boolean> = _uiState.combine(_selectedYearMonth) { state, month ->
+        val months = (state as? DiaryUiState.Success)?.availableMonths ?: emptyList()
+        month != null && months.any { it > month }
+    }.stateIn(viewModelScope, SharingStarted.Lazily, false)
 
     private val _pendingAttachments = MutableStateFlow<List<Attachment>>(emptyList())
     val pendingAttachments: StateFlow<List<Attachment>> = _pendingAttachments.asStateFlow()
@@ -89,6 +108,7 @@ class DiaryViewModel(
                 } else {
                     dataJob?.cancel()
                     _uiState.value = DiaryUiState.Loading
+                    _selectedYearMonth.value = null
                 }
             }
         }
@@ -107,12 +127,25 @@ class DiaryViewModel(
                 repository.getRecordTypes().onStart { emit(emptyList()) },
                 repository.getRecords(),
             ) { types, records ->
-                DiaryUiState.Success(records = records, recordTypes = types) as DiaryUiState
+                val availableMonths = records
+                    .mapNotNull { it.date.toYearMonthOrNull() }
+                    .distinct()
+                    .sortedDescending()
+                DiaryUiState.Success(
+                    records = records,
+                    recordTypes = types,
+                    availableMonths = availableMonths,
+                ) as DiaryUiState
             }
                 .catch { e ->
                     emit(DiaryUiState.Error("기록을 불러오는 중 오류가 발생했습니다: ${e.localizedMessage ?: "알 수 없는 오류"}"))
                 }
-                .collect { _uiState.value = it }
+                .collect { state ->
+                    _uiState.value = state
+                    if (state is DiaryUiState.Success) {
+                        reconcileSelectedMonth(state.availableMonths)
+                    }
+                }
         }
     }
 
@@ -434,6 +467,35 @@ class DiaryViewModel(
         _selectedTypeIds.update { emptySet() }
     }
 
+    fun selectYearMonth(month: YearMonth) {
+        _selectedYearMonth.value = month
+    }
+
+    fun moveToPreviousMonth() {
+        val state = uiState.value as? DiaryUiState.Success ?: return
+        val current = _selectedYearMonth.value ?: return
+        state.availableMonths.filter { it < current }.maxOrNull()?.let {
+            _selectedYearMonth.value = it
+        }
+    }
+
+    fun moveToNextMonth() {
+        val state = uiState.value as? DiaryUiState.Success ?: return
+        val current = _selectedYearMonth.value ?: return
+        state.availableMonths.filter { it > current }.minOrNull()?.let {
+            _selectedYearMonth.value = it
+        }
+    }
+
+    private fun reconcileSelectedMonth(availableMonths: List<YearMonth>) {
+        val current = _selectedYearMonth.value
+        if (availableMonths.isEmpty()) {
+            _selectedYearMonth.value = null
+        } else if (current == null || current !in availableMonths) {
+            _selectedYearMonth.value = availableMonths.first()
+        }
+    }
+
     fun addRecordType(type: CatRecordType) {
         val existingIds = (uiState.value as? DiaryUiState.Success)?.recordTypes?.map { it.id }.orEmpty()
         val error = validateNewRecordType(type, existingIds)
@@ -499,6 +561,11 @@ class DiaryViewModel(
             if (selectedTypeIds.isEmpty()) return records
             val normalizedSelected = selectedTypeIds.map { it.trim().lowercase() }.toSet()
             return records.filter { it.recordType.trim().lowercase() in normalizedSelected }
+        }
+
+        fun filterRecordsByMonth(records: List<CatRecord>, yearMonth: YearMonth?): List<CatRecord> {
+            if (yearMonth == null) return records
+            return records.filter { it.date.toYearMonthOrNull() == yearMonth }
         }
 
         fun todayDate(): String =

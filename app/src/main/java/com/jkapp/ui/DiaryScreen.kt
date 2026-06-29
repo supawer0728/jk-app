@@ -18,6 +18,8 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -25,10 +27,12 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.SuggestionChipDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -43,6 +47,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jkapp.R
 import com.jkapp.data.model.CatRecord
 import com.jkapp.data.model.CatRecordType
+import java.time.YearMonth
+import java.time.format.DateTimeFormatter
 
 private const val PREVIEW_RECORD_LIMIT = 3
 
@@ -55,6 +61,9 @@ fun DiaryScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val selectedTypeIds by viewModel.selectedTypeIds.collectAsStateWithLifecycle()
+    val selectedYearMonth by viewModel.selectedYearMonth.collectAsStateWithLifecycle()
+    val canMovePrevious by viewModel.canMovePrevious.collectAsStateWithLifecycle()
+    val canMoveNext by viewModel.canMoveNext.collectAsStateWithLifecycle()
 
     Box(modifier = Modifier.fillMaxSize()) {
         when (val state = uiState) {
@@ -72,8 +81,9 @@ fun DiaryScreen(
                 )
             }
             is DiaryUiState.Success -> {
-                val filteredRecords = remember(state.records, selectedTypeIds) {
-                    DiaryViewModel.filterRecords(state.records, selectedTypeIds)
+                val filteredRecords = remember(state.records, selectedTypeIds, selectedYearMonth) {
+                    val monthFiltered = DiaryViewModel.filterRecordsByMonth(state.records, selectedYearMonth)
+                    DiaryViewModel.filterRecords(monthFiltered, selectedTypeIds)
                 }
                 val groupedDates = remember(filteredRecords) {
                     filteredRecords
@@ -106,33 +116,57 @@ fun DiaryScreen(
                     }
                 }
 
+                if (groupedDates.isEmpty()) {
+                    Text(
+                        text = "이 달에 기록이 없습니다",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .padding(16.dp)
+                    )
+                }
+
                 var showFabMenu by remember { mutableStateOf(false) }
-                Box(
+                Row(
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .padding(16.dp)
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    FloatingActionButton(onClick = { showFabMenu = true }) {
-                        Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.manage_record_types))
-                    }
-                    DropdownMenu(
-                        expanded = showFabMenu,
-                        onDismissRequest = { showFabMenu = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.write_diary)) },
-                            onClick = {
-                                showFabMenu = false
-                                onNavigateToAdd()
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.manage_record_types)) },
-                            onClick = {
-                                showFabMenu = false
-                                onNavigateToRecordTypeManagement()
-                            }
-                        )
+                    MonthNavigatorBar(
+                        selectedYearMonth = selectedYearMonth,
+                        availableMonths = state.availableMonths,
+                        hasPrevious = canMovePrevious,
+                        hasNext = canMoveNext,
+                        onPreviousMonth = { viewModel.moveToPreviousMonth() },
+                        onNextMonth = { viewModel.moveToNextMonth() },
+                        onSelectMonth = { viewModel.selectYearMonth(it) },
+                    )
+                    Box {
+                        FloatingActionButton(onClick = { showFabMenu = true }) {
+                            Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.manage_record_types))
+                        }
+                        DropdownMenu(
+                            expanded = showFabMenu,
+                            onDismissRequest = { showFabMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.write_diary)) },
+                                onClick = {
+                                    showFabMenu = false
+                                    onNavigateToAdd()
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.manage_record_types)) },
+                                onClick = {
+                                    showFabMenu = false
+                                    onNavigateToRecordTypeManagement()
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -247,4 +281,55 @@ private fun RecordTypeBadge(type: CatRecordType?, fallbackId: String) {
         colors = SuggestionChipDefaults.suggestionChipColors(containerColor = bgColor),
         border = null
     )
+}
+
+@Composable
+private fun MonthNavigatorBar(
+    selectedYearMonth: YearMonth?,
+    availableMonths: List<YearMonth>,
+    hasPrevious: Boolean,
+    hasNext: Boolean,
+    onPreviousMonth: () -> Unit,
+    onNextMonth: () -> Unit,
+    onSelectMonth: (YearMonth) -> Unit,
+) {
+    val formatter = remember { DateTimeFormatter.ofPattern("yyyy-MM") }
+    var showMonthDropdown by remember { mutableStateOf(false) }
+
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = onPreviousMonth, enabled = hasPrevious) {
+            Icon(
+                imageVector = Icons.Default.KeyboardArrowLeft,
+                contentDescription = stringResource(R.string.previous_month),
+            )
+        }
+        Box {
+            TextButton(onClick = { showMonthDropdown = true }) {
+                Text(
+                    text = selectedYearMonth?.format(formatter) ?: "",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            DropdownMenu(
+                expanded = showMonthDropdown,
+                onDismissRequest = { showMonthDropdown = false },
+            ) {
+                availableMonths.forEach { month ->
+                    DropdownMenuItem(
+                        text = { Text(month.format(formatter)) },
+                        onClick = {
+                            onSelectMonth(month)
+                            showMonthDropdown = false
+                        },
+                    )
+                }
+            }
+        }
+        IconButton(onClick = onNextMonth, enabled = hasNext) {
+            Icon(
+                imageVector = Icons.Default.KeyboardArrowRight,
+                contentDescription = stringResource(R.string.next_month),
+            )
+        }
+    }
 }
