@@ -106,7 +106,7 @@ fun DiaryDetailScreen(
         filteredDates.indexOf(date).coerceAtLeast(0)
     }
     val pagerState = rememberPagerState(initialPage = initialIndex) { filteredDates.size }
-    val currentDate = filteredDates[pagerState.currentPage]
+    val currentDate = filteredDates.getOrElse(pagerState.currentPage) { filteredDates.last() }
     var pendingDelete by remember { mutableStateOf<PendingDelete?>(null) }
 
     Scaffold(
@@ -126,12 +126,15 @@ fun DiaryDetailScreen(
     ) { innerPadding ->
         HorizontalPager(
             state = pagerState,
+            key = { filteredDates[it] },
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
         ) { page ->
             val pageDate = filteredDates[page]
-            val records = success?.records?.filter { it.date == pageDate } ?: emptyList()
+            val records = (success?.records ?: emptyList())
+                .let { DiaryViewModel.filterRecords(it, selectedTypeIds) }
+                .filter { it.date == pageDate }
             if (records.isEmpty()) {
                 Text(
                     text = stringResource(R.string.record_not_found),
