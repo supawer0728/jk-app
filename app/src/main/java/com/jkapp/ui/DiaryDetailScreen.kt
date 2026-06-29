@@ -71,6 +71,8 @@ import java.io.File
 
 private const val MAX_VISIBLE_THUMBNAILS = 5
 
+private data class PendingDelete(val id: String, val date: String)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DiaryDetailScreen(
@@ -81,20 +83,36 @@ fun DiaryDetailScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val success = uiState as? DiaryUiState.Success
-    val records = success?.records?.filter { it.date == date } ?: emptyList()
+    val selectedTypeIds by viewModel.selectedTypeIds.collectAsStateWithLifecycle()
     val recordTypes = success?.recordTypes ?: emptyList()
     val downloadingIds by viewModel.downloadingAttachmentIds.collectAsStateWithLifecycle()
 
-    LaunchedEffect(success, records) {
-        if (success != null && records.isEmpty()) onBack()
+    val filteredDates = remember(success?.records, selectedTypeIds) {
+        val records = success?.records ?: return@remember emptyList()
+        DiaryViewModel.filterRecords(records, selectedTypeIds)
+            .map { it.date }
+            .distinct()
+            .sortedByDescending { it }
     }
 
-    var pendingDeleteId by remember { mutableStateOf<String?>(null) }
+    if (filteredDates.isEmpty()) {
+        if (success != null) {
+            LaunchedEffect(Unit) { onBack() }
+        }
+        return
+    }
+
+    val initialIndex = remember(filteredDates) {
+        filteredDates.indexOf(date).coerceAtLeast(0)
+    }
+    val pagerState = rememberPagerState(initialPage = initialIndex) { filteredDates.size }
+    val currentDate = filteredDates.getOrElse(pagerState.currentPage) { filteredDates.last() }
+    var pendingDelete by remember { mutableStateOf<PendingDelete?>(null) }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("${date} (${DiaryViewModel.computeDayOfWeek(date)})") },
+                title = { Text("$currentDate (${DiaryViewModel.computeDayOfWeek(currentDate)})") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -106,57 +124,70 @@ fun DiaryDetailScreen(
             )
         }
     ) { innerPadding ->
-        if (records.isEmpty()) {
-            Text(
-                text = stringResource(R.string.record_not_found),
-                modifier = Modifier
-                    .padding(innerPadding)
-                    .padding(16.dp)
-            )
-        } else {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-                    .verticalScroll(rememberScrollState())
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                records.forEachIndexed { index, record ->
-                    if (index > 0) HorizontalDivider()
-                    RecordDetailItem(
-                        record = record,
-                        type = recordTypes.find { it.id.trim().equals(record.recordType.trim(), ignoreCase = true) },
-                        downloadingIds = downloadingIds,
-                        onEdit = { record.firestoreId?.let(onNavigateToEdit) },
-                        onDeleteRequest = { pendingDeleteId = record.firestoreId },
-                        onDownloadAttachment = { attachment, destFile ->
-                            viewModel.downloadAttachment(attachment.fileId, destFile)
-                        },
-                        onOpenNonImageAttachment = { attachment, cacheDir ->
-                            viewModel.downloadAttachment(attachment.fileId, attachmentCacheFile(cacheDir, attachment))
-                        },
-                    )
+        HorizontalPager(
+            state = pagerState,
+            key = { filteredDates[it] },
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding),
+        ) { page ->
+            val pageDate = filteredDates[page]
+            val records = (success?.records ?: emptyList())
+                .let { DiaryViewModel.filterRecords(it, selectedTypeIds) }
+                .filter { it.date == pageDate }
+            if (records.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.record_not_found),
+                    modifier = Modifier.padding(16.dp)
+                )
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    records.forEachIndexed { index, record ->
+                        if (index > 0) HorizontalDivider()
+                        RecordDetailItem(
+                            record = record,
+                            type = recordTypes.find { it.id.trim().equals(record.recordType.trim(), ignoreCase = true) },
+                            downloadingIds = downloadingIds,
+                            onEdit = { record.firestoreId?.let(onNavigateToEdit) },
+                            onDeleteRequest = {
+                                record.firestoreId?.let { id ->
+                                    pendingDelete = PendingDelete(id = id, date = pageDate)
+                                }
+                            },
+                            onDownloadAttachment = { attachment, destFile ->
+                                viewModel.downloadAttachment(attachment.fileId, destFile)
+                            },
+                            onOpenNonImageAttachment = { attachment, cacheDir ->
+                                viewModel.downloadAttachment(attachment.fileId, attachmentCacheFile(cacheDir, attachment))
+                            },
+                        )
+                    }
                 }
             }
         }
     }
 
-    pendingDeleteId?.let { id ->
+    pendingDelete?.let { pending ->
         AlertDialog(
-            onDismissRequest = { pendingDeleteId = null },
+            onDismissRequest = { pendingDelete = null },
             title = { Text(stringResource(R.string.delete_confirm_title)) },
-            text = { Text(stringResource(R.string.delete_confirm_message, date)) },
+            text = { Text(stringResource(R.string.delete_confirm_message, pending.date)) },
             confirmButton = {
                 TextButton(onClick = {
-                    viewModel.deleteRecord(id)
-                    pendingDeleteId = null
+                    viewModel.deleteRecord(pending.id)
+                    pendingDelete = null
                 }) {
                     Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { pendingDeleteId = null }) {
+                TextButton(onClick = { pendingDelete = null }) {
                     Text(stringResource(R.string.cancel))
                 }
             }
