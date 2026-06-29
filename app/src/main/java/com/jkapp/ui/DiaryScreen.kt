@@ -1,7 +1,6 @@
 package com.jkapp.ui
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +16,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -35,14 +36,13 @@ import androidx.compose.material3.SuggestionChipDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -84,76 +84,90 @@ fun DiaryScreen(
                 )
             }
             is DiaryUiState.Success -> {
-                val filteredRecords = remember(state.records, selectedTypeIds, selectedYearMonth) {
-                    val monthFiltered = DiaryViewModel.filterRecordsByMonth(state.records, selectedYearMonth)
-                    DiaryViewModel.filterRecords(monthFiltered, selectedTypeIds)
-                }
-                val groupedDates = remember(filteredRecords) {
-                    filteredRecords
-                        .groupBy { it.date }
-                        .entries
-                        .sortedByDescending { it.key }
-                        .map { (date, records) -> date to records }
-                }
-                val swipeDelta = remember { mutableStateOf(0f) }
-                val swipeThreshold = with(LocalDensity.current) { 80.dp.toPx() }
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .pointerInput(canMovePrevious, canMoveNext) {
-                            detectHorizontalDragGestures(
-                                onDragStart = { swipeDelta.value = 0f },
-                                onDragEnd = {
-                                    when {
-                                        swipeDelta.value > swipeThreshold && canMovePrevious -> viewModel.moveToPreviousMonth()
-                                        swipeDelta.value < -swipeThreshold && canMoveNext -> viewModel.moveToNextMonth()
-                                    }
-                                    swipeDelta.value = 0f
-                                },
-                                onHorizontalDrag = { _, amount -> swipeDelta.value += amount },
-                            )
-                        },
-                    contentPadding = PaddingValues(
-                        start = 16.dp, end = 16.dp, top = 8.dp, bottom = 80.dp
-                    ),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    item {
+                val availableMonths = state.availableMonths
+                if (availableMonths.isNotEmpty()) {
+                    val initialIndex = remember(availableMonths) {
+                        availableMonths.indexOf(selectedYearMonth).coerceAtLeast(0)
+                    }
+                    val pagerState = rememberPagerState(initialPage = initialIndex) { availableMonths.size }
+
+                    // 버튼/드롭다운으로 월 변경 시 pager 슬라이드
+                    LaunchedEffect(selectedYearMonth) {
+                        val idx = availableMonths.indexOf(selectedYearMonth)
+                        if (idx >= 0 && idx != pagerState.currentPage) {
+                            pagerState.animateScrollToPage(idx)
+                        }
+                    }
+                    // 스와이프로 페이지 정착 시 ViewModel 동기화
+                    LaunchedEffect(pagerState.settledPage) {
+                        val month = availableMonths.getOrNull(pagerState.settledPage) ?: return@LaunchedEffect
+                        if (month != selectedYearMonth) {
+                            viewModel.selectYearMonth(month)
+                        }
+                    }
+
+                    Column(modifier = Modifier.fillMaxSize()) {
                         MonthNavigatorBar(
                             selectedYearMonth = selectedYearMonth,
-                            availableMonths = state.availableMonths,
+                            availableMonths = availableMonths,
                             hasPrevious = canMovePrevious,
                             hasNext = canMoveNext,
                             onPreviousMonth = { viewModel.moveToPreviousMonth() },
                             onNextMonth = { viewModel.moveToNextMonth() },
                             onSelectMonth = { viewModel.selectYearMonth(it) },
                         )
-                    }
-                    item {
-                        RecordTypeFilterRow(
-                            recordTypes = state.recordTypes,
-                            selectedTypeIds = selectedTypeIds,
-                            onToggle = { viewModel.toggleTypeFilter(it) },
-                            onClearFilter = { viewModel.clearTypeFilter() }
-                        )
-                    }
-                    if (groupedDates.isEmpty()) {
-                        item {
-                            Text(
-                                text = "이 달에 기록이 없습니다",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(16.dp)
-                            )
+                        HorizontalPager(
+                            state = pagerState,
+                            modifier = Modifier.fillMaxSize(),
+                            key = { availableMonths[it] },
+                        ) { page ->
+                            val pageMonth = availableMonths[page]
+                            val filteredRecords = remember(state.records, selectedTypeIds, pageMonth) {
+                                val monthFiltered = DiaryViewModel.filterRecordsByMonth(state.records, pageMonth)
+                                DiaryViewModel.filterRecords(monthFiltered, selectedTypeIds)
+                            }
+                            val groupedDates = remember(filteredRecords) {
+                                filteredRecords
+                                    .groupBy { it.date }
+                                    .entries
+                                    .sortedByDescending { it.key }
+                                    .map { (date, records) -> date to records }
+                            }
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(
+                                    start = 16.dp, end = 16.dp, top = 8.dp, bottom = 80.dp
+                                ),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                item {
+                                    RecordTypeFilterRow(
+                                        recordTypes = state.recordTypes,
+                                        selectedTypeIds = selectedTypeIds,
+                                        onToggle = { viewModel.toggleTypeFilter(it) },
+                                        onClearFilter = { viewModel.clearTypeFilter() }
+                                    )
+                                }
+                                if (groupedDates.isEmpty()) {
+                                    item {
+                                        Text(
+                                            text = "이 달에 기록이 없습니다",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(16.dp)
+                                        )
+                                    }
+                                }
+                                items(groupedDates, key = { it.first }) { (date, records) ->
+                                    DiaryListItem(
+                                        date = date,
+                                        records = records,
+                                        recordTypes = state.recordTypes,
+                                        onClick = { onNavigateToDetail(date) }
+                                    )
+                                }
+                            }
                         }
-                    }
-                    items(groupedDates, key = { it.first }) { (date, records) ->
-                        DiaryListItem(
-                            date = date,
-                            records = records,
-                            recordTypes = state.recordTypes,
-                            onClick = { onNavigateToDetail(date) }
-                        )
                     }
                 }
 
