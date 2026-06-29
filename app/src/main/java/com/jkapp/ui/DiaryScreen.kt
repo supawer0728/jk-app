@@ -16,7 +16,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -25,11 +29,14 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.SuggestionChipDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,6 +50,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jkapp.R
 import com.jkapp.data.model.CatRecord
 import com.jkapp.data.model.CatRecordType
+import java.time.YearMonth
+import java.time.format.DateTimeFormatter
 
 private const val PREVIEW_RECORD_LIMIT = 3
 
@@ -55,6 +64,9 @@ fun DiaryScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val selectedTypeIds by viewModel.selectedTypeIds.collectAsStateWithLifecycle()
+    val selectedYearMonth by viewModel.selectedYearMonth.collectAsStateWithLifecycle()
+    val canMovePrevious by viewModel.canMovePrevious.collectAsStateWithLifecycle()
+    val canMoveNext by viewModel.canMoveNext.collectAsStateWithLifecycle()
 
     Box(modifier = Modifier.fillMaxSize()) {
         when (val state = uiState) {
@@ -72,36 +84,97 @@ fun DiaryScreen(
                 )
             }
             is DiaryUiState.Success -> {
-                val filteredRecords = remember(state.records, selectedTypeIds) {
-                    DiaryViewModel.filterRecords(state.records, selectedTypeIds)
-                }
-                val groupedDates = remember(filteredRecords) {
-                    filteredRecords
-                        .groupBy { it.date }
-                        .entries
-                        .sortedByDescending { it.key }
-                        .map { (date, records) -> date to records }
-                }
-                LazyColumn(
-                    contentPadding = PaddingValues(
-                        start = 16.dp, end = 16.dp, top = 8.dp, bottom = 80.dp
-                    ),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    item {
-                        RecordTypeFilterRow(
-                            recordTypes = state.recordTypes,
-                            selectedTypeIds = selectedTypeIds,
-                            onToggle = { viewModel.toggleTypeFilter(it) },
-                            onClearFilter = { viewModel.clearTypeFilter() }
-                        )
+                val availableMonths = state.availableMonths
+                if (availableMonths.isNotEmpty()) {
+                    val initialIndex = remember(availableMonths) {
+                        availableMonths.indexOf(selectedYearMonth).coerceAtLeast(0)
                     }
-                    items(groupedDates, key = { it.first }) { (date, records) ->
-                        DiaryListItem(
-                            date = date,
-                            records = records,
-                            recordTypes = state.recordTypes,
-                            onClick = { onNavigateToDetail(date) }
+                    val pagerState = rememberPagerState(initialPage = initialIndex) { availableMonths.size }
+
+                    // 버튼/드롭다운으로 월 변경 시 pager 슬라이드
+                    LaunchedEffect(selectedYearMonth) {
+                        val idx = availableMonths.indexOf(selectedYearMonth)
+                        if (idx >= 0 && idx != pagerState.currentPage) {
+                            pagerState.animateScrollToPage(idx)
+                        }
+                    }
+                    // 스와이프로 페이지 정착 시 ViewModel 동기화
+                    LaunchedEffect(pagerState.settledPage) {
+                        val month = availableMonths.getOrNull(pagerState.settledPage) ?: return@LaunchedEffect
+                        if (month != selectedYearMonth) {
+                            viewModel.selectYearMonth(month)
+                        }
+                    }
+
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        MonthNavigatorBar(
+                            selectedYearMonth = selectedYearMonth,
+                            availableMonths = availableMonths,
+                            hasPrevious = canMovePrevious,
+                            hasNext = canMoveNext,
+                            onPreviousMonth = { viewModel.moveToPreviousMonth() },
+                            onNextMonth = { viewModel.moveToNextMonth() },
+                            onSelectMonth = { viewModel.selectYearMonth(it) },
+                        )
+                        HorizontalPager(
+                            state = pagerState,
+                            modifier = Modifier.fillMaxSize(),
+                            key = { availableMonths.getOrNull(it) ?: it },
+                        ) { page ->
+                            val pageMonth = availableMonths[page]
+                            val filteredRecords = remember(state.records, selectedTypeIds, pageMonth) {
+                                val monthFiltered = DiaryViewModel.filterRecordsByMonth(state.records, pageMonth)
+                                DiaryViewModel.filterRecords(monthFiltered, selectedTypeIds)
+                            }
+                            val groupedDates = remember(filteredRecords) {
+                                filteredRecords
+                                    .groupBy { it.date }
+                                    .entries
+                                    .sortedByDescending { it.key }
+                                    .map { (date, records) -> date to records }
+                            }
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(
+                                    start = 16.dp, end = 16.dp, top = 8.dp, bottom = 80.dp
+                                ),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                item {
+                                    RecordTypeFilterRow(
+                                        recordTypes = state.recordTypes,
+                                        selectedTypeIds = selectedTypeIds,
+                                        onToggle = { viewModel.toggleTypeFilter(it) },
+                                        onClearFilter = { viewModel.clearTypeFilter() }
+                                    )
+                                }
+                                if (groupedDates.isEmpty()) {
+                                    item {
+                                        Text(
+                                            text = "이 달에 기록이 없습니다",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(16.dp)
+                                        )
+                                    }
+                                }
+                                items(groupedDates, key = { it.first }) { (date, records) ->
+                                    DiaryListItem(
+                                        date = date,
+                                        records = records,
+                                        recordTypes = state.recordTypes,
+                                        onClick = { onNavigateToDetail(date) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else if (state.records.isNotEmpty()) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(
+                            text = "기록을 표시할 수 없습니다",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
@@ -247,4 +320,59 @@ private fun RecordTypeBadge(type: CatRecordType?, fallbackId: String) {
         colors = SuggestionChipDefaults.suggestionChipColors(containerColor = bgColor),
         border = null
     )
+}
+
+@Composable
+private fun MonthNavigatorBar(
+    selectedYearMonth: YearMonth?,
+    availableMonths: List<YearMonth>,
+    hasPrevious: Boolean,
+    hasNext: Boolean,
+    onPreviousMonth: () -> Unit,
+    onNextMonth: () -> Unit,
+    onSelectMonth: (YearMonth) -> Unit,
+) {
+    val formatter = remember { DateTimeFormatter.ofPattern("yyyy-MM") }
+    var showMonthDropdown by remember { mutableStateOf(false) }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        IconButton(onClick = onPreviousMonth, enabled = hasPrevious) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                contentDescription = stringResource(R.string.previous_month),
+            )
+        }
+        Box {
+            TextButton(onClick = { showMonthDropdown = true }) {
+                Text(
+                    text = selectedYearMonth?.format(formatter) ?: "",
+                    style = MaterialTheme.typography.titleSmall,
+                )
+            }
+            DropdownMenu(
+                expanded = showMonthDropdown,
+                onDismissRequest = { showMonthDropdown = false },
+            ) {
+                availableMonths.forEach { month ->
+                    DropdownMenuItem(
+                        text = { Text(month.format(formatter)) },
+                        onClick = {
+                            onSelectMonth(month)
+                            showMonthDropdown = false
+                        },
+                    )
+                }
+            }
+        }
+        IconButton(onClick = onNextMonth, enabled = hasNext) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = stringResource(R.string.next_month),
+            )
+        }
+    }
 }

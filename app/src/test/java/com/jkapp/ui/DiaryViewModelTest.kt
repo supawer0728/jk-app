@@ -11,8 +11,10 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import java.time.YearMonth
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -282,6 +284,131 @@ class DiaryViewModelTest {
         advanceUntilIdle()
 
         assertTrue(viewModel.selectedTypeIds.value.isEmpty())
+    }
+
+    // --- selectedYearMonth ---
+
+    @Test
+    fun `로그인하면 selectedYearMonth가 최신 달로 초기화된다`() = runTest {
+        fakeRepository.setRecords(listOf(
+            makeRecord("2024-03-15"),
+            makeRecord("2024-01-10"),
+            makeRecord("2024-02-20"),
+        ))
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+
+        assertEquals(YearMonth.of(2024, 3), viewModel.selectedYearMonth.value)
+    }
+
+    @Test
+    fun `로그아웃하면 selectedYearMonth가 null로 초기화된다`() = runTest {
+        fakeRepository.setRecords(listOf(makeRecord("2024-03-15")))
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+
+        fakeAuth.setLoggedIn(false)
+        advanceUntilIdle()
+
+        assertNull(viewModel.selectedYearMonth.value)
+    }
+
+    @Test
+    fun `selectYearMonth 호출 시 selectedYearMonth가 변경된다`() = runTest {
+        fakeRepository.setRecords(listOf(makeRecord("2024-03-15"), makeRecord("2024-01-10")))
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+
+        viewModel.selectYearMonth(YearMonth.of(2024, 1))
+
+        assertEquals(YearMonth.of(2024, 1), viewModel.selectedYearMonth.value)
+    }
+
+    @Test
+    fun `moveToPreviousMonth 호출 시 이전 달이 있으면 이동한다`() = runTest {
+        fakeRepository.setRecords(listOf(makeRecord("2024-03-15"), makeRecord("2024-01-10")))
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+        // selectedYearMonth가 2024-03으로 초기화됨
+
+        viewModel.moveToPreviousMonth()
+
+        assertEquals(YearMonth.of(2024, 1), viewModel.selectedYearMonth.value)
+    }
+
+    @Test
+    fun `moveToNextMonth 호출 시 다음 달이 있으면 이동한다`() = runTest {
+        fakeRepository.setRecords(listOf(makeRecord("2024-03-15"), makeRecord("2024-01-10")))
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+        viewModel.selectYearMonth(YearMonth.of(2024, 1))
+
+        viewModel.moveToNextMonth()
+
+        assertEquals(YearMonth.of(2024, 3), viewModel.selectedYearMonth.value)
+    }
+
+    @Test
+    fun `moveToPreviousMonth 호출 시 이전 달이 없으면 변경되지 않는다`() = runTest {
+        fakeRepository.setRecords(listOf(makeRecord("2024-03-15")))
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+
+        viewModel.moveToPreviousMonth()
+
+        assertEquals(YearMonth.of(2024, 3), viewModel.selectedYearMonth.value)
+    }
+
+    @Test
+    fun `moveToNextMonth 호출 시 다음 달이 없으면 변경되지 않는다`() = runTest {
+        fakeRepository.setRecords(listOf(makeRecord("2024-03-15")))
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+
+        viewModel.moveToNextMonth()
+
+        assertEquals(YearMonth.of(2024, 3), viewModel.selectedYearMonth.value)
+    }
+
+    @Test
+    fun `선택된 달의 레코드가 모두 삭제되면 selectedYearMonth가 다른 달로 이동한다`() = runTest {
+        fakeRepository.setRecords(listOf(makeRecord("2024-03-15"), makeRecord("2024-01-10")))
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+        // 초기: 2024-03
+
+        fakeRepository.setRecords(listOf(makeRecord("2024-01-10")))
+        advanceUntilIdle()
+
+        assertEquals(YearMonth.of(2024, 1), viewModel.selectedYearMonth.value)
+    }
+
+    @Test
+    fun `모든 레코드가 삭제되면 selectedYearMonth가 null이 된다`() = runTest {
+        fakeRepository.setRecords(listOf(makeRecord("2024-03-15")))
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+
+        fakeRepository.setRecords(emptyList())
+        advanceUntilIdle()
+
+        assertNull(viewModel.selectedYearMonth.value)
+    }
+
+    // --- filterRecordsByMonth (companion) ---
+
+    @Test
+    fun `filterRecordsByMonth는 yearMonth가 null이면 전체를 반환한다`() {
+        val records = listOf(makeRecord("2024-01-10"), makeRecord("2024-02-15"))
+        assertEquals(records, DiaryViewModel.filterRecordsByMonth(records, null))
+    }
+
+    @Test
+    fun `filterRecordsByMonth는 해당 월의 레코드만 반환한다`() {
+        val jan = makeRecord("2024-01-10")
+        val feb = makeRecord("2024-02-15")
+        val result = DiaryViewModel.filterRecordsByMonth(listOf(jan, feb), YearMonth.of(2024, 1))
+        assertEquals(listOf(jan), result)
     }
 
     // --- helpers ---
