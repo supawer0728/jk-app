@@ -1,7 +1,7 @@
 package com.jkapp.ui
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,9 +18,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -30,7 +30,6 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.SuggestionChipDefaults
 import androidx.compose.material3.Text
@@ -42,8 +41,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -95,12 +95,40 @@ fun DiaryScreen(
                         .sortedByDescending { it.key }
                         .map { (date, records) -> date to records }
                 }
+                val swipeDelta = remember { mutableStateOf(0f) }
+                val swipeThreshold = with(LocalDensity.current) { 80.dp.toPx() }
                 LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .pointerInput(canMovePrevious, canMoveNext) {
+                            detectHorizontalDragGestures(
+                                onDragStart = { swipeDelta.value = 0f },
+                                onDragEnd = {
+                                    when {
+                                        swipeDelta.value > swipeThreshold && canMovePrevious -> viewModel.moveToPreviousMonth()
+                                        swipeDelta.value < -swipeThreshold && canMoveNext -> viewModel.moveToNextMonth()
+                                    }
+                                    swipeDelta.value = 0f
+                                },
+                                onHorizontalDrag = { _, amount -> swipeDelta.value += amount },
+                            )
+                        },
                     contentPadding = PaddingValues(
                         start = 16.dp, end = 16.dp, top = 8.dp, bottom = 80.dp
                     ),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    item {
+                        MonthNavigatorBar(
+                            selectedYearMonth = selectedYearMonth,
+                            availableMonths = state.availableMonths,
+                            hasPrevious = canMovePrevious,
+                            hasNext = canMoveNext,
+                            onPreviousMonth = { viewModel.moveToPreviousMonth() },
+                            onNextMonth = { viewModel.moveToNextMonth() },
+                            onSelectMonth = { viewModel.selectYearMonth(it) },
+                        )
+                    }
                     item {
                         RecordTypeFilterRow(
                             recordTypes = state.recordTypes,
@@ -108,6 +136,16 @@ fun DiaryScreen(
                             onToggle = { viewModel.toggleTypeFilter(it) },
                             onClearFilter = { viewModel.clearTypeFilter() }
                         )
+                    }
+                    if (groupedDates.isEmpty()) {
+                        item {
+                            Text(
+                                text = "이 달에 기록이 없습니다",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(16.dp)
+                            )
+                        }
                     }
                     items(groupedDates, key = { it.first }) { (date, records) ->
                         DiaryListItem(
@@ -118,30 +156,6 @@ fun DiaryScreen(
                         )
                     }
                 }
-
-                if (groupedDates.isEmpty()) {
-                    Text(
-                        text = "이 달에 기록이 없습니다",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier
-                            .align(Alignment.Center)
-                            .padding(16.dp)
-                    )
-                }
-
-                MonthNavigatorBar(
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .padding(16.dp),
-                    selectedYearMonth = selectedYearMonth,
-                    availableMonths = state.availableMonths,
-                    hasPrevious = canMovePrevious,
-                    hasNext = canMoveNext,
-                    onPreviousMonth = { viewModel.moveToPreviousMonth() },
-                    onNextMonth = { viewModel.moveToNextMonth() },
-                    onSelectMonth = { viewModel.selectYearMonth(it) },
-                )
 
                 var showFabMenu by remember { mutableStateOf(false) }
                 Box(
@@ -288,7 +302,6 @@ private fun RecordTypeBadge(type: CatRecordType?, fallbackId: String) {
 
 @Composable
 private fun MonthNavigatorBar(
-    modifier: Modifier = Modifier,
     selectedYearMonth: YearMonth?,
     availableMonths: List<YearMonth>,
     hasPrevious: Boolean,
@@ -300,51 +313,44 @@ private fun MonthNavigatorBar(
     val formatter = remember { DateTimeFormatter.ofPattern("yyyy-MM") }
     var showMonthDropdown by remember { mutableStateOf(false) }
 
-    Surface(
-        modifier = modifier.height(56.dp),
-        shape = RoundedCornerShape(16.dp),
-        tonalElevation = 6.dp,
-        shadowElevation = 6.dp,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = onPreviousMonth, enabled = hasPrevious) {
-                Icon(
-                    imageVector = Icons.Default.KeyboardArrowLeft,
-                    contentDescription = stringResource(R.string.previous_month),
+        IconButton(onClick = onPreviousMonth, enabled = hasPrevious) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                contentDescription = stringResource(R.string.previous_month),
+            )
+        }
+        Box {
+            TextButton(onClick = { showMonthDropdown = true }) {
+                Text(
+                    text = selectedYearMonth?.format(formatter) ?: "",
+                    style = MaterialTheme.typography.titleSmall,
                 )
             }
-            Box {
-                TextButton(onClick = { showMonthDropdown = true }) {
-                    Text(
-                        text = selectedYearMonth?.format(formatter) ?: "",
-                        style = MaterialTheme.typography.bodyMedium,
+            DropdownMenu(
+                expanded = showMonthDropdown,
+                onDismissRequest = { showMonthDropdown = false },
+            ) {
+                availableMonths.forEach { month ->
+                    DropdownMenuItem(
+                        text = { Text(month.format(formatter)) },
+                        onClick = {
+                            onSelectMonth(month)
+                            showMonthDropdown = false
+                        },
                     )
                 }
-                DropdownMenu(
-                    expanded = showMonthDropdown,
-                    onDismissRequest = { showMonthDropdown = false },
-                ) {
-                    availableMonths.forEach { month ->
-                        DropdownMenuItem(
-                            text = { Text(month.format(formatter)) },
-                            onClick = {
-                                onSelectMonth(month)
-                                showMonthDropdown = false
-                            },
-                        )
-                    }
-                }
             }
-            IconButton(onClick = onNextMonth, enabled = hasNext) {
-                Icon(
-                    imageVector = Icons.Default.KeyboardArrowRight,
-                    contentDescription = stringResource(R.string.next_month),
-                )
-            }
+        }
+        IconButton(onClick = onNextMonth, enabled = hasNext) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = stringResource(R.string.next_month),
+            )
         }
     }
 }
