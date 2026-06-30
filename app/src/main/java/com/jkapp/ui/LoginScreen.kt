@@ -43,7 +43,7 @@ import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
 import androidx.credentials.exceptions.GetCredentialException
 import com.jkapp.auth.AuthViewModel
-import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.jkapp.R
 import kotlinx.coroutines.CancellationException
@@ -94,35 +94,42 @@ fun LoginScreen(viewModel: AuthViewModel) {
                 
                 GoogleSignInButton(
                     onClick = {
+                        Log.d("LoginScreen", "onClick: isLoading=$isLoading")
                         isLoading = true
                         errorMessage = null
+                        Log.d("LoginScreen", "onClick: isLoading set to true, launching coroutine")
                         coroutineScope.launch {
+                            Log.d("LoginScreen", "coroutine: started")
                             try {
-                                val googleIdOption = GetGoogleIdOption.Builder()
-                                    .setFilterByAuthorizedAccounts(false)
-                                    .setServerClientId(webClientId)
+                                val googleIdOption = GetSignInWithGoogleOption.Builder(webClientId)
                                     .build()
+                                Log.d("LoginScreen", "coroutine: calling getCredential()")
                                 val request = GetCredentialRequest.Builder()
                                     .addCredentialOption(googleIdOption)
                                     .build()
                                 val result = withTimeout(60_000) {
                                     credentialManager.getCredential(context, request)
                                 }
+                                Log.d("LoginScreen", "coroutine: getCredential() returned")
                                 val idToken = GoogleIdTokenCredential
                                     .createFrom(result.credential.data)
                                     .idToken
+                                Log.d("LoginScreen", "coroutine: idToken extracted, calling firebaseAuthWithGoogle")
                                 viewModel.firebaseAuthWithGoogle(idToken) { success ->
+                                    Log.d("LoginScreen", "firebaseAuthWithGoogle: success=$success")
                                     if (!success) errorMessage = loginErrorFailed
                                     isLoading = false
                                 }
-                            } catch (_: GetCredentialCancellationException) {
+                            } catch (e: GetCredentialCancellationException) {
+                                Log.d("LoginScreen", "catch: GetCredentialCancellationException")
                                 isLoading = false
-                            } catch (_: GetCredentialException) {
+                            } catch (e: GetCredentialException) {
+                                Log.d("LoginScreen", "catch: GetCredentialException: $e")
                                 errorMessage = loginErrorGoogle
                                 isLoading = false
                             } catch (e: Throwable) {
                                 if (e is CancellationException && e !is TimeoutCancellationException) throw e
-                                Log.e("LoginScreen", "Unexpected sign-in exception", e)
+                                Log.e("LoginScreen", "catch: Throwable: $e")
                                 errorMessage = loginErrorGoogle
                                 isLoading = false
                             }
