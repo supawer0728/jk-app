@@ -27,6 +27,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import android.util.Log
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -45,7 +46,10 @@ import com.jkapp.auth.AuthViewModel
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.jkapp.R
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 
 @Composable
 fun LoginScreen(viewModel: AuthViewModel) {
@@ -101,7 +105,9 @@ fun LoginScreen(viewModel: AuthViewModel) {
                                 val request = GetCredentialRequest.Builder()
                                     .addCredentialOption(googleIdOption)
                                     .build()
-                                val result = credentialManager.getCredential(context, request)
+                                val result = withTimeout(60_000) {
+                                    credentialManager.getCredential(context, request)
+                                }
                                 val idToken = GoogleIdTokenCredential
                                     .createFrom(result.credential.data)
                                     .idToken
@@ -112,6 +118,11 @@ fun LoginScreen(viewModel: AuthViewModel) {
                             } catch (_: GetCredentialCancellationException) {
                                 isLoading = false
                             } catch (_: GetCredentialException) {
+                                errorMessage = loginErrorGoogle
+                                isLoading = false
+                            } catch (e: Throwable) {
+                                if (e is CancellationException && e !is TimeoutCancellationException) throw e
+                                Log.e("LoginScreen", "Unexpected sign-in exception", e)
                                 errorMessage = loginErrorGoogle
                                 isLoading = false
                             }
