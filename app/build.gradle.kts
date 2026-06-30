@@ -53,6 +53,19 @@ android {
     }
 }
 
+configurations.all {
+    resolutionStrategy {
+        force("io.grpc:grpc-android:1.62.2")
+        force("io.grpc:grpc-api:1.62.2")
+        force("io.grpc:grpc-core:1.62.2")
+        force("io.grpc:grpc-context:1.62.2")
+        force("io.grpc:grpc-okhttp:1.62.2")
+        force("io.grpc:grpc-protobuf-lite:1.62.2")
+        force("io.grpc:grpc-stub:1.62.2")
+        force("io.grpc:grpc-util:1.62.2")
+    }
+}
+
 dependencies {
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.accompanist.permissions)
