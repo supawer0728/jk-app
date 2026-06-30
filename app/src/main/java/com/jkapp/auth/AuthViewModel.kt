@@ -17,10 +17,17 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-class AuthViewModel(app: Application) : AndroidViewModel(app) {
+class AuthViewModel(
+    app: Application,
+    private val auth: FirebaseAuth,
+    private val credentialManager: CredentialManager,
+) : AndroidViewModel(app) {
 
-    private val auth = FirebaseAuth.getInstance()
-    private val credentialManager = CredentialManager.create(app)
+    constructor(app: Application) : this(
+        app = app,
+        auth = FirebaseAuth.getInstance(),
+        credentialManager = CredentialManager.create(app),
+    )
 
     private val _user = MutableStateFlow<FirebaseUser?>(auth.currentUser)
     val user: StateFlow<FirebaseUser?> = _user.asStateFlow()
@@ -31,8 +38,8 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
             runCatching {
                 suspendCancellableCoroutine { cont ->
                     auth.signInWithCredential(credential)
-                        .addOnSuccessListener {
-                            _user.value = auth.currentUser
+                        .addOnSuccessListener { authResult ->
+                            _user.value = authResult.user
                             cont.resume(Unit)
                         }
                         .addOnFailureListener { cont.resumeWithException(it) }
