@@ -1,4 +1,4 @@
-﻿package com.jkapp.ui
+package com.jkapp.ui
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -27,7 +27,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import android.util.Log
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -46,10 +45,7 @@ import com.jkapp.auth.AuthViewModel
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.jkapp.R
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeout
 
 @Composable
 fun LoginScreen(viewModel: AuthViewModel) {
@@ -91,45 +87,29 @@ fun LoginScreen(viewModel: AuthViewModel) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(40.dp))
-                
+
                 GoogleSignInButton(
                     onClick = {
-                        Log.d("LoginScreen", "onClick: isLoading=$isLoading")
                         isLoading = true
                         errorMessage = null
-                        Log.d("LoginScreen", "onClick: isLoading set to true, launching coroutine")
                         coroutineScope.launch {
-                            Log.d("LoginScreen", "coroutine: started")
                             try {
                                 val googleIdOption = GetSignInWithGoogleOption.Builder(webClientId)
                                     .build()
-                                Log.d("LoginScreen", "coroutine: calling getCredential()")
                                 val request = GetCredentialRequest.Builder()
                                     .addCredentialOption(googleIdOption)
                                     .build()
-                                val result = withTimeout(60_000) {
-                                    credentialManager.getCredential(context, request)
-                                }
-                                Log.d("LoginScreen", "coroutine: getCredential() returned")
+                                val result = credentialManager.getCredential(context, request)
                                 val idToken = GoogleIdTokenCredential
                                     .createFrom(result.credential.data)
                                     .idToken
-                                Log.d("LoginScreen", "coroutine: idToken extracted, calling firebaseAuthWithGoogle")
                                 viewModel.firebaseAuthWithGoogle(idToken) { success ->
-                                    Log.d("LoginScreen", "firebaseAuthWithGoogle: success=$success")
                                     if (!success) errorMessage = loginErrorFailed
                                     isLoading = false
                                 }
-                            } catch (e: GetCredentialCancellationException) {
-                                Log.d("LoginScreen", "catch: GetCredentialCancellationException")
+                            } catch (_: GetCredentialCancellationException) {
                                 isLoading = false
-                            } catch (e: GetCredentialException) {
-                                Log.d("LoginScreen", "catch: GetCredentialException: $e")
-                                errorMessage = loginErrorGoogle
-                                isLoading = false
-                            } catch (e: Throwable) {
-                                if (e is CancellationException && e !is TimeoutCancellationException) throw e
-                                Log.e("LoginScreen", "catch: Throwable: $e")
+                            } catch (_: GetCredentialException) {
                                 errorMessage = loginErrorGoogle
                                 isLoading = false
                             }
@@ -159,14 +139,14 @@ fun GoogleSignInButton(
     modifier: Modifier = Modifier
 ) {
     val isDark = isSystemInDarkTheme()
-    
+
     // Google Branding Colors
     val backgroundColor = if (isDark) Color(0xFF131314) else Color.White
     val contentColor = if (isDark) Color.White else Color(0xFF1F1F1F)
     val borderColor = if (isDark) Color(0xFF8E918F) else Color(0xFF747775)
-    
+
     val loadingDescription = stringResource(R.string.signing_in)
-    
+
     Surface(
         onClick = { if (!isLoading) onClick() },
         modifier = modifier
@@ -214,4 +194,3 @@ fun GoogleSignInButton(
         }
     }
 }
-
