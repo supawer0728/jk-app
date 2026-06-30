@@ -13,7 +13,6 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.slot
 import io.mockk.verify
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -55,30 +54,34 @@ class AuthViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun mockSignInTask(
-        onSuccess: (OnSuccessListener<AuthResult>) -> Unit = {},
-        onFailure: (OnFailureListener) -> Unit = {},
-    ): Task<AuthResult> {
+    /** 성공 시나리오: success 리스너만 발화, failure 리스너는 발화하지 않음 */
+    private fun givenSignInSucceeds(mockUser: FirebaseUser): AuthResult {
+        val mockAuthResult = mockk<AuthResult> { every { user } returns mockUser }
         val task = mockk<Task<AuthResult>>()
-        val successSlot = slot<OnSuccessListener<AuthResult>>()
-        val failureSlot = slot<OnFailureListener>()
-        every { task.addOnSuccessListener(capture(successSlot)) } answers {
-            onSuccess(successSlot.captured)
+        every { task.addOnSuccessListener(any()) } answers {
+            firstArg<OnSuccessListener<AuthResult>>().onSuccess(mockAuthResult)
             task
         }
-        every { task.addOnFailureListener(capture(failureSlot)) } answers {
-            onFailure(failureSlot.captured)
+        every { task.addOnFailureListener(any()) } returns task
+        every { mockAuth.signInWithCredential(any()) } returns task
+        return mockAuthResult
+    }
+
+    /** 실패 시나리오: failure 리스너만 발화, success 리스너는 발화하지 않음 */
+    private fun givenSignInFails(ex: Exception = RuntimeException("auth failed")) {
+        val task = mockk<Task<AuthResult>>()
+        every { task.addOnSuccessListener(any()) } returns task
+        every { task.addOnFailureListener(any()) } answers {
+            firstArg<OnFailureListener>().onFailure(ex)
             task
         }
         every { mockAuth.signInWithCredential(any()) } returns task
-        return task
     }
 
     @Test
     fun `firebaseAuthWithGoogle 성공 시 user가 authResult의 user로 업데이트된다`() = runTest {
         val mockUser = mockk<FirebaseUser>()
-        val mockAuthResult = mockk<AuthResult> { every { user } returns mockUser }
-        mockSignInTask(onSuccess = { it.onSuccess(mockAuthResult) })
+        givenSignInSucceeds(mockUser)
 
         var callbackResult: Boolean? = null
         viewModel.firebaseAuthWithGoogle("test-id-token") { callbackResult = it }
@@ -90,11 +93,10 @@ class AuthViewModelTest {
 
     @Test
     fun `firebaseAuthWithGoogle 성공 시 auth_currentUser가 아닌 authResult_user를 사용한다`() = runTest {
-        // auth.currentUser는 null이지만 authResult.user는 실제 유저 — 레이스 컨디션 재현
+        // auth.currentUser는 null이지만 authResult.user는 실제 유저 — 이슈 #27 레이스 컨디션 재현
         val mockUser = mockk<FirebaseUser>()
         every { mockAuth.currentUser } returns null
-        val mockAuthResult = mockk<AuthResult> { every { user } returns mockUser }
-        mockSignInTask(onSuccess = { it.onSuccess(mockAuthResult) })
+        givenSignInSucceeds(mockUser)
 
         viewModel.firebaseAuthWithGoogle("test-id-token") {}
         advanceUntilIdle()
@@ -104,7 +106,7 @@ class AuthViewModelTest {
 
     @Test
     fun `firebaseAuthWithGoogle 실패 시 user가 null을 유지하고 onResult가 false를 받는다`() = runTest {
-        mockSignInTask(onFailure = { it.onFailure(RuntimeException("auth failed")) })
+        givenSignInFails()
 
         var callbackResult: Boolean? = null
         viewModel.firebaseAuthWithGoogle("test-id-token") { callbackResult = it }
@@ -117,8 +119,7 @@ class AuthViewModelTest {
     @Test
     fun `signOut 시 user가 null로 업데이트되고 auth_signOut이 호출된다`() = runTest {
         val mockUser = mockk<FirebaseUser>()
-        val mockAuthResult = mockk<AuthResult> { every { user } returns mockUser }
-        mockSignInTask(onSuccess = { it.onSuccess(mockAuthResult) })
+        givenSignInSucceeds(mockUser)
 
         viewModel.firebaseAuthWithGoogle("test-id-token") {}
         advanceUntilIdle()
