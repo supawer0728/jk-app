@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -39,11 +40,18 @@ class AuthViewModel(
                 suspendCancellableCoroutine { cont ->
                     auth.signInWithCredential(credential)
                         .addOnSuccessListener { authResult ->
-                            _user.value = authResult.user
+                            val user = authResult.user
+                            if (user == null) {
+                                cont.resumeWithException(IllegalStateException("authResult.user is null after successful sign-in"))
+                                return@addOnSuccessListener
+                            }
+                            _user.value = user
                             cont.resume(Unit)
                         }
                         .addOnFailureListener { cont.resumeWithException(it) }
                 }
+            }.onFailure { e ->
+                if (e is CancellationException) throw e
             }.fold(
                 onSuccess = { onResult(true) },
                 onFailure = { onResult(false) },

@@ -55,7 +55,7 @@ class AuthViewModelTest {
     }
 
     /** 성공 시나리오: success 리스너만 발화, failure 리스너는 발화하지 않음 */
-    private fun givenSignInSucceeds(mockUser: FirebaseUser): AuthResult {
+    private fun givenSignInSucceeds(mockUser: FirebaseUser) {
         val mockAuthResult = mockk<AuthResult> { every { user } returns mockUser }
         val task = mockk<Task<AuthResult>>()
         every { task.addOnSuccessListener(any()) } answers {
@@ -64,7 +64,6 @@ class AuthViewModelTest {
         }
         every { task.addOnFailureListener(any()) } returns task
         every { mockAuth.signInWithCredential(any()) } returns task
-        return mockAuthResult
     }
 
     /** 실패 시나리오: failure 리스너만 발화, success 리스너는 발화하지 않음 */
@@ -95,7 +94,6 @@ class AuthViewModelTest {
     fun `firebaseAuthWithGoogle 성공 시 auth_currentUser가 아닌 authResult_user를 사용한다`() = runTest {
         // auth.currentUser는 null이지만 authResult.user는 실제 유저 — 이슈 #27 레이스 컨디션 재현
         val mockUser = mockk<FirebaseUser>()
-        every { mockAuth.currentUser } returns null
         givenSignInSucceeds(mockUser)
 
         viewModel.firebaseAuthWithGoogle("test-id-token") {}
