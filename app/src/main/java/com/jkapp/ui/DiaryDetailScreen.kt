@@ -28,7 +28,6 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -391,7 +390,7 @@ private fun ImageThumbnailItem(
                     .background(MaterialTheme.colorScheme.surfaceVariant),
                 contentAlignment = Alignment.Center,
             ) {
-                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                LoadingIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
             }
             else -> Box(
                 modifier = Modifier
@@ -514,7 +513,7 @@ private fun ImageViewerPage(
                     .fillMaxWidth()
                     .aspectRatio(1f, matchHeightConstraintsFirst = false),
             )
-            isDownloading -> CircularProgressIndicator(color = Color.White)
+            isDownloading -> LoadingIndicator(color = Color.White)
             else -> Icon(
                 Icons.Default.Image,
                 contentDescription = null,
@@ -539,7 +538,7 @@ private fun AttachmentDetailRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (isDownloading) {
-            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+            LoadingIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
         } else {
             Icon(
                 Icons.Default.AttachFile,
