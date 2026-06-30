@@ -1,6 +1,9 @@
 package com.jkapp.ui
 
+import android.accounts.AccountManager
 import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -28,7 +31,6 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -86,6 +88,19 @@ fun DiaryDetailScreen(
     val selectedTypeIds by viewModel.selectedTypeIds.collectAsStateWithLifecycle()
     val recordTypes = success?.recordTypes ?: emptyList()
     val downloadingIds by viewModel.downloadingAttachmentIds.collectAsStateWithLifecycle()
+
+    val driveAuthRecoveryIntent by viewModel.driveAuthRecoveryIntent.collectAsStateWithLifecycle()
+    val driveAuthLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        result.data?.getStringExtra(AccountManager.KEY_ACCOUNT_NAME)?.let { accountName ->
+            viewModel.onDriveAccountSelected(accountName)
+        }
+        viewModel.clearDriveAuthRecoveryIntent()
+    }
+    LaunchedEffect(driveAuthRecoveryIntent) {
+        driveAuthRecoveryIntent?.let { driveAuthLauncher.launch(it) }
+    }
 
     val filteredDates = remember(success?.records, selectedTypeIds) {
         val records = success?.records ?: return@remember emptyList()
@@ -165,6 +180,7 @@ fun DiaryDetailScreen(
                             },
                             onOpenNonImageAttachment = { attachment, cacheDir ->
                                 viewModel.downloadAttachment(attachment.fileId, attachmentCacheFile(cacheDir, attachment))
+                                Unit
                             },
                         )
                     }
@@ -202,7 +218,7 @@ private fun RecordDetailItem(
     downloadingIds: Set<String>,
     onEdit: () -> Unit,
     onDeleteRequest: () -> Unit,
-    onDownloadAttachment: suspend (Attachment, File) -> Unit,
+    onDownloadAttachment: suspend (Attachment, File) -> Boolean,
     onOpenNonImageAttachment: suspend (Attachment, File) -> Unit,
 ) {
     val context = LocalContext.current
@@ -276,9 +292,10 @@ private fun RecordDetailItem(
                     isDownloading = isDownloading,
                     onClick = {
                         scope.launch {
+                            val destFile = attachmentCacheFile(context.cacheDir, attachment)
+                            if (!destFile.exists()) onOpenNonImageAttachment(attachment, context.cacheDir)
+                            if (!destFile.exists()) return@launch
                             runCatching {
-                                val destFile = attachmentCacheFile(context.cacheDir, attachment)
-                                onOpenNonImageAttachment(attachment, context.cacheDir)
                                 val uri = FileProvider.getUriForFile(
                                     context,
                                     "${context.packageName}.provider",
@@ -305,7 +322,7 @@ private fun ImageAttachmentSection(
     imageAttachments: List<Attachment>,
     downloadingIds: Set<String>,
     cacheDir: File,
-    onDownloadAttachment: suspend (Attachment, File) -> Unit,
+    onDownloadAttachment: suspend (Attachment, File) -> Boolean,
 ) {
     val imageFiles = remember { mutableStateMapOf<String, File>() }
     var viewerStartIndex by remember { mutableStateOf<Int?>(null) }
@@ -356,14 +373,21 @@ private fun ImageThumbnailItem(
     cacheDir: File,
     cachedFile: File?,
     onFileReady: (String, File) -> Unit,
-    onDownloadAttachment: suspend (Attachment, File) -> Unit,
+    onDownloadAttachment: suspend (Attachment, File) -> Boolean,
     onClick: () -> Unit,
 ) {
     val destFile = remember(attachment.fileId) { attachmentCacheFile(cacheDir, attachment) }
+    var retryKey by remember(attachment.fileId) { mutableStateOf(0) }
+    var downloadFailed by remember(attachment.fileId) { mutableStateOf(false) }
 
-    LaunchedEffect(attachment.fileId) {
+    LaunchedEffect(attachment.fileId, retryKey) {
+        downloadFailed = false
         if (!destFile.exists()) {
-            onDownloadAttachment(attachment, destFile)
+            val success = onDownloadAttachment(attachment, destFile)
+            if (!success) {
+                downloadFailed = true
+                return@LaunchedEffect
+            }
         }
         if (destFile.exists()) {
             onFileReady(attachment.fileId, destFile)
@@ -374,7 +398,7 @@ private fun ImageThumbnailItem(
         modifier = Modifier
             .size(80.dp)
             .clip(RoundedCornerShape(8.dp))
-            .clickable(onClick = onClick),
+            .clickable { if (downloadFailed) retryKey++ else onClick() },
         contentAlignment = Alignment.Center,
     ) {
         val displayFile = cachedFile ?: if (destFile.exists()) destFile else null
@@ -391,7 +415,7 @@ private fun ImageThumbnailItem(
                     .background(MaterialTheme.colorScheme.surfaceVariant),
                 contentAlignment = Alignment.Center,
             ) {
-                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                LoadingIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
             }
             else -> Box(
                 modifier = Modifier
@@ -427,7 +451,7 @@ private fun ImageViewerDialog(
     cacheDir: File,
     imageFiles: Map<String, File>,
     downloadingIds: Set<String>,
-    onDownloadAttachment: suspend (Attachment, File) -> Unit,
+    onDownloadAttachment: suspend (Attachment, File) -> Boolean,
     onFileReady: (String, File) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -485,15 +509,18 @@ private fun ImageViewerPage(
     cacheDir: File,
     cachedFile: File?,
     isDownloading: Boolean,
-    onDownloadAttachment: suspend (Attachment, File) -> Unit,
+    onDownloadAttachment: suspend (Attachment, File) -> Boolean,
     onFileReady: (String, File) -> Unit,
 ) {
     val destFile = remember(attachment.fileId) { attachmentCacheFile(cacheDir, attachment) }
     var fileReady by remember(attachment.fileId) { mutableStateOf(cachedFile != null || destFile.exists()) }
 
-    LaunchedEffect(attachment.fileId) {
+    var retryKey by remember(attachment.fileId) { mutableStateOf(0) }
+
+    LaunchedEffect(attachment.fileId, retryKey) {
         if (!destFile.exists()) {
-            onDownloadAttachment(attachment, destFile)
+            val success = onDownloadAttachment(attachment, destFile)
+            if (!success) return@LaunchedEffect
         }
         if (destFile.exists()) {
             onFileReady(attachment.fileId, destFile)
@@ -514,12 +541,14 @@ private fun ImageViewerPage(
                     .fillMaxWidth()
                     .aspectRatio(1f, matchHeightConstraintsFirst = false),
             )
-            isDownloading -> CircularProgressIndicator(color = Color.White)
+            isDownloading -> LoadingIndicator(color = Color.White)
             else -> Icon(
                 Icons.Default.Image,
                 contentDescription = null,
                 tint = Color.White,
-                modifier = Modifier.size(64.dp),
+                modifier = Modifier
+                    .size(64.dp)
+                    .clickable { retryKey++ },
             )
         }
     }
@@ -539,7 +568,7 @@ private fun AttachmentDetailRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (isDownloading) {
-            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+            LoadingIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
         } else {
             Icon(
                 Icons.Default.AttachFile,

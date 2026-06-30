@@ -18,13 +18,19 @@ class DriveRepositoryImpl(context: Context) : DriveRepository {
 
     private val credential = GoogleAccountCredential.usingOAuth2(
         context.applicationContext,
-        listOf(DriveScopes.DRIVE_FILE),
+        listOf(DriveScopes.DRIVE),
     )
     private val folderIdCache = mutableMapOf<String, String>()
     private val folderCacheLock = Any()
+    @Volatile private var sharedRootFolderId: String? = null
 
     override fun setAccount(accountName: String) {
         credential.selectedAccountName = accountName
+        synchronized(folderCacheLock) { folderIdCache.clear() }
+    }
+
+    override fun setSharedRootFolderId(id: String?) {
+        sharedRootFolderId = id
         synchronized(folderCacheLock) { folderIdCache.clear() }
     }
 
@@ -89,11 +95,11 @@ class DriveRepositoryImpl(context: Context) : DriveRepository {
 
     private fun getOrCreateAttachmentFolder(drive: Drive, recordId: String): String =
         synchronized(folderCacheLock) {
-            val jkappId = folderIdCache.getOrPut("jkapp") {
+            val rootId = sharedRootFolderId ?: folderIdCache.getOrPut("jkapp") {
                 getOrCreateFolder(drive, "jkapp", null)
             }
             val catRecordId = folderIdCache.getOrPut("cat-record") {
-                getOrCreateFolder(drive, "cat-record", jkappId)
+                getOrCreateFolder(drive, "cat-record", rootId)
             }
             val recordDirId = folderIdCache.getOrPut("record/$recordId") {
                 getOrCreateFolder(drive, recordId, catRecordId)

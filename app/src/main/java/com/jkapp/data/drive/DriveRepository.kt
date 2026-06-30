@@ -5,6 +5,7 @@ import java.io.InputStream
 
 interface DriveRepository {
     fun setAccount(accountName: String)
+    fun setSharedRootFolderId(id: String?)
     suspend fun uploadFile(recordId: String, inputStream: InputStream, fileName: String, mimeType: String): Attachment
     suspend fun deleteFile(fileId: String)
     suspend fun downloadFile(fileId: String): InputStream
@@ -12,6 +13,7 @@ interface DriveRepository {
     companion object {
         val NoOp: DriveRepository = object : DriveRepository {
             override fun setAccount(accountName: String) {}
+            override fun setSharedRootFolderId(id: String?) {}
             override suspend fun uploadFile(recordId: String, inputStream: InputStream, fileName: String, mimeType: String): Attachment =
                 throw IllegalStateException("Drive 계정이 초기화되지 않았습니다.")
             override suspend fun deleteFile(fileId: String) {}

@@ -1,4 +1,4 @@
-﻿package com.jkapp.ui
+package com.jkapp.ui
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -42,7 +41,7 @@ import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
 import androidx.credentials.exceptions.GetCredentialException
 import com.jkapp.auth.AuthViewModel
-import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.jkapp.R
 import kotlinx.coroutines.launch
@@ -87,16 +86,14 @@ fun LoginScreen(viewModel: AuthViewModel) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(40.dp))
-                
+
                 GoogleSignInButton(
                     onClick = {
                         isLoading = true
                         errorMessage = null
                         coroutineScope.launch {
                             try {
-                                val googleIdOption = GetGoogleIdOption.Builder()
-                                    .setFilterByAuthorizedAccounts(false)
-                                    .setServerClientId(webClientId)
+                                val googleIdOption = GetSignInWithGoogleOption.Builder(webClientId)
                                     .build()
                                 val request = GetCredentialRequest.Builder()
                                     .addCredentialOption(googleIdOption)
@@ -141,14 +138,14 @@ fun GoogleSignInButton(
     modifier: Modifier = Modifier
 ) {
     val isDark = isSystemInDarkTheme()
-    
+
     // Google Branding Colors
     val backgroundColor = if (isDark) Color(0xFF131314) else Color.White
     val contentColor = if (isDark) Color.White else Color(0xFF1F1F1F)
     val borderColor = if (isDark) Color(0xFF8E918F) else Color(0xFF747775)
-    
+
     val loadingDescription = stringResource(R.string.signing_in)
-    
+
     Surface(
         onClick = { if (!isLoading) onClick() },
         modifier = modifier
@@ -168,7 +165,7 @@ fun GoogleSignInButton(
             modifier = Modifier.fillMaxSize()
         ) {
             if (isLoading) {
-                CircularProgressIndicator(
+                LoadingIndicator(
                     modifier = Modifier.size(20.dp),
                     color = contentColor,
                     strokeWidth = 2.dp
@@ -196,4 +193,3 @@ fun GoogleSignInButton(
         }
     }
 }
-

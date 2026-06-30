@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -17,10 +18,17 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-class AuthViewModel(app: Application) : AndroidViewModel(app) {
+class AuthViewModel(
+    app: Application,
+    private val auth: FirebaseAuth,
+    private val credentialManager: CredentialManager,
+) : AndroidViewModel(app) {
 
-    private val auth = FirebaseAuth.getInstance()
-    private val credentialManager = CredentialManager.create(app)
+    constructor(app: Application) : this(
+        app = app,
+        auth = FirebaseAuth.getInstance(),
+        credentialManager = CredentialManager.create(app),
+    )
 
     private val _user = MutableStateFlow<FirebaseUser?>(auth.currentUser)
     val user: StateFlow<FirebaseUser?> = _user.asStateFlow()
@@ -31,12 +39,19 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
             runCatching {
                 suspendCancellableCoroutine { cont ->
                     auth.signInWithCredential(credential)
-                        .addOnSuccessListener {
-                            _user.value = auth.currentUser
+                        .addOnSuccessListener { authResult ->
+                            val user = authResult.user
+                            if (user == null) {
+                                cont.resumeWithException(IllegalStateException("authResult.user is null after successful sign-in"))
+                                return@addOnSuccessListener
+                            }
+                            _user.value = user
                             cont.resume(Unit)
                         }
                         .addOnFailureListener { cont.resumeWithException(it) }
                 }
+            }.onFailure { e ->
+                if (e is CancellationException) throw e
             }.fold(
                 onSuccess = { onResult(true) },
                 onFailure = { onResult(false) },

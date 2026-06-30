@@ -9,10 +9,13 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.jkapp.auth.AuthRepository
 import com.jkapp.auth.FirebaseAuthRepository
+import com.jkapp.data.AppPreferences
 import com.jkapp.data.drive.DriveAuthRequiredException
 import com.jkapp.data.drive.DriveRepository
 import com.jkapp.data.firestore.FirestoreRepository
 import com.jkapp.data.firestore.FirestoreRepositoryImpl
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import com.jkapp.data.model.Attachment
 import com.jkapp.data.model.CatRecord
 import com.jkapp.data.model.CatRecordType
@@ -47,6 +50,7 @@ class DiaryViewModel(
     private val repository: FirestoreRepository = FirestoreRepositoryImpl(),
     private val driveRepository: DriveRepository = DriveRepository.NoOp,
     authRepository: AuthRepository = FirebaseAuthRepository(),
+    private val appPreferences: AppPreferences? = null,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<DiaryUiState>(DiaryUiState.Loading)
@@ -118,6 +122,9 @@ class DiaryViewModel(
                 email?.let { driveRepository.setAccount(it) }
             }
         }
+        appPreferences?.sharedRootFolderId
+            ?.onEach { driveRepository.setSharedRootFolderId(it) }
+            ?.launchIn(viewModelScope)
     }
 
     private fun startDataCollection() {
@@ -159,6 +166,18 @@ class DiaryViewModel(
     fun onDriveAccountSelected(accountName: String) {
         driveRepository.setAccount(accountName)
     }
+
+    fun setSharedRootFolderId(id: String?) {
+        viewModelScope.launch {
+            appPreferences?.setSharedRootFolderId(id)
+            driveRepository.setSharedRootFolderId(id)
+        }
+    }
+
+    val sharedRootFolderId: StateFlow<String?> =
+        appPreferences?.sharedRootFolderId?.stateIn(
+            viewModelScope, SharingStarted.Eagerly, null
+        ) ?: MutableStateFlow(null)
 
     // ── 첨부파일 관리 ────────────────────────────────────────────────────────────
 
@@ -281,20 +300,23 @@ class DiaryViewModel(
         retryCompletionRecord = null
     }
 
-    suspend fun downloadAttachment(fileId: String, destFile: java.io.File) {
+    suspend fun downloadAttachment(fileId: String, destFile: java.io.File): Boolean {
         _downloadingAttachmentIds.update { it + fileId }
-        try {
+        return try {
             withContext(Dispatchers.IO) {
                 driveRepository.downloadFile(fileId).use { input ->
                     destFile.outputStream().use { output -> input.copyTo(output) }
                 }
             }
+            true
         } catch (e: DriveAuthRequiredException) {
             Log.w(TAG, "Drive 다운로드 인증 필요: fileId=$fileId")
             _driveAuthRecoveryIntent.value = e.recoveryIntent
+            false
         } catch (e: Exception) {
+            destFile.delete()
             Log.e(TAG, "Drive 다운로드 실패: fileId=$fileId", e)
-            throw e
+            false
         } finally {
             _downloadingAttachmentIds.update { it - fileId }
         }
@@ -554,8 +576,8 @@ class DiaryViewModel(
         private const val TAG = "DiaryViewModel"
         val SYSTEM_TYPE_IDS = setOf("DAILY_NOTE", "HOSPITAL_VISIT")
 
-        fun factory(driveRepository: DriveRepository): ViewModelProvider.Factory =
-            viewModelFactory { initializer { DiaryViewModel(driveRepository = driveRepository) } }
+        fun factory(driveRepository: DriveRepository, appPreferences: AppPreferences): ViewModelProvider.Factory =
+            viewModelFactory { initializer { DiaryViewModel(driveRepository = driveRepository, appPreferences = appPreferences) } }
         const val FALLBACK_RECORD_TYPE_ID = "DAILY_NOTE"
 
         fun toggleInSet(id: String, current: Set<String>): Set<String> =

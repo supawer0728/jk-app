@@ -11,16 +11,24 @@ class FakeDriveRepository : DriveRepository {
 
     var uploadError: Throwable? = null
     var deleteError: Throwable? = null
+    var downloadError: Throwable? = null
+    var sharedRootFolderIdSet: String? = "NOT_CALLED"
 
     fun reset() {
         uploadedFiles.clear()
         deletedFileIds.clear()
         uploadError = null
         deleteError = null
+        downloadError = null
+        sharedRootFolderIdSet = "NOT_CALLED"
     }
 
     override fun setAccount(accountName: String) {
         this.accessToken = accountName
+    }
+
+    override fun setSharedRootFolderId(id: String?) {
+        sharedRootFolderIdSet = id
     }
 
     override suspend fun uploadFile(
@@ -43,6 +51,8 @@ class FakeDriveRepository : DriveRepository {
         deletedFileIds.add(fileId)
     }
 
-    override suspend fun downloadFile(fileId: String): InputStream =
-        "fake-content".byteInputStream()
+    override suspend fun downloadFile(fileId: String): InputStream {
+        downloadError?.let { throw it }
+        return "fake-content".byteInputStream()
+    }
 }
