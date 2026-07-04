@@ -4,6 +4,8 @@ import com.jkapp.data.firestore.FakeFirestoreRepository
 import com.jkapp.data.model.AssetItem
 import com.jkapp.data.model.DailyAsset
 import java.math.BigDecimal
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -342,6 +344,22 @@ class DailyAssetViewModelTest {
         advanceUntilIdle()
 
         assertNull(viewModel.netWorth.value)
+    }
+
+    @Test
+    fun `netWorth는 미래 날짜 자산을 제외하고 오늘 이전 최신 자산을 사용한다`() = runTest {
+        val today = DiaryViewModel.todayDate()
+        val tomorrow = LocalDate.parse(today, DateTimeFormatter.ISO_LOCAL_DATE).plusDays(1)
+            .format(DateTimeFormatter.ISO_LOCAL_DATE)
+        fakeRepository.setDailyAssets(
+            listOf(
+                DailyAsset(date = today, assets = listOf(makeAsset("현금", amount = BigDecimal("1000")))),
+                DailyAsset(date = tomorrow, assets = listOf(makeAsset("현금", amount = BigDecimal("999999")))),
+            )
+        )
+        advanceUntilIdle()
+
+        assertEquals(BigDecimal("1000"), viewModel.netWorth.value)
     }
 
     @Test

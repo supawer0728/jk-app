@@ -67,6 +67,7 @@ fun MainScreen(
     val user by viewModel.user.collectAsStateWithLifecycle()
     val currentUser = user ?: return
     val netWorth by dailyAssetViewModel.netWorth.collectAsStateWithLifecycle()
+    val investmentAmount by benchmarkViewModel.latestCurrentAmount.collectAsStateWithLifecycle()
 
     var selectedTab by rememberSaveable { mutableStateOf(MainTab.HOME) }
     var showProfileMenu by remember { mutableStateOf(false) }
@@ -119,7 +120,7 @@ fun MainScreen(
         bottomBar = {
             Column {
                 if (selectedTab == MainTab.ASSET) {
-                    NetWorthBanner(netWorth = netWorth)
+                    NetWorthBanner(netWorth = netWorth, investmentAmount = investmentAmount)
                 }
                 NavigationBar {
                     MainTab.entries.forEach { tab ->
@@ -150,7 +151,7 @@ fun MainScreen(
 }
 
 @Composable
-private fun NetWorthBanner(netWorth: BigDecimal?) {
+private fun NetWorthBanner(netWorth: BigDecimal?, investmentAmount: BigDecimal?) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -166,6 +167,16 @@ private fun NetWorthBanner(netWorth: BigDecimal?) {
         )
         Text(
             text = netWorth?.toDisplayAmount() ?: "-",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+        )
+        Text(
+            text = stringResource(R.string.investment_asset_label),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = investmentAmount?.toDisplayAmount() ?: "-",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
         )

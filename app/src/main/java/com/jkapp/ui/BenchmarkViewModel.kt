@@ -9,12 +9,15 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.jkapp.data.firestore.FirestoreRepository
 import com.jkapp.data.firestore.FirestoreRepositoryImpl
 import com.jkapp.data.model.Benchmark
+import java.math.BigDecimal
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class BenchmarkViewModel(
@@ -28,6 +31,17 @@ class BenchmarkViewModel(
     // 바뀔 때만 재발행되므로, 쓰기 실패(데이터 변화 없음) 시 Error로 덮으면 표가 사라진 채 고착된다.
     private val _actionError = MutableStateFlow<String?>(null)
     val actionError: StateFlow<String?> = _actionError.asStateFlow()
+
+    // 오늘 혹은 그보다 가까운 과거 날짜 중 가장 최신인 벤치마크의 현재금액(투자자산). 데이터가 없으면 null.
+    val latestCurrentAmount: StateFlow<BigDecimal?> = uiState
+        .map { state ->
+            val today = DiaryViewModel.todayDate()
+            (state as? BenchmarkUiState.Success)?.benchmarks
+                ?.filter { it.date <= today }
+                ?.maxByOrNull { it.date }
+                ?.currentAmount
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     private var dataJob: Job? = null
 

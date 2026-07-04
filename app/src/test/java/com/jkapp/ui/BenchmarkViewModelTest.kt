@@ -3,6 +3,8 @@ package com.jkapp.ui
 import com.jkapp.data.firestore.FakeFirestoreRepository
 import com.jkapp.data.model.Benchmark
 import java.math.BigDecimal
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -147,6 +149,42 @@ class BenchmarkViewModelTest {
         val state = viewModel.uiState.value as BenchmarkUiState.Success
         assertEquals(setOf("2026-07-02"), state.benchmarks.map { it.date }.toSet())
         assertTrue(viewModel.actionError.value!!.contains("2026-07-02"))
+    }
+
+    @Test
+    fun `latestCurrentAmount는 가장 최신 날짜의 현재금액을 반환한다`() = runTest {
+        fakeRepository.setBenchmarks(
+            listOf(
+                makeBenchmark("2026-07-01", currentAmount = BigDecimal("1000000")),
+                makeBenchmark("2026-07-02", currentAmount = BigDecimal("1200000")),
+            )
+        )
+        advanceUntilIdle()
+
+        assertEquals(BigDecimal("1200000"), viewModel.latestCurrentAmount.value)
+    }
+
+    @Test
+    fun `latestCurrentAmount는 미래 날짜를 제외하고 오늘 이전 최신 값을 사용한다`() = runTest {
+        val today = DiaryViewModel.todayDate()
+        val tomorrow = LocalDate.parse(today, DateTimeFormatter.ISO_LOCAL_DATE).plusDays(1)
+            .format(DateTimeFormatter.ISO_LOCAL_DATE)
+        fakeRepository.setBenchmarks(
+            listOf(
+                makeBenchmark(today, currentAmount = BigDecimal("1000000")),
+                makeBenchmark(tomorrow, currentAmount = BigDecimal("9999999")),
+            )
+        )
+        advanceUntilIdle()
+
+        assertEquals(BigDecimal("1000000"), viewModel.latestCurrentAmount.value)
+    }
+
+    @Test
+    fun `latestCurrentAmount는 데이터가 없으면 null이다`() = runTest {
+        advanceUntilIdle()
+
+        assertNull(viewModel.latestCurrentAmount.value)
     }
 
     @Test

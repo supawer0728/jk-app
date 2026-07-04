@@ -30,10 +30,13 @@ class DailyAssetViewModel(
     private val _uiState = MutableStateFlow<DailyAssetUiState>(DailyAssetUiState.Loading)
     val uiState: StateFlow<DailyAssetUiState> = _uiState.asStateFlow()
 
-    // 가장 최신 날짜의 자산 중 숨김 처리되지 않은 항목의 합계(순자산). 데이터가 없거나 전부 숨김이면 null.
+    // 오늘 혹은 그보다 가까운 과거 날짜 중 가장 최신인 자산의, 숨김 처리되지 않은 항목 합계(순자산).
+    // 데이터가 없거나 전부 숨김이면 null. 미래 날짜로 잘못 입력된 항목은 제외한다.
     val netWorth: StateFlow<BigDecimal?> = uiState
         .map { state ->
+            val today = DiaryViewModel.todayDate()
             (state as? DailyAssetUiState.Success)?.dailyAssets
+                ?.filter { it.date <= today }
                 ?.maxByOrNull { it.date }
                 ?.assets
                 ?.filterNot { it.hidden }

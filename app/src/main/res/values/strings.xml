@@ -81,6 +81,7 @@
     <string name="asset_field_hidden">숨김 (순자산 계산에서 제외)</string>
     <string name="asset_toggle_show_hidden">숨김 자산 표시</string>
     <string name="net_worth_label">순자산</string>
+    <string name="investment_asset_label">투자자산</string>
     <string name="benchmark_add">벤치마크 추가</string>
     <string name="benchmark_add_title">벤치마크 추가</string>
     <string name="benchmark_edit_title">벤치마크 수정</string>
