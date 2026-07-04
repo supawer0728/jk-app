@@ -1,5 +1,6 @@
 package com.jkapp.data.firestore
 
+import com.jkapp.data.model.Benchmark
 import com.jkapp.data.model.CatRecord
 import com.jkapp.data.model.CatRecordType
 import com.jkapp.data.model.DailyAsset
@@ -11,6 +12,7 @@ class FakeFirestoreRepository : FirestoreRepository {
     private val _recordTypes = MutableStateFlow<List<CatRecordType>>(emptyList())
     private val _records = MutableStateFlow<List<CatRecord>>(emptyList())
     private val _dailyAssets = MutableStateFlow<List<DailyAsset>>(emptyList())
+    private val _benchmarks = MutableStateFlow<List<Benchmark>>(emptyList())
 
     var addRecordError: Throwable? = null
     var updateRecordError: Throwable? = null
@@ -20,6 +22,8 @@ class FakeFirestoreRepository : FirestoreRepository {
     var deleteRecordTypeError: Throwable? = null
     var upsertDailyAssetError: Throwable? = null
     var deleteDailyAssetError: Throwable? = null
+    var upsertBenchmarkError: Throwable? = null
+    var deleteBenchmarkError: Throwable? = null
 
     // 테스트에서 실제 Firestore 네트워크 왕복(suspension)을 흉내내기 위한 훅.
     // 동시 호출 시 뮤텍스로 직렬화되는지 검증하는 데 사용한다.
@@ -28,6 +32,7 @@ class FakeFirestoreRepository : FirestoreRepository {
     fun setRecordTypes(types: List<CatRecordType>) { _recordTypes.value = types }
     fun setRecords(records: List<CatRecord>) { _records.value = records }
     fun setDailyAssets(dailyAssets: List<DailyAsset>) { _dailyAssets.value = dailyAssets }
+    fun setBenchmarks(benchmarks: List<Benchmark>) { _benchmarks.value = benchmarks }
 
     override fun getRecordTypes(): Flow<List<CatRecordType>> = _recordTypes
     override fun getRecords(): Flow<List<CatRecord>> = _records
@@ -89,5 +94,22 @@ class FakeFirestoreRepository : FirestoreRepository {
     override suspend fun deleteDailyAsset(date: String) {
         deleteDailyAssetError?.let { throw it }
         _dailyAssets.value = _dailyAssets.value.filter { it.date != date }
+    }
+
+    override fun getBenchmarks(): Flow<List<Benchmark>> = _benchmarks
+
+    override suspend fun upsertBenchmark(benchmark: Benchmark) {
+        upsertBenchmarkError?.let { throw it }
+        val existingIndex = _benchmarks.value.indexOfFirst { it.date == benchmark.date }
+        _benchmarks.value = if (existingIndex >= 0) {
+            _benchmarks.value.mapIndexed { index, existing -> if (index == existingIndex) benchmark else existing }
+        } else {
+            _benchmarks.value + benchmark
+        }
+    }
+
+    override suspend fun deleteBenchmark(date: String) {
+        deleteBenchmarkError?.let { throw it }
+        _benchmarks.value = _benchmarks.value.filter { it.date != date }
     }
 }

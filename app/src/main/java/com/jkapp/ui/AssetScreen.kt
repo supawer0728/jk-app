@@ -1,6 +1,8 @@
 package com.jkapp.ui
 
 import androidx.annotation.StringRes
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,9 +13,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -34,6 +39,7 @@ import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -51,12 +57,18 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jkapp.R
 import com.jkapp.data.model.AssetItem
+import com.jkapp.data.model.Benchmark
 import com.jkapp.data.model.DEFAULT_HIDDEN_ASSET_NAMES
+import com.jkapp.data.model.returnRatePercent
 import java.math.BigDecimal
 import java.text.NumberFormat
 import java.util.Locale
@@ -70,7 +82,7 @@ private enum class AssetTab(@StringRes val labelRes: Int) {
 }
 
 @Composable
-fun AssetScreen(viewModel: DailyAssetViewModel) {
+fun AssetScreen(viewModel: DailyAssetViewModel, benchmarkViewModel: BenchmarkViewModel) {
     var selectedTab by rememberSaveable { mutableStateOf(AssetTab.DAILY_ASSET) }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -87,7 +99,7 @@ fun AssetScreen(viewModel: DailyAssetViewModel) {
             when (selectedTab) {
                 AssetTab.DAILY_ASSET -> DailyAssetTab(viewModel = viewModel)
                 AssetTab.INVESTMENT -> PlaceholderTabContent(stringResource(R.string.asset_tab_investment_placeholder))
-                AssetTab.BENCHMARK -> PlaceholderTabContent(stringResource(R.string.asset_tab_benchmark_placeholder))
+                AssetTab.BENCHMARK -> BenchmarkTab(viewModel = benchmarkViewModel)
             }
         }
     }
@@ -674,5 +686,322 @@ private fun AssetPasteImportDialog(
                 TextButton(onClick = { parsed = null }) { Text(stringResource(R.string.asset_paste_import_back)) }
             }
         }
+    )
+}
+
+private sealed interface BenchmarkFormTarget {
+    data object New : BenchmarkFormTarget
+    data class Edit(val benchmark: Benchmark) : BenchmarkFormTarget
+}
+
+private val BENCHMARK_DATE_COLUMN_WIDTH = 96.dp
+private val BENCHMARK_VALUE_COLUMN_WIDTH = 104.dp
+private val BENCHMARK_ACTION_COLUMN_WIDTH = 88.dp
+
+@Composable
+private fun BenchmarkTab(viewModel: BenchmarkViewModel) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val actionError by viewModel.actionError.collectAsStateWithLifecycle()
+    // Benchmark는 Parcelable/Serializable이 아니므로 rememberSaveable로 저장할 수 없다(회전 시 초기화됨).
+    var formTarget by remember { mutableStateOf<BenchmarkFormTarget?>(null) }
+    var pendingDelete by remember { mutableStateOf<Benchmark?>(null) }
+    val existingDates = remember(uiState) {
+        (uiState as? BenchmarkUiState.Success)?.benchmarks?.map { it.date }?.toSet() ?: emptySet()
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        when (val state = uiState) {
+            is BenchmarkUiState.Loading -> {
+                LoadingIndicator(modifier = Modifier.align(Alignment.Center))
+            }
+            is BenchmarkUiState.Error -> {
+                Text(
+                    text = state.message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.align(Alignment.Center).padding(16.dp)
+                )
+            }
+            is BenchmarkUiState.Success -> {
+                if (state.benchmarks.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.benchmark_empty),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.align(Alignment.Center),
+                    )
+                } else {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .horizontalScroll(rememberScrollState()),
+                    ) {
+                        BenchmarkHeaderRow()
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .verticalScroll(rememberScrollState())
+                                .padding(bottom = 80.dp),
+                        ) {
+                            state.benchmarks.forEach { benchmark ->
+                                BenchmarkRow(
+                                    benchmark = benchmark,
+                                    onEditRequest = { formTarget = BenchmarkFormTarget.Edit(benchmark) },
+                                    onDeleteRequest = { pendingDelete = benchmark },
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Box(modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)) {
+                    FloatingActionButton(onClick = { formTarget = BenchmarkFormTarget.New }) {
+                        Icon(Icons.Default.Add, contentDescription = stringResource(R.string.benchmark_add))
+                    }
+                }
+            }
+        }
+    }
+
+    formTarget?.let { target ->
+        BenchmarkFormDialog(
+            initial = (target as? BenchmarkFormTarget.Edit)?.benchmark,
+            existingDates = existingDates,
+            onDismiss = { formTarget = null },
+            onSave = { benchmark ->
+                viewModel.saveBenchmark(benchmark)
+                formTarget = null
+            },
+        )
+    }
+
+    actionError?.let { message ->
+        AlertDialog(
+            onDismissRequest = { viewModel.consumeActionError() },
+            text = { Text(message) },
+            confirmButton = {
+                TextButton(onClick = { viewModel.consumeActionError() }) {
+                    Text(stringResource(android.R.string.ok))
+                }
+            },
+        )
+    }
+
+    pendingDelete?.let { benchmark ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text(stringResource(R.string.benchmark_delete_confirm_title)) },
+            text = { Text(stringResource(R.string.benchmark_delete_confirm_message, benchmark.date)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deleteBenchmark(benchmark.date)
+                    pendingDelete = null
+                }) {
+                    Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun BenchmarkHeaderRow() {
+    Column {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            BenchmarkCell(stringResource(R.string.benchmark_field_date), BENCHMARK_DATE_COLUMN_WIDTH, bold = true)
+            BenchmarkCell(stringResource(R.string.benchmark_field_principal), BENCHMARK_VALUE_COLUMN_WIDTH, bold = true)
+            BenchmarkCell(stringResource(R.string.benchmark_field_additional_investment), BENCHMARK_VALUE_COLUMN_WIDTH, bold = true)
+            BenchmarkCell(stringResource(R.string.benchmark_field_current_amount), BENCHMARK_VALUE_COLUMN_WIDTH, bold = true)
+            BenchmarkCell(stringResource(R.string.benchmark_field_return_rate), BENCHMARK_VALUE_COLUMN_WIDTH, bold = true)
+            BenchmarkCell(stringResource(R.string.benchmark_field_kospi), BENCHMARK_VALUE_COLUMN_WIDTH, bold = true)
+            BenchmarkCell(stringResource(R.string.benchmark_field_snp500), BENCHMARK_VALUE_COLUMN_WIDTH, bold = true)
+            BenchmarkCell(stringResource(R.string.benchmark_field_nasdaq), BENCHMARK_VALUE_COLUMN_WIDTH, bold = true)
+            BenchmarkCell("", BENCHMARK_ACTION_COLUMN_WIDTH, bold = true)
+        }
+        HorizontalDivider()
+    }
+}
+
+@Composable
+private fun BenchmarkRow(
+    benchmark: Benchmark,
+    onEditRequest: () -> Unit,
+    onDeleteRequest: () -> Unit,
+) {
+    val returnRate = remember(benchmark) { benchmark.returnRatePercent() }
+    Column {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            BenchmarkCell(benchmark.date, BENCHMARK_DATE_COLUMN_WIDTH)
+            BenchmarkCell(benchmark.principal.toDisplayAmount(), BENCHMARK_VALUE_COLUMN_WIDTH)
+            BenchmarkCell(benchmark.additionalInvestment.toDisplayAmount(), BENCHMARK_VALUE_COLUMN_WIDTH)
+            BenchmarkCell(benchmark.currentAmount.toDisplayAmount(), BENCHMARK_VALUE_COLUMN_WIDTH)
+            BenchmarkCell(
+                text = returnRate?.let { "$it%" } ?: "—",
+                width = BENCHMARK_VALUE_COLUMN_WIDTH,
+                color = when {
+                    returnRate == null -> MaterialTheme.colorScheme.onSurfaceVariant
+                    returnRate.signum() < 0 -> MaterialTheme.colorScheme.error
+                    else -> MaterialTheme.colorScheme.primary
+                },
+            )
+            BenchmarkCell(benchmark.kospi.toPlainString(), BENCHMARK_VALUE_COLUMN_WIDTH)
+            BenchmarkCell(benchmark.snp500.toPlainString(), BENCHMARK_VALUE_COLUMN_WIDTH)
+            BenchmarkCell(benchmark.nasdaq.toPlainString(), BENCHMARK_VALUE_COLUMN_WIDTH)
+            Row(modifier = Modifier.width(BENCHMARK_ACTION_COLUMN_WIDTH)) {
+                IconButton(onClick = onEditRequest, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.edit), modifier = Modifier.size(18.dp))
+                }
+                IconButton(onClick = onDeleteRequest, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.delete), modifier = Modifier.size(18.dp))
+                }
+            }
+        }
+        HorizontalDivider()
+    }
+}
+
+@Composable
+private fun BenchmarkCell(text: String, width: Dp, bold: Boolean = false, color: Color = Color.Unspecified) {
+    Text(
+        text = text,
+        modifier = Modifier.width(width).padding(end = 4.dp),
+        style = if (bold) MaterialTheme.typography.labelMedium else MaterialTheme.typography.bodySmall,
+        color = color,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BenchmarkFormDialog(
+    initial: Benchmark?,
+    existingDates: Set<String>,
+    onDismiss: () -> Unit,
+    onSave: (Benchmark) -> Unit,
+) {
+    var date by rememberSaveable { mutableStateOf(initial?.date ?: DiaryViewModel.todayDate()) }
+    var showDatePicker by rememberSaveable { mutableStateOf(false) }
+    var principalText by rememberSaveable { mutableStateOf(initial?.principal?.toPlainString() ?: "") }
+    var additionalInvestmentText by rememberSaveable { mutableStateOf(initial?.additionalInvestment?.toPlainString() ?: "") }
+    var currentAmountText by rememberSaveable { mutableStateOf(initial?.currentAmount?.toPlainString() ?: "") }
+    var kospiText by rememberSaveable { mutableStateOf(initial?.kospi?.toPlainString() ?: "") }
+    var snp500Text by rememberSaveable { mutableStateOf(initial?.snp500?.toPlainString() ?: "") }
+    var nasdaqText by rememberSaveable { mutableStateOf(initial?.nasdaq?.toPlainString() ?: "") }
+
+    val principal = principalText.trim().toBigDecimalOrNull()
+    val additionalInvestment = additionalInvestmentText.trim().toBigDecimalOrNull()
+    val currentAmount = currentAmountText.trim().toBigDecimalOrNull()
+    val kospi = kospiText.trim().toBigDecimalOrNull()
+    val snp500 = snp500Text.trim().toBigDecimalOrNull()
+    val nasdaq = nasdaqText.trim().toBigDecimalOrNull()
+    // 신규 추가인데 이미 존재하는 날짜를 고르면 저장 시 기존 문서를 조용히 덮어쓰게 되므로 막는다.
+    val dateConflict = initial == null && date in existingDates
+    val isValid = !dateConflict && principal != null && additionalInvestment != null && currentAmount != null &&
+        kospi != null && snp500 != null && nasdaq != null
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(if (initial != null) R.string.benchmark_edit_title else R.string.benchmark_add_title)) },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedTextField(
+                    value = date,
+                    onValueChange = {},
+                    readOnly = true,
+                    enabled = initial == null,
+                    isError = dateConflict,
+                    supportingText = {
+                        if (dateConflict) Text(stringResource(R.string.benchmark_date_conflict))
+                    },
+                    label = { Text(stringResource(R.string.benchmark_field_date)) },
+                    trailingIcon = {
+                        IconButton(onClick = { showDatePicker = true }, enabled = initial == null) {
+                            Icon(Icons.Default.DateRange, contentDescription = stringResource(R.string.asset_pick_date))
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                BenchmarkNumberField(principalText, { principalText = it }, R.string.benchmark_field_principal, principal != null)
+                BenchmarkNumberField(
+                    additionalInvestmentText,
+                    { additionalInvestmentText = it },
+                    R.string.benchmark_field_additional_investment,
+                    additionalInvestment != null,
+                )
+                BenchmarkNumberField(currentAmountText, { currentAmountText = it }, R.string.benchmark_field_current_amount, currentAmount != null)
+                BenchmarkNumberField(kospiText, { kospiText = it }, R.string.benchmark_field_kospi, kospi != null)
+                BenchmarkNumberField(snp500Text, { snp500Text = it }, R.string.benchmark_field_snp500, snp500 != null)
+                BenchmarkNumberField(nasdaqText, { nasdaqText = it }, R.string.benchmark_field_nasdaq, nasdaq != null)
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    onSave(
+                        Benchmark(
+                            firestoreId = date,
+                            date = date,
+                            additionalInvestment = additionalInvestment!!,
+                            principal = principal!!,
+                            currentAmount = currentAmount!!,
+                            kospi = kospi!!,
+                            snp500 = snp500!!,
+                            nasdaq = nasdaq!!,
+                        )
+                    )
+                },
+                enabled = isValid,
+            ) { Text(stringResource(R.string.save)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        }
+    )
+
+    if (showDatePicker) {
+        IsoDatePickerDialog(
+            initialDate = date,
+            onDismiss = { showDatePicker = false },
+            onConfirm = {
+                date = it
+                showDatePicker = false
+            },
+        )
+    }
+}
+
+@Composable
+private fun BenchmarkNumberField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    @StringRes labelRes: Int,
+    valid: Boolean,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(stringResource(labelRes)) },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+        isError = value.isNotBlank() && !valid,
+        supportingText = {
+            if (value.isNotBlank() && !valid) Text(stringResource(R.string.asset_amount_invalid))
+        },
+        modifier = Modifier.fillMaxWidth(),
     )
 }

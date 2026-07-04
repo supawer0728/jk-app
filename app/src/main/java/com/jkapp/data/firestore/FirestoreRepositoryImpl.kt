@@ -1,9 +1,11 @@
 package com.jkapp.data.firestore
 
 import android.util.Log
+import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.jkapp.data.model.Attachment
 import com.jkapp.data.model.AssetItem
+import com.jkapp.data.model.Benchmark
 import com.jkapp.data.model.CatRecord
 import com.jkapp.data.model.CatRecordType
 import com.jkapp.data.model.DailyAsset
@@ -20,6 +22,7 @@ class FirestoreRepositoryImpl : FirestoreRepository {
     private val recordTypesRef = db.collection(COLLECTION_RECORD_TYPES)
     private val recordsRef = db.collection(COLLECTION_RECORDS)
     private val dailyAssetsRef = db.collection(COLLECTION_DAILY_ASSETS)
+    private val benchmarksRef = db.collection(COLLECTION_BENCHMARKS)
 
     override fun getRecordTypes(): Flow<List<CatRecordType>> = callbackFlow {
         val listener = recordTypesRef.addSnapshotListener { snapshot, error ->
@@ -161,6 +164,69 @@ class FirestoreRepositoryImpl : FirestoreRepository {
             .addOnFailureListener { cont.resumeWithException(it) }
     }
 
+    override fun getBenchmarks(): Flow<List<Benchmark>> = callbackFlow {
+        val listener = benchmarksRef.addSnapshotListener { snapshot, error ->
+            if (error != null) {
+                close(error)
+                return@addSnapshotListener
+            }
+            val benchmarks = snapshot?.documents
+                ?.mapNotNull { it.toBenchmark() }
+                ?.sortedBy { it.date } ?: emptyList()
+
+            trySend(benchmarks)
+        }
+        awaitClose { listener.remove() }
+    }
+
+    override suspend fun upsertBenchmark(benchmark: Benchmark): Unit = suspendCancellableCoroutine { cont ->
+        benchmarksRef.document(benchmark.date).set(benchmark.toMap())
+            .addOnSuccessListener { cont.resume(Unit) }
+            .addOnFailureListener { cont.resumeWithException(it) }
+    }
+
+    override suspend fun deleteBenchmark(date: String): Unit = suspendCancellableCoroutine { cont ->
+        benchmarksRef.document(date).delete()
+            .addOnSuccessListener { cont.resume(Unit) }
+            .addOnFailureListener { cont.resumeWithException(it) }
+    }
+
+    private fun Benchmark.toMap() = mapOf(
+        FIELD_DATE to date,
+        FIELD_ADDITIONAL_INVESTMENT to additionalInvestment.toPlainString(),
+        FIELD_PRINCIPAL to principal.toPlainString(),
+        FIELD_CURRENT_AMOUNT to currentAmount.toPlainString(),
+        FIELD_KOSPI to kospi.toPlainString(),
+        FIELD_SNP500 to snp500.toPlainString(),
+        FIELD_NASDAQ to nasdaq.toPlainString(),
+    )
+
+    // 숫자 필드가 하나라도 없거나 파싱에 실패하면 표에 잘못된 값을 보여주는 대신 건너뛰고 로그를 남긴다.
+    private fun DocumentSnapshot.toBenchmark(): Benchmark? {
+        val additionalInvestment = getString(FIELD_ADDITIONAL_INVESTMENT)?.toBigDecimalOrNull()
+        val principal = getString(FIELD_PRINCIPAL)?.toBigDecimalOrNull()
+        val currentAmount = getString(FIELD_CURRENT_AMOUNT)?.toBigDecimalOrNull()
+        val kospi = getString(FIELD_KOSPI)?.toBigDecimalOrNull()
+        val snp500 = getString(FIELD_SNP500)?.toBigDecimalOrNull()
+        val nasdaq = getString(FIELD_NASDAQ)?.toBigDecimalOrNull()
+        if (additionalInvestment == null || principal == null || currentAmount == null ||
+            kospi == null || snp500 == null || nasdaq == null
+        ) {
+            Log.w(TAG, "benchmarks 문서에 숫자 필드가 누락되어 건너뜁니다: id=$id")
+            return null
+        }
+        return Benchmark(
+            firestoreId = id,
+            date = getString(FIELD_DATE) ?: id,
+            additionalInvestment = additionalInvestment,
+            principal = principal,
+            currentAmount = currentAmount,
+            kospi = kospi,
+            snp500 = snp500,
+            nasdaq = nasdaq,
+        )
+    }
+
     private fun DailyAsset.toMap() = mapOf(
         FIELD_DATE to date,
         FIELD_ASSETS to assets.map { it.toMap() },
@@ -225,6 +291,7 @@ class FirestoreRepositoryImpl : FirestoreRepository {
         private const val COLLECTION_RECORD_TYPES = "cat-record-types"
         private const val COLLECTION_RECORDS = "cat-records"
         private const val COLLECTION_DAILY_ASSETS = "daily-assets"
+        private const val COLLECTION_BENCHMARKS = "benchmarks"
 
         // Field names - CatRecordType
         private const val FIELD_ID = "id"
@@ -256,5 +323,13 @@ class FirestoreRepositoryImpl : FirestoreRepository {
         private const val FIELD_ASSET_CARD = "card"
         private const val FIELD_ASSET_AMOUNT = "amount"
         private const val FIELD_ASSET_HIDDEN = "hidden"
+
+        // Field names - Benchmark
+        private const val FIELD_ADDITIONAL_INVESTMENT = "additionalInvestment"
+        private const val FIELD_PRINCIPAL = "principal"
+        private const val FIELD_CURRENT_AMOUNT = "currentAmount"
+        private const val FIELD_KOSPI = "kospi"
+        private const val FIELD_SNP500 = "snp500"
+        private const val FIELD_NASDAQ = "nasdaq"
     }
 }

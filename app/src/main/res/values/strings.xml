@@ -50,7 +50,6 @@
     <string name="asset_tab_investment">투자종목</string>
     <string name="asset_tab_benchmark">벤치마크</string>
     <string name="asset_tab_investment_placeholder">투자종목 화면은 준비 중입니다</string>
-    <string name="asset_tab_benchmark_placeholder">벤치마크 화면은 준비 중입니다</string>
     <string name="asset_add">자산 추가</string>
     <string name="asset_add_title">자산 추가</string>
     <string name="asset_edit_title">자산 수정</string>
@@ -82,4 +81,19 @@
     <string name="asset_field_hidden">숨김 (순자산 계산에서 제외)</string>
     <string name="asset_toggle_show_hidden">숨김 자산 표시</string>
     <string name="net_worth_label">순자산</string>
+    <string name="benchmark_add">벤치마크 추가</string>
+    <string name="benchmark_add_title">벤치마크 추가</string>
+    <string name="benchmark_edit_title">벤치마크 수정</string>
+    <string name="benchmark_field_date">날짜</string>
+    <string name="benchmark_field_principal">원금</string>
+    <string name="benchmark_field_additional_investment">추가투자</string>
+    <string name="benchmark_field_current_amount">현재금액</string>
+    <string name="benchmark_field_return_rate">수익률</string>
+    <string name="benchmark_field_kospi">KOSPI</string>
+    <string name="benchmark_field_snp500">S&#38;P500</string>
+    <string name="benchmark_field_nasdaq">나스닥</string>
+    <string name="benchmark_empty">등록된 벤치마크가 없습니다</string>
+    <string name="benchmark_date_conflict">이미 등록된 날짜입니다. 목록에서 수정해주세요</string>
+    <string name="benchmark_delete_confirm_title">벤치마크 삭제</string>
+    <string name="benchmark_delete_confirm_message">%s 벤치마크를 삭제하시겠습니까?</string>
 </resources>

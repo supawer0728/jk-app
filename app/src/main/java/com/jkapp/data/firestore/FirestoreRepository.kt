@@ -1,5 +1,6 @@
 package com.jkapp.data.firestore
 
+import com.jkapp.data.model.Benchmark
 import com.jkapp.data.model.CatRecord
 import com.jkapp.data.model.CatRecordType
 import com.jkapp.data.model.DailyAsset
@@ -18,4 +19,8 @@ interface FirestoreRepository {
     fun getDailyAssets(): Flow<List<DailyAsset>>
     suspend fun upsertDailyAsset(asset: DailyAsset)
     suspend fun deleteDailyAsset(date: String)
+
+    fun getBenchmarks(): Flow<List<Benchmark>>
+    suspend fun upsertBenchmark(benchmark: Benchmark)
+    suspend fun deleteBenchmark(date: String)
 }
