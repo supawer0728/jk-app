@@ -11,6 +11,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.yield
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -178,13 +179,13 @@ class DailyAssetViewModelTest {
     }
 
     @Test
-    fun `updateAsset은 지정한 인덱스의 항목만 교체한다`() = runTest {
+    fun `updateAsset은 대상과 일치하는 항목만 교체한다`() = runTest {
         fakeRepository.setDailyAssets(
             listOf(DailyAsset(date = "2026-07-04", assets = listOf(makeAsset("현금"), makeAsset("주식"))))
         )
         advanceUntilIdle()
 
-        viewModel.updateAsset("2026-07-04", 1, makeAsset("주식", amount = BigDecimal("500")))
+        viewModel.updateAsset("2026-07-04", makeAsset("주식"), makeAsset("주식", amount = BigDecimal("500")))
         advanceUntilIdle()
 
         val state = viewModel.uiState.value as DailyAssetUiState.Success
@@ -196,13 +197,27 @@ class DailyAssetViewModelTest {
     }
 
     @Test
+    fun `updateAsset은 대상 항목을 찾지 못하면 uiState가 Error가 된다`() = runTest {
+        fakeRepository.setDailyAssets(
+            listOf(DailyAsset(date = "2026-07-04", assets = listOf(makeAsset("현금"))))
+        )
+        advanceUntilIdle()
+
+        viewModel.updateAsset("2026-07-04", makeAsset("존재하지않음"), makeAsset("수정됨"))
+        advanceUntilIdle()
+
+        val error = viewModel.uiState.value as DailyAssetUiState.Error
+        assertTrue(error.message.contains("찾을 수 없습니다"))
+    }
+
+    @Test
     fun `deleteAsset은 항목이 남아있으면 나머지 목록으로 upsert한다`() = runTest {
         fakeRepository.setDailyAssets(
             listOf(DailyAsset(date = "2026-07-04", assets = listOf(makeAsset("현금"), makeAsset("주식"))))
         )
         advanceUntilIdle()
 
-        viewModel.deleteAsset("2026-07-04", 0)
+        viewModel.deleteAsset("2026-07-04", makeAsset("현금"))
         advanceUntilIdle()
 
         val state = viewModel.uiState.value as DailyAssetUiState.Success
@@ -215,11 +230,46 @@ class DailyAssetViewModelTest {
         fakeRepository.setDailyAssets(listOf(DailyAsset(date = "2026-07-04", assets = listOf(makeAsset("현금")))))
         advanceUntilIdle()
 
-        viewModel.deleteAsset("2026-07-04", 0)
+        viewModel.deleteAsset("2026-07-04", makeAsset("현금"))
         advanceUntilIdle()
 
         val state = viewModel.uiState.value as DailyAssetUiState.Success
         assertNull(state.dailyAssets.find { it.date == "2026-07-04" })
+    }
+
+    @Test
+    fun `deleteAsset은 대상 항목을 찾지 못하면 uiState가 Error가 된다`() = runTest {
+        fakeRepository.setDailyAssets(listOf(DailyAsset(date = "2026-07-04", assets = listOf(makeAsset("현금")))))
+        advanceUntilIdle()
+
+        viewModel.deleteAsset("2026-07-04", makeAsset("존재하지않음"))
+        advanceUntilIdle()
+
+        val error = viewModel.uiState.value as DailyAssetUiState.Error
+        assertTrue(error.message.contains("찾을 수 없습니다"))
+    }
+
+    @Test
+    fun `동시에 발생한 자산 변경 요청은 직렬화되어 서로의 변경을 덮어쓰지 않는다`() = runTest {
+        advanceUntilIdle()
+
+        var activeCount = 0
+        var maxActiveCount = 0
+        fakeRepository.onUpsertDailyAsset = {
+            activeCount++
+            maxActiveCount = maxOf(maxActiveCount, activeCount)
+            yield()
+            activeCount--
+        }
+
+        viewModel.addAsset("2026-07-04", makeAsset("현금"))
+        viewModel.addAsset("2026-07-04", makeAsset("주식"))
+        advanceUntilIdle()
+
+        assertEquals(1, maxActiveCount)
+        val state = viewModel.uiState.value as DailyAssetUiState.Success
+        val dailyAsset = state.dailyAssets.find { it.date == "2026-07-04" }
+        assertEquals(setOf("현금", "주식"), dailyAsset?.assets?.map { it.name }?.toSet())
     }
 
     @Test
@@ -273,6 +323,21 @@ class DailyAssetViewModelTest {
     }
 
     @Test
+    fun `netWorth는 모든 자산이 숨김이면 0이 아니라 null이다`() = runTest {
+        fakeRepository.setDailyAssets(
+            listOf(
+                DailyAsset(
+                    date = "2026-07-04",
+                    assets = listOf(AssetItem(name = "공용 계좌", owner = "공동", amount = BigDecimal("5000"), hidden = true)),
+                )
+            )
+        )
+        advanceUntilIdle()
+
+        assertNull(viewModel.netWorth.value)
+    }
+
+    @Test
     fun `netWorth는 자산 데이터가 없으면 null이다`() = runTest {
         advanceUntilIdle()
 
@@ -312,7 +377,7 @@ class DailyAssetViewModelTest {
         advanceUntilIdle()
 
         fakeRepository.deleteDailyAssetError = RuntimeException("삭제 실패")
-        viewModel.deleteAsset("2026-07-04", 0)
+        viewModel.deleteAsset("2026-07-04", makeAsset("현금"))
         advanceUntilIdle()
 
         val error = viewModel.uiState.value as DailyAssetUiState.Error

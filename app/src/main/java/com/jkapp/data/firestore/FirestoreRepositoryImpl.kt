@@ -1,5 +1,6 @@
 package com.jkapp.data.firestore
 
+import android.util.Log
 import com.google.firebase.firestore.FirebaseFirestore
 import com.jkapp.data.model.Attachment
 import com.jkapp.data.model.AssetItem
@@ -175,9 +176,15 @@ class FirestoreRepositoryImpl : FirestoreRepository {
         FIELD_ASSET_HIDDEN to hidden,
     )
 
+    // name/owner가 없는 항목은 걸러지는데, 이 문서를 이후 add/update/delete로 다시 저장하면
+    // 걸러진 항목이 전체 upsert(set)로 인해 영구히 사라지므로 최소한 로그로 남긴다.
     private fun Map<String, Any?>.toAssetItem(): AssetItem? {
-        val name = this[FIELD_ASSET_NAME] as? String ?: return null
-        val owner = this[FIELD_ASSET_OWNER] as? String ?: return null
+        val name = this[FIELD_ASSET_NAME] as? String
+        val owner = this[FIELD_ASSET_OWNER] as? String
+        if (name == null || owner == null) {
+            Log.w(TAG, "daily-assets 문서에 name/owner가 없는 자산 항목이 있어 건너뜁니다: $this")
+            return null
+        }
         return AssetItem(
             name = name,
             owner = owner,
@@ -212,6 +219,8 @@ class FirestoreRepositoryImpl : FirestoreRepository {
     )
 
     companion object {
+        private const val TAG = "FirestoreRepositoryImpl"
+
         // Collections
         private const val COLLECTION_RECORD_TYPES = "cat-record-types"
         private const val COLLECTION_RECORDS = "cat-records"

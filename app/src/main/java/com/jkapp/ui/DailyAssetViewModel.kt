@@ -20,6 +20,8 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class DailyAssetViewModel(
     private val repository: FirestoreRepository = FirestoreRepositoryImpl(),
@@ -28,18 +30,23 @@ class DailyAssetViewModel(
     private val _uiState = MutableStateFlow<DailyAssetUiState>(DailyAssetUiState.Loading)
     val uiState: StateFlow<DailyAssetUiState> = _uiState.asStateFlow()
 
-    // 가장 최신 날짜의 자산 중 숨김 처리되지 않은 항목의 합계(순자산). 데이터가 없으면 null.
+    // 가장 최신 날짜의 자산 중 숨김 처리되지 않은 항목의 합계(순자산). 데이터가 없거나 전부 숨김이면 null.
     val netWorth: StateFlow<BigDecimal?> = uiState
         .map { state ->
             (state as? DailyAssetUiState.Success)?.dailyAssets
                 ?.maxByOrNull { it.date }
                 ?.assets
                 ?.filterNot { it.hidden }
+                ?.takeIf { it.isNotEmpty() }
                 ?.sumOf { it.amount ?: BigDecimal.ZERO }
         }
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     private var dataJob: Job? = null
+
+    // add/update/delete/import 요청을 직렬화해, 서로 다른 요청이 같은 stale 스냅샷을 읽고
+    // 상대방의 변경을 덮어쓰는 lost-update를 방지한다.
+    private val assetMutationMutex = Mutex()
 
     init {
         dataJob = viewModelScope.launch {
@@ -58,11 +65,15 @@ class DailyAssetViewModel(
     }
 
     fun addAsset(date: String, item: AssetItem) {
-        updateAssetList(date) { it + item }
+        mutateAssets(date, "자산 저장에 실패했습니다") { it + item }
     }
 
-    fun updateAsset(date: String, index: Int, item: AssetItem) {
-        updateAssetList(date) { assets ->
+    // target과 완전히 일치하는 항목을 찾아 교체한다(리스트 index 대신 항목 내용으로 식별).
+    // 다이얼로그가 열려 있는 동안 목록 순서가 바뀌어도(다른 기기의 동시 수정 등) 엉뚱한 항목이 바뀌지 않는다.
+    fun updateAsset(date: String, target: AssetItem, item: AssetItem) {
+        mutateAssets(date, "자산 저장에 실패했습니다") { assets ->
+            val index = assets.indexOf(target)
+            check(index >= 0) { "수정하려는 자산을 찾을 수 없습니다(다른 곳에서 이미 변경되었을 수 있습니다)" }
             assets.mapIndexed { i, existing -> if (i == index) item else existing }
         }
     }
@@ -81,7 +92,7 @@ class DailyAssetViewModel(
     // 붙여넣기 데이터에 없거나 사용자가 직접 관리하는 필드(card, hidden)는 기존 값을 그대로 유지해,
     // 재붙여넣기로 개별 입력/수정한 값이 지워지지 않게 한다.
     fun importAssets(date: String, items: List<AssetItem>) {
-        updateAssetList(date) { existing ->
+        mutateAssets(date, "자산 저장에 실패했습니다") { existing ->
             val merged = existing.toMutableList()
             items.forEach { imported ->
                 val index = merged.indexOfFirst { it.name == imported.name && it.owner == imported.owner }
@@ -101,34 +112,32 @@ class DailyAssetViewModel(
         }
     }
 
-    fun deleteAsset(date: String, index: Int) {
-        viewModelScope.launch {
-            val current = currentDailyAsset(date) ?: return@launch
-            val updated = current.assets.filterIndexed { i, _ -> i != index }
-            runCatching {
-                if (updated.isEmpty()) {
-                    repository.deleteDailyAsset(date)
-                } else {
-                    repository.upsertDailyAsset(current.copy(assets = updated))
-                }
-            }.onFailure { e ->
-                _uiState.value = DailyAssetUiState.Error(
-                    "자산 삭제에 실패했습니다: ${e.localizedMessage ?: "알 수 없는 오류"}"
-                )
-            }
+    // target과 완전히 일치하는 항목을 찾아 삭제한다(리스트 index 대신 항목 내용으로 식별).
+    fun deleteAsset(date: String, target: AssetItem) {
+        mutateAssets(date, "자산 삭제에 실패했습니다") { assets ->
+            check(target in assets) { "삭제하려는 자산을 찾을 수 없습니다(이미 삭제되었을 수 있습니다)" }
+            assets - target
         }
     }
 
-    private fun updateAssetList(date: String, transform: (List<AssetItem>) -> List<AssetItem>) {
+    // date에 대한 자산 목록 변경을 뮤텍스로 직렬화해 read-modify-write 사이에 다른 변경이 끼어들지 않게 한다.
+    // 결과가 비면 문서 자체를 삭제하고, 그렇지 않으면 upsert한다.
+    private fun mutateAssets(date: String, errorMessage: String, transform: (List<AssetItem>) -> List<AssetItem>) {
         viewModelScope.launch {
-            val current = currentDailyAsset(date)
-            val updatedAssets = transform(current?.assets.orEmpty())
-            runCatching {
-                repository.upsertDailyAsset(DailyAsset(firestoreId = date, date = date, assets = updatedAssets))
-            }.onFailure { e ->
-                _uiState.value = DailyAssetUiState.Error(
-                    "자산 저장에 실패했습니다: ${e.localizedMessage ?: "알 수 없는 오류"}"
-                )
+            assetMutationMutex.withLock {
+                runCatching {
+                    val current = currentDailyAsset(date)
+                    val updated = transform(current?.assets.orEmpty())
+                    if (updated.isEmpty()) {
+                        repository.deleteDailyAsset(date)
+                    } else {
+                        repository.upsertDailyAsset(DailyAsset(firestoreId = date, date = date, assets = updated))
+                    }
+                }.onFailure { e ->
+                    _uiState.value = DailyAssetUiState.Error(
+                        "$errorMessage: ${e.localizedMessage ?: "알 수 없는 오류"}"
+                    )
+                }
             }
         }
     }

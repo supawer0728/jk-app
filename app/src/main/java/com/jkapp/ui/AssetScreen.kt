@@ -26,8 +26,6 @@ import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -44,7 +42,6 @@ import androidx.compose.material3.SecondaryTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -62,10 +59,6 @@ import com.jkapp.data.model.AssetItem
 import com.jkapp.data.model.DEFAULT_HIDDEN_ASSET_NAMES
 import java.math.BigDecimal
 import java.text.NumberFormat
-import java.time.Instant
-import java.time.LocalDate
-import java.time.ZoneOffset
-import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 private val ASSET_OWNERS = listOf("전지훈", "권유경", "공동")
@@ -107,7 +100,15 @@ private fun PlaceholderTabContent(message: String) {
     }
 }
 
-private data class AssetPendingDelete(val date: String, val index: Int, val name: String)
+private data class AssetPendingDelete(val date: String, val target: AssetItem)
+
+// 자산 입력 폼이 "신규 추가"인지 "기존 항목 수정"인지, 수정이라면 어떤 항목인지를 하나의 상태로 표현한다.
+// (이전에는 showForm: Boolean과 editingIndex: Int?를 별도로 관리해, 진입점마다 두 값을 함께
+// 갱신해야 했고 dismiss 시 editingIndex가 초기화되지 않아 값이 잔류하는 구조였다.)
+private sealed interface AssetFormTarget {
+    data object New : AssetFormTarget
+    data class Edit(val target: AssetItem) : AssetFormTarget
+}
 
 @Composable
 private fun DailyAssetTab(viewModel: DailyAssetViewModel) {
@@ -115,8 +116,8 @@ private fun DailyAssetTab(viewModel: DailyAssetViewModel) {
 
     var selectedDate by rememberSaveable { mutableStateOf<String?>(null) }
     var showDatePicker by rememberSaveable { mutableStateOf(false) }
-    var editingIndex by rememberSaveable { mutableStateOf<Int?>(null) }
-    var showForm by rememberSaveable { mutableStateOf(false) }
+    // AssetItem은 Parcelable/Serializable이 아니므로 rememberSaveable로 저장할 수 없다(회전 시 초기화됨).
+    var formTarget by remember { mutableStateOf<AssetFormTarget?>(null) }
     var showFabMenu by remember { mutableStateOf(false) }
     var showPasteImport by rememberSaveable { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<AssetPendingDelete?>(null) }
@@ -180,9 +181,11 @@ private fun DailyAssetTab(viewModel: DailyAssetViewModel) {
                         onToggleShowHidden = { showHidden = !showHidden },
                     )
                     if (groupedAssets.isEmpty()) {
+                        // 명의 필터로 인해 목록이 비었는지, 아니면 해당 날짜에 자산 자체가 없는지 구분해 안내한다.
+                        val emptyByFilter = selectedOwners.isNotEmpty() && !currentDailyAsset?.assets.isNullOrEmpty()
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Text(
-                                text = stringResource(R.string.asset_empty),
+                                text = stringResource(if (emptyByFilter) R.string.asset_empty_filtered else R.string.asset_empty),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -197,15 +200,14 @@ private fun DailyAssetTab(viewModel: DailyAssetViewModel) {
                                 item(key = "header-$owner") {
                                     Text(owner, style = MaterialTheme.typography.titleSmall)
                                 }
-                                items(indexedAssets, key = { "${owner}-${it.index}" }) { (index, asset) ->
+                                items(indexedAssets, key = { "${owner}-${it.index}" }) { (_, asset) ->
                                     AssetListItem(
                                         asset = asset,
                                         onEditRequest = {
-                                            editingIndex = index
-                                            showForm = true
+                                            formTarget = AssetFormTarget.Edit(asset)
                                         },
                                         onDeleteRequest = {
-                                            pendingDelete = AssetPendingDelete(date = selectedDate ?: return@AssetListItem, index = index, name = asset.name)
+                                            pendingDelete = AssetPendingDelete(date = selectedDate ?: return@AssetListItem, target = asset)
                                         },
                                     )
                                 }
@@ -223,8 +225,7 @@ private fun DailyAssetTab(viewModel: DailyAssetViewModel) {
                             text = { Text(stringResource(R.string.asset_add_individual)) },
                             onClick = {
                                 showFabMenu = false
-                                editingIndex = null
-                                showForm = true
+                                formTarget = AssetFormTarget.New
                             },
                         )
                         DropdownMenuItem(
@@ -241,7 +242,7 @@ private fun DailyAssetTab(viewModel: DailyAssetViewModel) {
     }
 
     if (showDatePicker) {
-        AssetDatePickerDialog(
+        IsoDatePickerDialog(
             initialDate = selectedDate,
             onDismiss = { showDatePicker = false },
             onConfirm = { date ->
@@ -251,21 +252,18 @@ private fun DailyAssetTab(viewModel: DailyAssetViewModel) {
         )
     }
 
-    if (showForm) {
+    formTarget?.let { target ->
         // 자산이 하나도 없어 선택된 날짜가 없을 때는 오늘 날짜로 첫 문서를 생성한다.
         val dateForForm = selectedDate ?: DiaryViewModel.todayDate()
-        val existing = editingIndex?.let { idx -> currentDailyAsset?.assets?.getOrNull(idx) }
         AssetFormDialog(
-            initial = existing,
-            onDismiss = { showForm = false },
+            initial = (target as? AssetFormTarget.Edit)?.target,
+            onDismiss = { formTarget = null },
             onSave = { item ->
-                val idx = editingIndex
-                if (idx != null) {
-                    viewModel.updateAsset(dateForForm, idx, item)
-                } else {
-                    viewModel.addAsset(dateForForm, item)
+                when (target) {
+                    is AssetFormTarget.Edit -> viewModel.updateAsset(dateForForm, target.target, item)
+                    AssetFormTarget.New -> viewModel.addAsset(dateForForm, item)
                 }
-                showForm = false
+                formTarget = null
             },
         )
     }
@@ -287,10 +285,10 @@ private fun DailyAssetTab(viewModel: DailyAssetViewModel) {
         AlertDialog(
             onDismissRequest = { pendingDelete = null },
             title = { Text(stringResource(R.string.asset_delete_confirm_title)) },
-            text = { Text(stringResource(R.string.asset_delete_confirm_message, pending.name)) },
+            text = { Text(stringResource(R.string.asset_delete_confirm_message, pending.target.name)) },
             confirmButton = {
                 TextButton(onClick = {
-                    viewModel.deleteAsset(pending.date, pending.index)
+                    viewModel.deleteAsset(pending.date, pending.target)
                     pendingDelete = null
                 }) {
                     Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error)
@@ -451,39 +449,6 @@ private fun AssetListItem(
 
 fun BigDecimal.toDisplayAmount(): String =
     "${NumberFormat.getNumberInstance(Locale.KOREA).format(this)}원"
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun AssetDatePickerDialog(
-    initialDate: String?,
-    onDismiss: () -> Unit,
-    onConfirm: (String) -> Unit,
-) {
-    val initialMillis = remember(initialDate) {
-        runCatching {
-            LocalDate.parse(initialDate).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
-        }.getOrElse { System.currentTimeMillis() }
-    }
-    val datePickerState = rememberDatePickerState(initialSelectedDateMillis = initialMillis)
-    DatePickerDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = {
-            TextButton(onClick = {
-                datePickerState.selectedDateMillis?.let { millis ->
-                    val date = Instant.ofEpochMilli(millis)
-                        .atZone(ZoneOffset.UTC).toLocalDate()
-                        .format(DateTimeFormatter.ISO_LOCAL_DATE)
-                    onConfirm(date)
-                } ?: onDismiss()
-            }) { Text(stringResource(android.R.string.ok)) }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(android.R.string.cancel)) }
-        }
-    ) {
-        DatePicker(state = datePickerState)
-    }
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

@@ -58,6 +58,7 @@
     <string name="asset_no_date">날짜 없음</string>
     <string name="asset_pick_date">날짜 선택</string>
     <string name="asset_empty">자산이 없습니다</string>
+    <string name="asset_empty_filtered">선택한 명의에 해당하는 자산이 없습니다</string>
     <string name="asset_delete_confirm_title">자산 삭제</string>
     <string name="asset_delete_confirm_message">%s 자산을 삭제하시겠습니까?</string>
     <string name="previous_date">이전 날짜</string>

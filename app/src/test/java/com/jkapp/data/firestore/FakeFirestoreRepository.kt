@@ -21,6 +21,10 @@ class FakeFirestoreRepository : FirestoreRepository {
     var upsertDailyAssetError: Throwable? = null
     var deleteDailyAssetError: Throwable? = null
 
+    // 테스트에서 실제 Firestore 네트워크 왕복(suspension)을 흉내내기 위한 훅.
+    // 동시 호출 시 뮤텍스로 직렬화되는지 검증하는 데 사용한다.
+    var onUpsertDailyAsset: (suspend () -> Unit)? = null
+
     fun setRecordTypes(types: List<CatRecordType>) { _recordTypes.value = types }
     fun setRecords(records: List<CatRecord>) { _records.value = records }
     fun setDailyAssets(dailyAssets: List<DailyAsset>) { _dailyAssets.value = dailyAssets }
@@ -73,6 +77,7 @@ class FakeFirestoreRepository : FirestoreRepository {
 
     override suspend fun upsertDailyAsset(asset: DailyAsset) {
         upsertDailyAssetError?.let { throw it }
+        onUpsertDailyAsset?.invoke()
         val existingIndex = _dailyAssets.value.indexOfFirst { it.date == asset.date }
         _dailyAssets.value = if (existingIndex >= 0) {
             _dailyAssets.value.mapIndexed { index, existing -> if (index == existingIndex) asset else existing }
