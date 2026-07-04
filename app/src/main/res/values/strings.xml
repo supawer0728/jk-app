@@ -97,6 +97,11 @@
     <string name="benchmark_paste_import_title">구글시트 붙여넣기</string>
     <string name="benchmark_paste_import_description">구글 스프레드시트에서 복사한 표를 그대로 붙여넣으세요. 첫 줄은 헤더이며, 날짜·추가투자·현재금액(계)·KOSPI·S&#38;P500·나스닥 열만 인식합니다. 원금은 추가투자 누적 합으로 자동 계산되며, 그 외 열(수익률, 전월대비, MDD 등)은 무시됩니다.</string>
     <string name="benchmark_paste_import_overwrite">기존 값 덮어씀</string>
+    <string name="benchmark_bulk_delete">벤치마크 일괄 삭제</string>
+    <string name="benchmark_delete_all">전체 삭제</string>
+    <string name="benchmark_delete_selected">선택 삭제</string>
+    <string name="benchmark_delete_all_confirm_title">전체 삭제</string>
+    <string name="benchmark_delete_all_confirm_message">벤치마크 항목을 모두 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.</string>
     <string name="benchmark_delete_confirm_title">벤치마크 삭제</string>
     <string name="benchmark_delete_confirm_message">%s 벤치마크를 삭제하시겠습니까?</string>
 </resources>

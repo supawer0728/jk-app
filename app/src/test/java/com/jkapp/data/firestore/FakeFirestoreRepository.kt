@@ -24,8 +24,9 @@ class FakeFirestoreRepository : FirestoreRepository {
     var deleteDailyAssetError: Throwable? = null
     var upsertBenchmarkError: Throwable? = null
     var deleteBenchmarkError: Throwable? = null
-    // importBenchmarks의 부분 실패(일부 날짜만 실패)를 재현하기 위한 훅.
+    // importBenchmarks/deleteBenchmarks의 부분 실패(일부 날짜만 실패)를 재현하기 위한 훅.
     var upsertBenchmarkErrorDates: Set<String> = emptySet()
+    var deleteBenchmarkErrorDates: Set<String> = emptySet()
 
     // 테스트에서 실제 Firestore 네트워크 왕복(suspension)을 흉내내기 위한 훅.
     // 동시 호출 시 뮤텍스로 직렬화되는지 검증하는 데 사용한다.
@@ -113,6 +114,7 @@ class FakeFirestoreRepository : FirestoreRepository {
 
     override suspend fun deleteBenchmark(date: String) {
         deleteBenchmarkError?.let { throw it }
+        if (date in deleteBenchmarkErrorDates) throw RuntimeException("삭제 실패: $date")
         _benchmarks.value = _benchmarks.value.filter { it.date != date }
     }
 }

@@ -69,6 +69,22 @@ class BenchmarkViewModel(
         _actionError.value = null
     }
 
+    // 여러 날짜를 한 번에 삭제한다(전체 삭제/선택 삭제). 날짜별로 독립된 문서라 일부가 실패해도
+    // 나머지는 그대로 반영하고, 실패한 날짜만 모아 하나의 에러로 보고한다.
+    fun deleteBenchmarks(dates: List<String>) {
+        viewModelScope.launch {
+            val failures = dates.mapNotNull { date ->
+                runCatching { repository.deleteBenchmark(date) }
+                    .exceptionOrNull()
+                    ?.let { date to it }
+            }
+            if (failures.isNotEmpty()) {
+                val detail = failures.joinToString("\n") { (date, e) -> "$date: ${e.localizedMessage ?: "알 수 없는 오류"}" }
+                _actionError.value = "일부 벤치마크를 삭제하지 못했습니다:\n$detail"
+            }
+        }
+    }
+
     // 구글시트 붙여넣기 텍스트를 파싱한다. 파싱 실패 행은 원본 값을 그대로 로그에 남겨 디버깅에 활용한다.
     fun parsePasteText(text: String): List<ParsedBenchmarkRow> {
         val result = parseBenchmarkSheetPaste(text)

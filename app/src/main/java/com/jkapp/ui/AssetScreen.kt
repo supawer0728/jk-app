@@ -29,6 +29,8 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
@@ -43,6 +45,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SecondaryTabRow
 import androidx.compose.material3.Tab
@@ -699,6 +702,7 @@ private sealed interface BenchmarkFormTarget {
 private val BENCHMARK_DATE_COLUMN_WIDTH = 96.dp
 private val BENCHMARK_VALUE_COLUMN_WIDTH = 104.dp
 private val BENCHMARK_ACTION_COLUMN_WIDTH = 88.dp
+private val BENCHMARK_CHECKBOX_COLUMN_WIDTH = 40.dp
 
 @Composable
 private fun BenchmarkTab(viewModel: BenchmarkViewModel) {
@@ -709,8 +713,22 @@ private fun BenchmarkTab(viewModel: BenchmarkViewModel) {
     var pendingDelete by remember { mutableStateOf<Benchmark?>(null) }
     var showFabMenu by remember { mutableStateOf(false) }
     var showPasteImport by rememberSaveable { mutableStateOf(false) }
+    var isSelectionMode by rememberSaveable { mutableStateOf(false) }
+    var selectedDates by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var showDeleteAllConfirm by remember { mutableStateOf(false) }
+    val verticalScrollState = rememberScrollState()
     val existingDates = remember(uiState) {
         (uiState as? BenchmarkUiState.Success)?.benchmarks?.map { it.date }?.toSet() ?: emptySet()
+    }
+
+    // 선택 모드에 들어가면 최신 날짜(맨 앞 행)부터 볼 수 있도록 목록 맨 위로 이동한다.
+    LaunchedEffect(isSelectionMode) {
+        if (isSelectionMode) verticalScrollState.animateScrollTo(0)
+    }
+
+    fun exitSelectionMode() {
+        isSelectionMode = false
+        selectedDates = emptySet()
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -744,16 +762,35 @@ private fun BenchmarkTab(viewModel: BenchmarkViewModel) {
                             .fillMaxSize()
                             .horizontalScroll(rememberScrollState()),
                     ) {
-                        BenchmarkHeaderRow()
+                        BenchmarkHeaderRow(
+                            isSelectionMode = isSelectionMode,
+                            allSelected = selectedDates.size == entries.size,
+                            onToggleSelectAll = {
+                                selectedDates = if (selectedDates.size == entries.size) {
+                                    emptySet()
+                                } else {
+                                    entries.map { it.benchmark.date }.toSet()
+                                }
+                            },
+                        )
                         Column(
                             modifier = Modifier
                                 .weight(1f)
-                                .verticalScroll(rememberScrollState())
+                                .verticalScroll(verticalScrollState)
                                 .padding(bottom = 80.dp),
                         ) {
                             entries.forEach { entry ->
                                 BenchmarkRow(
                                     entry = entry,
+                                    isSelectionMode = isSelectionMode,
+                                    isSelected = entry.benchmark.date in selectedDates,
+                                    onToggleSelected = {
+                                        selectedDates = if (entry.benchmark.date in selectedDates) {
+                                            selectedDates - entry.benchmark.date
+                                        } else {
+                                            selectedDates + entry.benchmark.date
+                                        }
+                                    },
                                     onEditRequest = { formTarget = BenchmarkFormTarget.Edit(entry.benchmark) },
                                     onDeleteRequest = { pendingDelete = entry.benchmark },
                                 )
@@ -762,25 +799,64 @@ private fun BenchmarkTab(viewModel: BenchmarkViewModel) {
                     }
                 }
 
-                Box(modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)) {
-                    FloatingActionButton(onClick = { showFabMenu = true }) {
-                        Icon(Icons.Default.Add, contentDescription = stringResource(R.string.benchmark_add))
+                if (isSelectionMode) {
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Button(
+                            onClick = { showDeleteAllConfirm = true },
+                            enabled = state.benchmarks.isNotEmpty(),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                            modifier = Modifier.weight(1f),
+                        ) { Text(stringResource(R.string.benchmark_delete_all)) }
+                        Button(
+                            onClick = {
+                                viewModel.deleteBenchmarks(selectedDates.toList())
+                                exitSelectionMode()
+                            },
+                            enabled = selectedDates.isNotEmpty(),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                            modifier = Modifier.weight(1f),
+                        ) { Text(stringResource(R.string.benchmark_delete_selected)) }
+                        OutlinedButton(
+                            onClick = { exitSelectionMode() },
+                            modifier = Modifier.weight(1f),
+                        ) { Text(stringResource(R.string.cancel)) }
                     }
-                    DropdownMenu(expanded = showFabMenu, onDismissRequest = { showFabMenu = false }) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.asset_add_individual)) },
-                            onClick = {
-                                showFabMenu = false
-                                formTarget = BenchmarkFormTarget.New
-                            },
-                        )
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.asset_add_paste)) },
-                            onClick = {
-                                showFabMenu = false
-                                showPasteImport = true
-                            },
-                        )
+                } else {
+                    Box(modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Box {
+                                FloatingActionButton(onClick = { showFabMenu = true }) {
+                                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.benchmark_add))
+                                }
+                                DropdownMenu(expanded = showFabMenu, onDismissRequest = { showFabMenu = false }) {
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.asset_add_individual)) },
+                                        onClick = {
+                                            showFabMenu = false
+                                            formTarget = BenchmarkFormTarget.New
+                                        },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.asset_add_paste)) },
+                                        onClick = {
+                                            showFabMenu = false
+                                            showPasteImport = true
+                                        },
+                                    )
+                                }
+                            }
+                            if (state.benchmarks.isNotEmpty()) {
+                                FloatingActionButton(onClick = { isSelectionMode = true }) {
+                                    Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.benchmark_bulk_delete))
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -843,15 +919,48 @@ private fun BenchmarkTab(viewModel: BenchmarkViewModel) {
             }
         )
     }
+
+    if (showDeleteAllConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteAllConfirm = false },
+            title = { Text(stringResource(R.string.benchmark_delete_all_confirm_title)) },
+            text = { Text(stringResource(R.string.benchmark_delete_all_confirm_message)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deleteBenchmarks(existingDates.toList())
+                    showDeleteAllConfirm = false
+                    exitSelectionMode()
+                }) {
+                    Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteAllConfirm = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
 }
 
 @Composable
-private fun BenchmarkHeaderRow() {
+private fun BenchmarkHeaderRow(
+    isSelectionMode: Boolean,
+    allSelected: Boolean,
+    onToggleSelectAll: () -> Unit,
+) {
     Column {
         Row(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            if (isSelectionMode) {
+                Checkbox(
+                    checked = allSelected,
+                    onCheckedChange = { onToggleSelectAll() },
+                    modifier = Modifier.width(BENCHMARK_CHECKBOX_COLUMN_WIDTH),
+                )
+            }
             BenchmarkCell(stringResource(R.string.benchmark_field_date), BENCHMARK_DATE_COLUMN_WIDTH, bold = true)
             BenchmarkCell(stringResource(R.string.benchmark_field_principal), BENCHMARK_VALUE_COLUMN_WIDTH, bold = true)
             BenchmarkCell(stringResource(R.string.benchmark_field_additional_investment), BENCHMARK_VALUE_COLUMN_WIDTH, bold = true)
@@ -869,6 +978,9 @@ private fun BenchmarkHeaderRow() {
 @Composable
 private fun BenchmarkRow(
     entry: BenchmarkPrincipal,
+    isSelectionMode: Boolean,
+    isSelected: Boolean,
+    onToggleSelected: () -> Unit,
     onEditRequest: () -> Unit,
     onDeleteRequest: () -> Unit,
 ) {
@@ -879,6 +991,13 @@ private fun BenchmarkRow(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            if (isSelectionMode) {
+                Checkbox(
+                    checked = isSelected,
+                    onCheckedChange = { onToggleSelected() },
+                    modifier = Modifier.width(BENCHMARK_CHECKBOX_COLUMN_WIDTH),
+                )
+            }
             BenchmarkCell(benchmark.date, BENCHMARK_DATE_COLUMN_WIDTH)
             BenchmarkCell(entry.principal.toDisplayAmount(), BENCHMARK_VALUE_COLUMN_WIDTH)
             BenchmarkCell(benchmark.additionalInvestment.toDisplayAmount(), BENCHMARK_VALUE_COLUMN_WIDTH)

@@ -120,6 +120,36 @@ class BenchmarkViewModelTest {
     }
 
     @Test
+    fun `deleteBenchmarks는 여러 날짜를 한 번에 삭제한다`() = runTest {
+        fakeRepository.setBenchmarks(
+            listOf(makeBenchmark("2026-07-01"), makeBenchmark("2026-07-02"), makeBenchmark("2026-07-03"))
+        )
+        advanceUntilIdle()
+
+        viewModel.deleteBenchmarks(listOf("2026-07-01", "2026-07-02"))
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as BenchmarkUiState.Success
+        assertEquals(setOf("2026-07-03"), state.benchmarks.map { it.date }.toSet())
+    }
+
+    @Test
+    fun `deleteBenchmarks는 성공한 항목은 반영하고 실패한 날짜만 actionError로 보고한다`() = runTest {
+        fakeRepository.setBenchmarks(
+            listOf(makeBenchmark("2026-07-01"), makeBenchmark("2026-07-02"), makeBenchmark("2026-07-03"))
+        )
+        advanceUntilIdle()
+
+        fakeRepository.deleteBenchmarkErrorDates = setOf("2026-07-02")
+        viewModel.deleteBenchmarks(listOf("2026-07-01", "2026-07-02", "2026-07-03"))
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as BenchmarkUiState.Success
+        assertEquals(setOf("2026-07-02"), state.benchmarks.map { it.date }.toSet())
+        assertTrue(viewModel.actionError.value!!.contains("2026-07-02"))
+    }
+
+    @Test
     fun `importBenchmarks는 붙여넣기로 여러 날짜를 한 번에 저장한다`() = runTest {
         advanceUntilIdle()
 
