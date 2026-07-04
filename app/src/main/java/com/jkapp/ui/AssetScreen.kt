@@ -1,6 +1,8 @@
 package com.jkapp.ui
 
 import androidx.annotation.StringRes
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,9 +13,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -24,6 +30,8 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
@@ -34,9 +42,11 @@ import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SecondaryTabRow
 import androidx.compose.material3.Tab
@@ -51,11 +61,17 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jkapp.R
 import com.jkapp.data.model.AssetItem
+import com.jkapp.data.model.Benchmark
+import com.jkapp.data.model.BenchmarkRowMetrics
 import com.jkapp.data.model.DEFAULT_HIDDEN_ASSET_NAMES
 import java.math.BigDecimal
 import java.text.NumberFormat
@@ -70,7 +86,7 @@ private enum class AssetTab(@StringRes val labelRes: Int) {
 }
 
 @Composable
-fun AssetScreen(viewModel: DailyAssetViewModel) {
+fun AssetScreen(viewModel: DailyAssetViewModel, benchmarkViewModel: BenchmarkViewModel) {
     var selectedTab by rememberSaveable { mutableStateOf(AssetTab.DAILY_ASSET) }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -87,7 +103,7 @@ fun AssetScreen(viewModel: DailyAssetViewModel) {
             when (selectedTab) {
                 AssetTab.DAILY_ASSET -> DailyAssetTab(viewModel = viewModel)
                 AssetTab.INVESTMENT -> PlaceholderTabContent(stringResource(R.string.asset_tab_investment_placeholder))
-                AssetTab.BENCHMARK -> PlaceholderTabContent(stringResource(R.string.asset_tab_benchmark_placeholder))
+                AssetTab.BENCHMARK -> BenchmarkTab(viewModel = benchmarkViewModel)
             }
         }
     }
@@ -594,20 +610,59 @@ private fun AssetPasteImportDialog(
     onParse: (text: String, hasHeader: Boolean) -> List<ParsedAssetRow>,
     onImport: (List<AssetItem>) -> Unit,
 ) {
-    var text by rememberSaveable { mutableStateOf("") }
     var hasHeader by rememberSaveable { mutableStateOf(true) }
-    var parsed by remember { mutableStateOf<List<ParsedAssetRow>?>(null) }
+
+    PasteImportDialog(
+        title = stringResource(R.string.asset_paste_import_title),
+        description = stringResource(R.string.asset_paste_import_description),
+        extraOptions = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = hasHeader, onCheckedChange = { hasHeader = it })
+                Text(stringResource(R.string.asset_paste_import_has_header))
+            }
+        },
+        onDismiss = onDismiss,
+        onParse = { text -> onParse(text, hasHeader) },
+        itemOf = { it.item },
+        errorOf = { it.error },
+        rawLineOf = { it.rawLine },
+        onImport = onImport,
+    ) { item ->
+        Text(
+            text = "${item.owner} · ${item.name}" + (item.amount?.let { " · ${it.toDisplayAmount()}" } ?: ""),
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+}
+
+// 텍스트 붙여넣기 → 파싱 → 미리보기 → 확인 후 저장이라는 공통 흐름을 자산/벤치마크 붙여넣기 다이얼로그가
+// 함께 사용한다. hasHeader 체크박스(extraOptions)나 미리보기 행 스타일처럼 다른 부분만 콜백으로 뺀다.
+@Composable
+private fun <T, R> PasteImportDialog(
+    title: String,
+    description: String,
+    extraOptions: (@Composable () -> Unit)? = null,
+    onDismiss: () -> Unit,
+    onParse: (text: String) -> List<R>,
+    itemOf: (R) -> T?,
+    errorOf: (R) -> String?,
+    rawLineOf: (R) -> String,
+    onImport: (List<T>) -> Unit,
+    rowContent: @Composable (T) -> Unit,
+) {
+    var text by rememberSaveable { mutableStateOf("") }
+    var parsed by remember { mutableStateOf<List<R>?>(null) }
 
     val result = parsed
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.asset_paste_import_title)) },
+        title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (result == null) {
                     Text(
-                        text = stringResource(R.string.asset_paste_import_description),
+                        text = description,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -619,12 +674,9 @@ private fun AssetPasteImportDialog(
                         maxLines = 12,
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked = hasHeader, onCheckedChange = { hasHeader = it })
-                        Text(stringResource(R.string.asset_paste_import_has_header))
-                    }
+                    extraOptions?.invoke()
                 } else {
-                    val validCount = result.count { it.item != null }
+                    val validCount = result.count { itemOf(it) != null }
                     val errorCount = result.size - validCount
                     Text(
                         text = stringResource(R.string.asset_paste_import_summary, validCount, errorCount),
@@ -635,16 +687,12 @@ private fun AssetPasteImportDialog(
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         items(result) { row ->
-                            val item = row.item
+                            val item = itemOf(row)
                             if (item != null) {
-                                Text(
-                                    text = "${item.owner} · ${item.name}" +
-                                        (item.amount?.let { " · ${it.toDisplayAmount()}" } ?: ""),
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
+                                rowContent(item)
                             } else {
                                 Text(
-                                    text = "⚠ ${row.error}: ${row.rawLine.take(30)}",
+                                    text = "⚠ ${errorOf(row)}: ${rawLineOf(row).take(30)}",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.error,
                                 )
@@ -657,13 +705,13 @@ private fun AssetPasteImportDialog(
         confirmButton = {
             if (result == null) {
                 TextButton(
-                    onClick = { parsed = onParse(text, hasHeader) },
+                    onClick = { parsed = onParse(text) },
                     enabled = text.isNotBlank(),
                 ) { Text(stringResource(R.string.asset_paste_import_parse)) }
             } else {
                 TextButton(
-                    onClick = { onImport(result.mapNotNull { it.item }) },
-                    enabled = result.any { it.item != null },
+                    onClick = { onImport(result.mapNotNull(itemOf)) },
+                    enabled = result.any { itemOf(it) != null },
                 ) { Text(stringResource(R.string.save)) }
             }
         },
@@ -675,4 +723,531 @@ private fun AssetPasteImportDialog(
             }
         }
     )
+}
+
+private sealed interface BenchmarkFormTarget {
+    data object New : BenchmarkFormTarget
+    data class Edit(val benchmark: Benchmark) : BenchmarkFormTarget
+}
+
+private val BENCHMARK_DATE_COLUMN_WIDTH = 96.dp
+private val BENCHMARK_VALUE_COLUMN_WIDTH = 104.dp
+private val BENCHMARK_PERCENT_COLUMN_WIDTH = 84.dp
+private val BENCHMARK_ACTION_COLUMN_WIDTH = 88.dp
+private val BENCHMARK_CHECKBOX_COLUMN_WIDTH = 40.dp
+
+@Composable
+private fun BenchmarkTab(viewModel: BenchmarkViewModel) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val actionError by viewModel.actionError.collectAsStateWithLifecycle()
+    // 20개 열의 파생 지표는 뷰모델(BenchmarkViewModel.rowMetrics)에서 데이터가 실제로 바뀔 때만
+    // 계산되어 캐시된다. 여기서 remember로 다시 계산하면 탭을 오갈 때마다 컴포지션이 새로
+    // 생성되면서 매번 재계산되므로, 뷰모델의 StateFlow를 그대로 구독한다.
+    val entries by viewModel.rowMetrics.collectAsStateWithLifecycle()
+    // Benchmark는 Parcelable/Serializable이 아니므로 rememberSaveable로 저장할 수 없다(회전 시 초기화됨).
+    var formTarget by remember { mutableStateOf<BenchmarkFormTarget?>(null) }
+    var pendingDelete by remember { mutableStateOf<Benchmark?>(null) }
+    var showFabMenu by remember { mutableStateOf(false) }
+    var showPasteImport by rememberSaveable { mutableStateOf(false) }
+    var isSelectionMode by rememberSaveable { mutableStateOf(false) }
+    var selectedDates by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var showDeleteAllConfirm by remember { mutableStateOf(false) }
+    val listState = rememberLazyListState()
+    val existingDates = remember(entries) {
+        entries.map { it.benchmark.date }.toSet()
+    }
+
+    // 선택 모드에 들어가면 최신 날짜(맨 앞 행)부터 볼 수 있도록 목록 맨 위로 이동한다.
+    LaunchedEffect(isSelectionMode) {
+        if (isSelectionMode) listState.animateScrollToItem(0)
+    }
+
+    fun exitSelectionMode() {
+        isSelectionMode = false
+        selectedDates = emptySet()
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        when (val state = uiState) {
+            is BenchmarkUiState.Loading -> {
+                LoadingIndicator(modifier = Modifier.align(Alignment.Center))
+            }
+            is BenchmarkUiState.Error -> {
+                Text(
+                    text = state.message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.align(Alignment.Center).padding(16.dp)
+                )
+            }
+            is BenchmarkUiState.Success -> {
+                if (entries.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.benchmark_empty),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.align(Alignment.Center),
+                    )
+                } else {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .horizontalScroll(rememberScrollState()),
+                    ) {
+                        BenchmarkHeaderRow(
+                            isSelectionMode = isSelectionMode,
+                            allSelected = selectedDates.size == entries.size,
+                            onToggleSelectAll = {
+                                selectedDates = if (selectedDates.size == entries.size) {
+                                    emptySet()
+                                } else {
+                                    entries.map { it.benchmark.date }.toSet()
+                                }
+                            },
+                        )
+                        LazyColumn(
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(bottom = 80.dp),
+                            state = listState,
+                        ) {
+                            items(entries, key = { it.benchmark.date }) { entry ->
+                                BenchmarkRow(
+                                    entry = entry,
+                                    isSelectionMode = isSelectionMode,
+                                    isSelected = entry.benchmark.date in selectedDates,
+                                    onToggleSelected = {
+                                        selectedDates = if (entry.benchmark.date in selectedDates) {
+                                            selectedDates - entry.benchmark.date
+                                        } else {
+                                            selectedDates + entry.benchmark.date
+                                        }
+                                    },
+                                    onEditRequest = { formTarget = BenchmarkFormTarget.Edit(entry.benchmark) },
+                                    onDeleteRequest = { pendingDelete = entry.benchmark },
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (isSelectionMode) {
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Button(
+                            onClick = { showDeleteAllConfirm = true },
+                            enabled = entries.isNotEmpty(),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                            modifier = Modifier.weight(1f),
+                        ) { Text(stringResource(R.string.benchmark_delete_all)) }
+                        Button(
+                            onClick = {
+                                viewModel.deleteBenchmarks(selectedDates.toList())
+                                exitSelectionMode()
+                            },
+                            enabled = selectedDates.isNotEmpty(),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                            modifier = Modifier.weight(1f),
+                        ) { Text(stringResource(R.string.benchmark_delete_selected)) }
+                        OutlinedButton(
+                            onClick = { exitSelectionMode() },
+                            modifier = Modifier.weight(1f),
+                        ) { Text(stringResource(R.string.cancel)) }
+                    }
+                } else {
+                    Box(modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Box {
+                                FloatingActionButton(onClick = { showFabMenu = true }) {
+                                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.benchmark_add))
+                                }
+                                DropdownMenu(expanded = showFabMenu, onDismissRequest = { showFabMenu = false }) {
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.asset_add_individual)) },
+                                        onClick = {
+                                            showFabMenu = false
+                                            formTarget = BenchmarkFormTarget.New
+                                        },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.asset_add_paste)) },
+                                        onClick = {
+                                            showFabMenu = false
+                                            showPasteImport = true
+                                        },
+                                    )
+                                }
+                            }
+                            if (entries.isNotEmpty()) {
+                                FloatingActionButton(onClick = { isSelectionMode = true }) {
+                                    Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.benchmark_bulk_delete))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    formTarget?.let { target ->
+        BenchmarkFormDialog(
+            initial = (target as? BenchmarkFormTarget.Edit)?.benchmark,
+            existingDates = existingDates,
+            onDismiss = { formTarget = null },
+            onSave = { benchmark ->
+                viewModel.saveBenchmark(benchmark)
+                formTarget = null
+            },
+        )
+    }
+
+    if (showPasteImport) {
+        BenchmarkPasteImportDialog(
+            existingDates = existingDates,
+            onDismiss = { showPasteImport = false },
+            onParse = viewModel::parsePasteText,
+            onImport = { benchmarks ->
+                viewModel.importBenchmarks(benchmarks)
+                showPasteImport = false
+            },
+        )
+    }
+
+    actionError?.let { message ->
+        AlertDialog(
+            onDismissRequest = { viewModel.consumeActionError() },
+            text = { Text(message) },
+            confirmButton = {
+                TextButton(onClick = { viewModel.consumeActionError() }) {
+                    Text(stringResource(android.R.string.ok))
+                }
+            },
+        )
+    }
+
+    pendingDelete?.let { benchmark ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text(stringResource(R.string.benchmark_delete_confirm_title)) },
+            text = { Text(stringResource(R.string.benchmark_delete_confirm_message, benchmark.date)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deleteBenchmark(benchmark.date)
+                    pendingDelete = null
+                }) {
+                    Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
+
+    if (showDeleteAllConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteAllConfirm = false },
+            title = { Text(stringResource(R.string.benchmark_delete_all_confirm_title)) },
+            text = { Text(stringResource(R.string.benchmark_delete_all_confirm_message)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deleteAllBenchmarks()
+                    showDeleteAllConfirm = false
+                    exitSelectionMode()
+                }) {
+                    Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteAllConfirm = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun BenchmarkHeaderRow(
+    isSelectionMode: Boolean,
+    allSelected: Boolean,
+    onToggleSelectAll: () -> Unit,
+) {
+    Column {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (isSelectionMode) {
+                Checkbox(
+                    checked = allSelected,
+                    onCheckedChange = { onToggleSelectAll() },
+                    modifier = Modifier.width(BENCHMARK_CHECKBOX_COLUMN_WIDTH),
+                )
+            }
+            BenchmarkCell(stringResource(R.string.benchmark_field_date), BENCHMARK_DATE_COLUMN_WIDTH, bold = true)
+            BenchmarkCell(stringResource(R.string.benchmark_field_principal), BENCHMARK_VALUE_COLUMN_WIDTH, bold = true)
+            BenchmarkCell(stringResource(R.string.benchmark_field_additional_investment), BENCHMARK_VALUE_COLUMN_WIDTH, bold = true)
+            BenchmarkCell(stringResource(R.string.benchmark_field_current_amount), BENCHMARK_VALUE_COLUMN_WIDTH, bold = true)
+            BenchmarkCell(stringResource(R.string.benchmark_field_profit), BENCHMARK_VALUE_COLUMN_WIDTH, bold = true)
+            BenchmarkCell(stringResource(R.string.benchmark_field_return_rate), BENCHMARK_PERCENT_COLUMN_WIDTH, bold = true)
+            BenchmarkCell(stringResource(R.string.benchmark_field_change_rate), BENCHMARK_PERCENT_COLUMN_WIDTH, bold = true)
+            BenchmarkCell(stringResource(R.string.benchmark_field_mdd), BENCHMARK_PERCENT_COLUMN_WIDTH, bold = true)
+            BenchmarkCell(stringResource(R.string.benchmark_field_kospi), BENCHMARK_VALUE_COLUMN_WIDTH, bold = true)
+            BenchmarkCell(stringResource(R.string.benchmark_field_kospi_return_rate), BENCHMARK_PERCENT_COLUMN_WIDTH, bold = true)
+            BenchmarkCell(stringResource(R.string.benchmark_field_kospi_change_rate), BENCHMARK_PERCENT_COLUMN_WIDTH, bold = true)
+            BenchmarkCell(stringResource(R.string.benchmark_field_kospi_mdd), BENCHMARK_PERCENT_COLUMN_WIDTH, bold = true)
+            BenchmarkCell(stringResource(R.string.benchmark_field_snp500), BENCHMARK_VALUE_COLUMN_WIDTH, bold = true)
+            BenchmarkCell(stringResource(R.string.benchmark_field_snp500_return_rate), BENCHMARK_PERCENT_COLUMN_WIDTH, bold = true)
+            BenchmarkCell(stringResource(R.string.benchmark_field_snp500_change_rate), BENCHMARK_PERCENT_COLUMN_WIDTH, bold = true)
+            BenchmarkCell(stringResource(R.string.benchmark_field_snp500_mdd), BENCHMARK_PERCENT_COLUMN_WIDTH, bold = true)
+            BenchmarkCell(stringResource(R.string.benchmark_field_nasdaq), BENCHMARK_VALUE_COLUMN_WIDTH, bold = true)
+            BenchmarkCell(stringResource(R.string.benchmark_field_nasdaq_return_rate), BENCHMARK_PERCENT_COLUMN_WIDTH, bold = true)
+            BenchmarkCell(stringResource(R.string.benchmark_field_nasdaq_change_rate), BENCHMARK_PERCENT_COLUMN_WIDTH, bold = true)
+            BenchmarkCell(stringResource(R.string.benchmark_field_nasdaq_mdd), BENCHMARK_PERCENT_COLUMN_WIDTH, bold = true)
+            BenchmarkCell("", BENCHMARK_ACTION_COLUMN_WIDTH, bold = true)
+        }
+        HorizontalDivider()
+    }
+}
+
+@Composable
+private fun BenchmarkRow(
+    entry: BenchmarkRowMetrics,
+    isSelectionMode: Boolean,
+    isSelected: Boolean,
+    onToggleSelected: () -> Unit,
+    onEditRequest: () -> Unit,
+    onDeleteRequest: () -> Unit,
+) {
+    val benchmark = entry.benchmark
+    Column {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (isSelectionMode) {
+                Checkbox(
+                    checked = isSelected,
+                    onCheckedChange = { onToggleSelected() },
+                    modifier = Modifier.width(BENCHMARK_CHECKBOX_COLUMN_WIDTH),
+                )
+            }
+            BenchmarkCell(benchmark.date, BENCHMARK_DATE_COLUMN_WIDTH)
+            BenchmarkCell(entry.principal.toDisplayAmount(), BENCHMARK_VALUE_COLUMN_WIDTH)
+            BenchmarkCell(benchmark.additionalInvestment.toDisplayAmount(), BENCHMARK_VALUE_COLUMN_WIDTH)
+            BenchmarkCell(benchmark.currentAmount.toDisplayAmount(), BENCHMARK_VALUE_COLUMN_WIDTH)
+            BenchmarkCell(entry.profit.toDisplayAmount(), BENCHMARK_VALUE_COLUMN_WIDTH, color = signColor(entry.profit))
+            BenchmarkPercentCell(entry.returnRatePercent)
+            BenchmarkPercentCell(entry.returnRateChangePercent)
+            BenchmarkPercentCell(entry.assetMdd)
+            BenchmarkCell(entry.kospi.value.toPlainString(), BENCHMARK_VALUE_COLUMN_WIDTH)
+            BenchmarkPercentCell(entry.kospi.returnRatePercent)
+            BenchmarkPercentCell(entry.kospi.changePercent)
+            BenchmarkPercentCell(entry.kospi.mdd)
+            BenchmarkCell(entry.snp500.value.toPlainString(), BENCHMARK_VALUE_COLUMN_WIDTH)
+            BenchmarkPercentCell(entry.snp500.returnRatePercent)
+            BenchmarkPercentCell(entry.snp500.changePercent)
+            BenchmarkPercentCell(entry.snp500.mdd)
+            BenchmarkCell(entry.nasdaq.value.toPlainString(), BENCHMARK_VALUE_COLUMN_WIDTH)
+            BenchmarkPercentCell(entry.nasdaq.returnRatePercent)
+            BenchmarkPercentCell(entry.nasdaq.changePercent)
+            BenchmarkPercentCell(entry.nasdaq.mdd)
+            Row(modifier = Modifier.width(BENCHMARK_ACTION_COLUMN_WIDTH)) {
+                IconButton(onClick = onEditRequest, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.edit), modifier = Modifier.size(18.dp))
+                }
+                IconButton(onClick = onDeleteRequest, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.delete), modifier = Modifier.size(18.dp))
+                }
+            }
+        }
+        HorizontalDivider()
+    }
+}
+
+@Composable
+private fun BenchmarkCell(text: String, width: Dp, bold: Boolean = false, color: Color = Color.Unspecified) {
+    Text(
+        text = text,
+        modifier = Modifier.width(width).padding(end = 4.dp),
+        style = if (bold) MaterialTheme.typography.labelMedium else MaterialTheme.typography.bodySmall,
+        color = color,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+// 수익률/상승률/MDD처럼 null 가능한 퍼센트 값을 공통 스타일(음수는 빨강, 그 외는 강조색)로 표시한다.
+@Composable
+private fun BenchmarkPercentCell(value: BigDecimal?) {
+    BenchmarkCell(
+        text = value?.let { "$it%" } ?: "—",
+        width = BENCHMARK_PERCENT_COLUMN_WIDTH,
+        color = signColor(value),
+    )
+}
+
+// 값의 부호에 따른 강조 색상: 음수는 error, 양수는 강조색, 0이거나 계산 불가(null)면 중립색.
+// 수익금 컬러와 퍼센트 셀(BenchmarkPercentCell) 색상 로직이 서로 어긋나지 않도록 하나로 통합해 공유한다.
+@Composable
+private fun signColor(value: BigDecimal?): Color = when {
+    value == null -> MaterialTheme.colorScheme.onSurfaceVariant
+    value.signum() < 0 -> MaterialTheme.colorScheme.error
+    value.signum() > 0 -> MaterialTheme.colorScheme.primary
+    else -> Color.Unspecified
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BenchmarkFormDialog(
+    initial: Benchmark?,
+    existingDates: Set<String>,
+    onDismiss: () -> Unit,
+    onSave: (Benchmark) -> Unit,
+) {
+    var date by rememberSaveable { mutableStateOf(initial?.date ?: DiaryViewModel.todayDate()) }
+    var showDatePicker by rememberSaveable { mutableStateOf(false) }
+    var additionalInvestmentText by rememberSaveable { mutableStateOf(initial?.additionalInvestment?.toPlainString() ?: "") }
+    var currentAmountText by rememberSaveable { mutableStateOf(initial?.currentAmount?.toPlainString() ?: "") }
+    var kospiText by rememberSaveable { mutableStateOf(initial?.kospi?.toPlainString() ?: "") }
+    var snp500Text by rememberSaveable { mutableStateOf(initial?.snp500?.toPlainString() ?: "") }
+    var nasdaqText by rememberSaveable { mutableStateOf(initial?.nasdaq?.toPlainString() ?: "") }
+
+    val additionalInvestment = additionalInvestmentText.trim().toBigDecimalOrNull()
+    val currentAmount = currentAmountText.trim().toBigDecimalOrNull()
+    val kospi = kospiText.trim().toBigDecimalOrNull()
+    val snp500 = snp500Text.trim().toBigDecimalOrNull()
+    val nasdaq = nasdaqText.trim().toBigDecimalOrNull()
+    // 신규 추가인데 이미 존재하는 날짜를 고르면 저장 시 기존 문서를 조용히 덮어쓰게 되므로 막는다.
+    val dateConflict = initial == null && date in existingDates
+    val isValid = !dateConflict && additionalInvestment != null && currentAmount != null &&
+        kospi != null && snp500 != null && nasdaq != null
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(if (initial != null) R.string.benchmark_edit_title else R.string.benchmark_add_title)) },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedTextField(
+                    value = date,
+                    onValueChange = {},
+                    readOnly = true,
+                    enabled = initial == null,
+                    isError = dateConflict,
+                    supportingText = {
+                        if (dateConflict) Text(stringResource(R.string.benchmark_date_conflict))
+                    },
+                    label = { Text(stringResource(R.string.benchmark_field_date)) },
+                    trailingIcon = {
+                        IconButton(onClick = { showDatePicker = true }, enabled = initial == null) {
+                            Icon(Icons.Default.DateRange, contentDescription = stringResource(R.string.asset_pick_date))
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                BenchmarkNumberField(
+                    additionalInvestmentText,
+                    { additionalInvestmentText = it },
+                    R.string.benchmark_field_additional_investment,
+                    additionalInvestment != null,
+                )
+                BenchmarkNumberField(currentAmountText, { currentAmountText = it }, R.string.benchmark_field_current_amount, currentAmount != null)
+                BenchmarkNumberField(kospiText, { kospiText = it }, R.string.benchmark_field_kospi, kospi != null)
+                BenchmarkNumberField(snp500Text, { snp500Text = it }, R.string.benchmark_field_snp500, snp500 != null)
+                BenchmarkNumberField(nasdaqText, { nasdaqText = it }, R.string.benchmark_field_nasdaq, nasdaq != null)
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    onSave(
+                        Benchmark(
+                            firestoreId = date,
+                            date = date,
+                            additionalInvestment = additionalInvestment!!,
+                            currentAmount = currentAmount!!,
+                            kospi = kospi!!,
+                            snp500 = snp500!!,
+                            nasdaq = nasdaq!!,
+                        )
+                    )
+                },
+                enabled = isValid,
+            ) { Text(stringResource(R.string.save)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        }
+    )
+
+    if (showDatePicker) {
+        IsoDatePickerDialog(
+            initialDate = date,
+            onDismiss = { showDatePicker = false },
+            onConfirm = {
+                date = it
+                showDatePicker = false
+            },
+        )
+    }
+}
+
+@Composable
+private fun BenchmarkNumberField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    @StringRes labelRes: Int,
+    valid: Boolean,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(stringResource(labelRes)) },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+        isError = value.isNotBlank() && !valid,
+        supportingText = {
+            if (value.isNotBlank() && !valid) Text(stringResource(R.string.asset_amount_invalid))
+        },
+        modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+@Composable
+private fun BenchmarkPasteImportDialog(
+    existingDates: Set<String>,
+    onDismiss: () -> Unit,
+    onParse: (text: String) -> List<ParsedBenchmarkRow>,
+    onImport: (List<Benchmark>) -> Unit,
+) {
+    PasteImportDialog(
+        title = stringResource(R.string.benchmark_paste_import_title),
+        description = stringResource(R.string.benchmark_paste_import_description),
+        onDismiss = onDismiss,
+        onParse = onParse,
+        itemOf = { it.benchmark },
+        errorOf = { it.error },
+        rawLineOf = { it.rawLine },
+        onImport = onImport,
+    ) { benchmark ->
+        val willOverwrite = benchmark.date in existingDates
+        Text(
+            text = "${benchmark.date} · ${benchmark.currentAmount.toDisplayAmount()}" +
+                if (willOverwrite) " · ${stringResource(R.string.benchmark_paste_import_overwrite)}" else "",
+            style = MaterialTheme.typography.bodySmall,
+            color = if (willOverwrite) MaterialTheme.colorScheme.tertiary else Color.Unspecified,
+        )
+    }
 }

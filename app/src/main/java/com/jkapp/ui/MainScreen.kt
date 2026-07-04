@@ -58,6 +58,7 @@ fun MainScreen(
     viewModel: AuthViewModel,
     diaryViewModel: DiaryViewModel,
     dailyAssetViewModel: DailyAssetViewModel,
+    benchmarkViewModel: BenchmarkViewModel,
     onNavigateToDetail: (String) -> Unit,
     onNavigateToAdd: () -> Unit,
     onNavigateToRecordTypeManagement: () -> Unit,
@@ -66,6 +67,7 @@ fun MainScreen(
     val user by viewModel.user.collectAsStateWithLifecycle()
     val currentUser = user ?: return
     val netWorth by dailyAssetViewModel.netWorth.collectAsStateWithLifecycle()
+    val investmentAmount by benchmarkViewModel.latestCurrentAmount.collectAsStateWithLifecycle()
 
     var selectedTab by rememberSaveable { mutableStateOf(MainTab.HOME) }
     var showProfileMenu by remember { mutableStateOf(false) }
@@ -118,7 +120,7 @@ fun MainScreen(
         bottomBar = {
             Column {
                 if (selectedTab == MainTab.ASSET) {
-                    NetWorthBanner(netWorth = netWorth)
+                    NetWorthBanner(netWorth = netWorth, investmentAmount = investmentAmount)
                 }
                 NavigationBar {
                     MainTab.entries.forEach { tab ->
@@ -136,7 +138,7 @@ fun MainScreen(
         Box(modifier = Modifier.padding(innerPadding)) {
             when (selectedTab) {
                 MainTab.HOME -> HomeTabScreen()
-                MainTab.ASSET -> AssetScreen(viewModel = dailyAssetViewModel)
+                MainTab.ASSET -> AssetScreen(viewModel = dailyAssetViewModel, benchmarkViewModel = benchmarkViewModel)
                 MainTab.DIARY -> DiaryScreen(
                     viewModel = diaryViewModel,
                     onNavigateToDetail = onNavigateToDetail,
@@ -149,7 +151,7 @@ fun MainScreen(
 }
 
 @Composable
-private fun NetWorthBanner(netWorth: BigDecimal?) {
+private fun NetWorthBanner(netWorth: BigDecimal?, investmentAmount: BigDecimal?) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -158,17 +160,23 @@ private fun NetWorthBanner(netWorth: BigDecimal?) {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = stringResource(R.string.net_worth_label),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text(
-            text = netWorth?.toDisplayAmount() ?: "-",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-        )
+        BannerStat(labelRes = R.string.net_worth_label, value = netWorth)
+        BannerStat(labelRes = R.string.investment_asset_label, value = investmentAmount)
     }
+}
+
+@Composable
+private fun BannerStat(@StringRes labelRes: Int, value: BigDecimal?) {
+    Text(
+        text = stringResource(labelRes),
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Text(
+        text = value?.toDisplayAmount() ?: "-",
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.Bold,
+    )
 }
 
 @Composable
