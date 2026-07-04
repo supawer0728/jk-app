@@ -16,3 +16,6 @@ data class DiaryFormRoute(val firestoreId: String? = null)
 
 @Serializable
 data object RecordTypeManagementRoute
+
+@Serializable
+data object SettingsRoute
