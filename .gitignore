@@ -9,6 +9,7 @@
 .cxx
 local.properties
 .claude/settings.local.json
+.claude/dev-plan/
 .omc
 .kotlin
 /doc/import-json-to-firestore/
