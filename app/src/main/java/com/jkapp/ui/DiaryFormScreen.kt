@@ -29,8 +29,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -46,7 +44,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -64,10 +61,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jkapp.R
 import com.jkapp.data.model.Attachment
 import com.jkapp.data.model.CatRecord
-import java.time.Instant
-import java.time.LocalDate
-import java.time.ZoneOffset
-import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -182,34 +175,14 @@ fun DiaryFormScreen(
     val isValid = isDataReady && recordDate.isNotBlank() && selectedTypeId.isNotEmpty() && recordText.isNotBlank()
 
     if (showDatePicker) {
-        // DatePickerState.selectedDateMillis는 UTC 자정 기준 epoch millis를 반환하므로
-        // 초기값 변환과 확인 버튼 변환 모두 ZoneOffset.UTC로 통일한다.
-        // DiaryViewModel.todayDate()는 시스템 시간대를 사용하므로 UTC±12h 경계 조건에서
-        // 하루 차이가 날 수 있다. 이는 의도적인 tradeoff다.
-        val initialMillis = runCatching {
-            LocalDate.parse(recordDate).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
-        }.getOrElse { System.currentTimeMillis() }
-        val datePickerState = rememberDatePickerState(initialSelectedDateMillis = initialMillis)
-        DatePickerDialog(
-            onDismissRequest = { showDatePicker = false },
-            confirmButton = {
-                TextButton(onClick = {
-                    datePickerState.selectedDateMillis?.let { millis ->
-                        recordDate = Instant.ofEpochMilli(millis)
-                            .atZone(ZoneOffset.UTC).toLocalDate()
-                            .format(DateTimeFormatter.ISO_LOCAL_DATE)
-                    }
-                    showDatePicker = false
-                }) { Text(stringResource(android.R.string.ok)) }
+        IsoDatePickerDialog(
+            initialDate = recordDate,
+            onDismiss = { showDatePicker = false },
+            onConfirm = { date ->
+                recordDate = date
+                showDatePicker = false
             },
-            dismissButton = {
-                TextButton(onClick = { showDatePicker = false }) {
-                    Text(stringResource(android.R.string.cancel))
-                }
-            }
-        ) {
-            DatePicker(state = datePickerState)
-        }
+        )
     }
 
     Scaffold(

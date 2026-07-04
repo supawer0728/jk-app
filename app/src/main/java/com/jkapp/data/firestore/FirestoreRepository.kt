@@ -2,6 +2,7 @@ package com.jkapp.data.firestore
 
 import com.jkapp.data.model.CatRecord
 import com.jkapp.data.model.CatRecordType
+import com.jkapp.data.model.DailyAsset
 import kotlinx.coroutines.flow.Flow
 
 interface FirestoreRepository {
@@ -13,4 +14,8 @@ interface FirestoreRepository {
     suspend fun addRecordType(type: CatRecordType)
     suspend fun updateRecordType(type: CatRecordType)
     suspend fun deleteRecordTypeAndReassignRecords(typeDocId: String, affectedRecordIds: List<String>, fallbackTypeId: String)
+
+    fun getDailyAssets(): Flow<List<DailyAsset>>
+    suspend fun upsertDailyAsset(asset: DailyAsset)
+    suspend fun deleteDailyAsset(date: String)
 }

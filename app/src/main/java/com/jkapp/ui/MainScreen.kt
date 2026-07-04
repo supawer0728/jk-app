@@ -2,8 +2,12 @@
 
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -40,6 +44,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.SubcomposeAsyncImage
 import com.jkapp.auth.AuthViewModel
 import com.jkapp.R
+import java.math.BigDecimal
 
 private enum class MainTab(@StringRes val labelRes: Int, val icon: ImageVector) {
     HOME(R.string.tab_home, Icons.Default.Home),
@@ -52,12 +57,14 @@ private enum class MainTab(@StringRes val labelRes: Int, val icon: ImageVector) 
 fun MainScreen(
     viewModel: AuthViewModel,
     diaryViewModel: DiaryViewModel,
+    dailyAssetViewModel: DailyAssetViewModel,
     onNavigateToDetail: (String) -> Unit,
     onNavigateToAdd: () -> Unit,
     onNavigateToRecordTypeManagement: () -> Unit,
 ) {
     val user by viewModel.user.collectAsStateWithLifecycle()
     val currentUser = user ?: return
+    val netWorth by dailyAssetViewModel.netWorth.collectAsStateWithLifecycle()
 
     var selectedTab by rememberSaveable { mutableStateOf(MainTab.HOME) }
     var showProfileMenu by remember { mutableStateOf(false) }
@@ -101,14 +108,19 @@ fun MainScreen(
             )
         },
         bottomBar = {
-            NavigationBar {
-                MainTab.entries.forEach { tab ->
-                    NavigationBarItem(
-                        selected = selectedTab == tab,
-                        onClick = { selectedTab = tab },
-                        icon = { Icon(tab.icon, contentDescription = null) },
-                        label = { Text(stringResource(tab.labelRes)) }
-                    )
+            Column {
+                if (selectedTab == MainTab.ASSET) {
+                    NetWorthBanner(netWorth = netWorth)
+                }
+                NavigationBar {
+                    MainTab.entries.forEach { tab ->
+                        NavigationBarItem(
+                            selected = selectedTab == tab,
+                            onClick = { selectedTab = tab },
+                            icon = { Icon(tab.icon, contentDescription = null) },
+                            label = { Text(stringResource(tab.labelRes)) }
+                        )
+                    }
                 }
             }
         }
@@ -116,7 +128,7 @@ fun MainScreen(
         Box(modifier = Modifier.padding(innerPadding)) {
             when (selectedTab) {
                 MainTab.HOME -> HomeTabScreen()
-                MainTab.ASSET -> AssetScreen()
+                MainTab.ASSET -> AssetScreen(viewModel = dailyAssetViewModel)
                 MainTab.DIARY -> DiaryScreen(
                     viewModel = diaryViewModel,
                     onNavigateToDetail = onNavigateToDetail,
@@ -125,6 +137,29 @@ fun MainScreen(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun NetWorthBanner(netWorth: BigDecimal?) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = stringResource(R.string.net_worth_label),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = netWorth?.toDisplayAmount() ?: "-",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+        )
     }
 }
 
