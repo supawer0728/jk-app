@@ -7,6 +7,12 @@
     <string name="tab_diary">육묘일기</string>
     <string name="profile">프로필</string>
     <string name="sign_out">로그아웃</string>
+    <string name="settings">설정</string> <!-- 프로필 드롭다운 메뉴 라벨 -->
+    <string name="settings_title">설정</string> <!-- 설정 화면 상단 타이틀 -->
+    <string name="dark_mode">다크 모드</string>
+    <string name="dark_mode_system">시스템 설정 따름</string>
+    <string name="dark_mode_on">켜짐</string>
+    <string name="dark_mode_off">꺼짐</string>
     <!-- Diary -->
     <string name="add_record">기록 추가</string>
     <string name="write_diary">일기 쓰기</string>

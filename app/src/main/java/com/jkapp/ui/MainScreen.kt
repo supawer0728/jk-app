@@ -61,6 +61,7 @@ fun MainScreen(
     onNavigateToDetail: (String) -> Unit,
     onNavigateToAdd: () -> Unit,
     onNavigateToRecordTypeManagement: () -> Unit,
+    onNavigateToSettings: () -> Unit,
 ) {
     val user by viewModel.user.collectAsStateWithLifecycle()
     val currentUser = user ?: return
@@ -95,6 +96,13 @@ fun MainScreen(
                             expanded = showProfileMenu,
                             onDismissRequest = { showProfileMenu = false }
                         ) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.settings)) },
+                                onClick = {
+                                    showProfileMenu = false
+                                    onNavigateToSettings()
+                                }
+                            )
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.sign_out)) },
                                 onClick = {
