@@ -70,10 +70,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jkapp.R
 import com.jkapp.data.model.AssetItem
 import com.jkapp.data.model.Benchmark
-import com.jkapp.data.model.BenchmarkPrincipal
+import com.jkapp.data.model.BenchmarkRowMetrics
 import com.jkapp.data.model.DEFAULT_HIDDEN_ASSET_NAMES
-import com.jkapp.data.model.returnRatePercent
-import com.jkapp.data.model.withCumulativePrincipal
+import com.jkapp.data.model.withRowMetrics
 import java.math.BigDecimal
 import java.text.NumberFormat
 import java.util.Locale
@@ -701,6 +700,7 @@ private sealed interface BenchmarkFormTarget {
 
 private val BENCHMARK_DATE_COLUMN_WIDTH = 96.dp
 private val BENCHMARK_VALUE_COLUMN_WIDTH = 104.dp
+private val BENCHMARK_PERCENT_COLUMN_WIDTH = 84.dp
 private val BENCHMARK_ACTION_COLUMN_WIDTH = 88.dp
 private val BENCHMARK_CHECKBOX_COLUMN_WIDTH = 40.dp
 
@@ -753,9 +753,9 @@ private fun BenchmarkTab(viewModel: BenchmarkViewModel) {
                         modifier = Modifier.align(Alignment.Center),
                     )
                 } else {
-                    // withCumulativePrincipal()은 날짜 오름차순으로 계산하므로, 최신 날짜부터 보여주려면 뒤집는다.
+                    // withRowMetrics()는 날짜 오름차순으로 계산하므로, 최신 날짜부터 보여주려면 뒤집는다.
                     val entries = remember(state.benchmarks) {
-                        state.benchmarks.withCumulativePrincipal().reversed()
+                        state.benchmarks.withRowMetrics().reversed()
                     }
                     Column(
                         modifier = Modifier
@@ -965,10 +965,22 @@ private fun BenchmarkHeaderRow(
             BenchmarkCell(stringResource(R.string.benchmark_field_principal), BENCHMARK_VALUE_COLUMN_WIDTH, bold = true)
             BenchmarkCell(stringResource(R.string.benchmark_field_additional_investment), BENCHMARK_VALUE_COLUMN_WIDTH, bold = true)
             BenchmarkCell(stringResource(R.string.benchmark_field_current_amount), BENCHMARK_VALUE_COLUMN_WIDTH, bold = true)
-            BenchmarkCell(stringResource(R.string.benchmark_field_return_rate), BENCHMARK_VALUE_COLUMN_WIDTH, bold = true)
+            BenchmarkCell(stringResource(R.string.benchmark_field_profit), BENCHMARK_VALUE_COLUMN_WIDTH, bold = true)
+            BenchmarkCell(stringResource(R.string.benchmark_field_return_rate), BENCHMARK_PERCENT_COLUMN_WIDTH, bold = true)
+            BenchmarkCell(stringResource(R.string.benchmark_field_change_rate), BENCHMARK_PERCENT_COLUMN_WIDTH, bold = true)
+            BenchmarkCell(stringResource(R.string.benchmark_field_mdd), BENCHMARK_PERCENT_COLUMN_WIDTH, bold = true)
             BenchmarkCell(stringResource(R.string.benchmark_field_kospi), BENCHMARK_VALUE_COLUMN_WIDTH, bold = true)
+            BenchmarkCell(stringResource(R.string.benchmark_field_kospi_return_rate), BENCHMARK_PERCENT_COLUMN_WIDTH, bold = true)
+            BenchmarkCell(stringResource(R.string.benchmark_field_kospi_change_rate), BENCHMARK_PERCENT_COLUMN_WIDTH, bold = true)
+            BenchmarkCell(stringResource(R.string.benchmark_field_kospi_mdd), BENCHMARK_PERCENT_COLUMN_WIDTH, bold = true)
             BenchmarkCell(stringResource(R.string.benchmark_field_snp500), BENCHMARK_VALUE_COLUMN_WIDTH, bold = true)
+            BenchmarkCell(stringResource(R.string.benchmark_field_snp500_return_rate), BENCHMARK_PERCENT_COLUMN_WIDTH, bold = true)
+            BenchmarkCell(stringResource(R.string.benchmark_field_snp500_change_rate), BENCHMARK_PERCENT_COLUMN_WIDTH, bold = true)
+            BenchmarkCell(stringResource(R.string.benchmark_field_snp500_mdd), BENCHMARK_PERCENT_COLUMN_WIDTH, bold = true)
             BenchmarkCell(stringResource(R.string.benchmark_field_nasdaq), BENCHMARK_VALUE_COLUMN_WIDTH, bold = true)
+            BenchmarkCell(stringResource(R.string.benchmark_field_nasdaq_return_rate), BENCHMARK_PERCENT_COLUMN_WIDTH, bold = true)
+            BenchmarkCell(stringResource(R.string.benchmark_field_nasdaq_change_rate), BENCHMARK_PERCENT_COLUMN_WIDTH, bold = true)
+            BenchmarkCell(stringResource(R.string.benchmark_field_nasdaq_mdd), BENCHMARK_PERCENT_COLUMN_WIDTH, bold = true)
             BenchmarkCell("", BENCHMARK_ACTION_COLUMN_WIDTH, bold = true)
         }
         HorizontalDivider()
@@ -977,7 +989,7 @@ private fun BenchmarkHeaderRow(
 
 @Composable
 private fun BenchmarkRow(
-    entry: BenchmarkPrincipal,
+    entry: BenchmarkRowMetrics,
     isSelectionMode: Boolean,
     isSelected: Boolean,
     onToggleSelected: () -> Unit,
@@ -985,7 +997,6 @@ private fun BenchmarkRow(
     onDeleteRequest: () -> Unit,
 ) {
     val benchmark = entry.benchmark
-    val returnRate = remember(entry) { entry.returnRatePercent() }
     Column {
         Row(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
@@ -1002,18 +1013,22 @@ private fun BenchmarkRow(
             BenchmarkCell(entry.principal.toDisplayAmount(), BENCHMARK_VALUE_COLUMN_WIDTH)
             BenchmarkCell(benchmark.additionalInvestment.toDisplayAmount(), BENCHMARK_VALUE_COLUMN_WIDTH)
             BenchmarkCell(benchmark.currentAmount.toDisplayAmount(), BENCHMARK_VALUE_COLUMN_WIDTH)
-            BenchmarkCell(
-                text = returnRate?.let { "$it%" } ?: "—",
-                width = BENCHMARK_VALUE_COLUMN_WIDTH,
-                color = when {
-                    returnRate == null -> MaterialTheme.colorScheme.onSurfaceVariant
-                    returnRate.signum() < 0 -> MaterialTheme.colorScheme.error
-                    else -> MaterialTheme.colorScheme.primary
-                },
-            )
-            BenchmarkCell(benchmark.kospi.toPlainString(), BENCHMARK_VALUE_COLUMN_WIDTH)
-            BenchmarkCell(benchmark.snp500.toPlainString(), BENCHMARK_VALUE_COLUMN_WIDTH)
-            BenchmarkCell(benchmark.nasdaq.toPlainString(), BENCHMARK_VALUE_COLUMN_WIDTH)
+            BenchmarkCell(entry.profit.toDisplayAmount(), BENCHMARK_VALUE_COLUMN_WIDTH, color = signColor(entry.profit))
+            BenchmarkPercentCell(entry.returnRatePercent)
+            BenchmarkPercentCell(entry.returnRateChangePercent)
+            BenchmarkPercentCell(entry.assetMdd)
+            BenchmarkCell(entry.kospi.value.toPlainString(), BENCHMARK_VALUE_COLUMN_WIDTH)
+            BenchmarkPercentCell(entry.kospi.returnRatePercent)
+            BenchmarkPercentCell(entry.kospi.changePercent)
+            BenchmarkPercentCell(entry.kospi.mdd)
+            BenchmarkCell(entry.snp500.value.toPlainString(), BENCHMARK_VALUE_COLUMN_WIDTH)
+            BenchmarkPercentCell(entry.snp500.returnRatePercent)
+            BenchmarkPercentCell(entry.snp500.changePercent)
+            BenchmarkPercentCell(entry.snp500.mdd)
+            BenchmarkCell(entry.nasdaq.value.toPlainString(), BENCHMARK_VALUE_COLUMN_WIDTH)
+            BenchmarkPercentCell(entry.nasdaq.returnRatePercent)
+            BenchmarkPercentCell(entry.nasdaq.changePercent)
+            BenchmarkPercentCell(entry.nasdaq.mdd)
             Row(modifier = Modifier.width(BENCHMARK_ACTION_COLUMN_WIDTH)) {
                 IconButton(onClick = onEditRequest, modifier = Modifier.size(32.dp)) {
                     Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.edit), modifier = Modifier.size(18.dp))
@@ -1037,6 +1052,27 @@ private fun BenchmarkCell(text: String, width: Dp, bold: Boolean = false, color:
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
     )
+}
+
+// 수익률/상승률/MDD처럼 null 가능한 퍼센트 값을 공통 스타일(음수는 빨강, 그 외는 강조색)로 표시한다.
+@Composable
+private fun BenchmarkPercentCell(value: BigDecimal?) {
+    BenchmarkCell(
+        text = value?.let { "$it%" } ?: "—",
+        width = BENCHMARK_PERCENT_COLUMN_WIDTH,
+        color = when {
+            value == null -> MaterialTheme.colorScheme.onSurfaceVariant
+            value.signum() < 0 -> MaterialTheme.colorScheme.error
+            else -> MaterialTheme.colorScheme.primary
+        },
+    )
+}
+
+@Composable
+private fun signColor(value: BigDecimal): Color = when {
+    value.signum() < 0 -> MaterialTheme.colorScheme.error
+    value.signum() > 0 -> MaterialTheme.colorScheme.primary
+    else -> Color.Unspecified
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
