@@ -172,7 +172,7 @@ class FirestoreRepositoryImpl : FirestoreRepository {
             }
             val benchmarks = snapshot?.documents
                 ?.mapNotNull { it.toBenchmark() }
-                ?.sortedBy { it.date } ?: emptyList()
+                ?.sortedByDescending { it.date } ?: emptyList()
 
             trySend(benchmarks)
         }
