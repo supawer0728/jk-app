@@ -23,6 +23,7 @@ import com.jkapp.nav.RecordTypeManagementRoute
 import com.jkapp.ui.DiaryDetailScreen
 import com.jkapp.ui.RecordTypeManagementScreen
 import com.jkapp.ui.DiaryFormScreen
+import com.jkapp.ui.DailyAssetViewModel
 import com.jkapp.ui.DiaryViewModel
 import com.jkapp.ui.LoginScreen
 import com.jkapp.ui.MainScreen
@@ -32,6 +33,7 @@ class MainActivity : ComponentActivity() {
 
     private val authViewModel: AuthViewModel by viewModels()
     private val diaryViewModel: DiaryViewModel by viewModels { DiaryViewModel.factory(DriveRepositoryImpl(this), AppPreferences(this)) }
+    private val dailyAssetViewModel: DailyAssetViewModel by viewModels { DailyAssetViewModel.factory() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -65,6 +67,7 @@ class MainActivity : ComponentActivity() {
                             MainScreen(
                                 viewModel = authViewModel,
                                 diaryViewModel = diaryViewModel,
+                                dailyAssetViewModel = dailyAssetViewModel,
                                 onNavigateToDetail = { date ->
                                     backStack.add(DiaryDetailRoute(date))
                                 },

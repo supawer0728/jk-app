@@ -52,6 +52,7 @@ private enum class MainTab(@StringRes val labelRes: Int, val icon: ImageVector) 
 fun MainScreen(
     viewModel: AuthViewModel,
     diaryViewModel: DiaryViewModel,
+    dailyAssetViewModel: DailyAssetViewModel,
     onNavigateToDetail: (String) -> Unit,
     onNavigateToAdd: () -> Unit,
     onNavigateToRecordTypeManagement: () -> Unit,
@@ -116,7 +117,7 @@ fun MainScreen(
         Box(modifier = Modifier.padding(innerPadding)) {
             when (selectedTab) {
                 MainTab.HOME -> HomeTabScreen()
-                MainTab.ASSET -> AssetScreen()
+                MainTab.ASSET -> AssetScreen(viewModel = dailyAssetViewModel)
                 MainTab.DIARY -> DiaryScreen(
                     viewModel = diaryViewModel,
                     onNavigateToDetail = onNavigateToDetail,
