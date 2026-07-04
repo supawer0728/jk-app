@@ -185,6 +185,16 @@ class FirestoreRepositoryImpl : FirestoreRepository {
             .addOnFailureListener { cont.resumeWithException(it) }
     }
 
+    // 여러 날짜를 개별 set()으로 순차 호출하는 대신 하나의 배치로 묶어 한 번에 커밋한다.
+    // Firestore 배치는 원자적이라 일부만 저장되는 상태 없이 전체 성공/실패로 귀결된다.
+    override suspend fun upsertBenchmarks(benchmarks: List<Benchmark>): Unit = suspendCancellableCoroutine { cont ->
+        val batch = db.batch()
+        benchmarks.forEach { benchmark -> batch.set(benchmarksRef.document(benchmark.date), benchmark.toMap()) }
+        batch.commit()
+            .addOnSuccessListener { cont.resume(Unit) }
+            .addOnFailureListener { cont.resumeWithException(it) }
+    }
+
     override suspend fun deleteBenchmark(date: String): Unit = suspendCancellableCoroutine { cont ->
         benchmarksRef.document(date).delete()
             .addOnSuccessListener { cont.resume(Unit) }

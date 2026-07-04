@@ -104,19 +104,15 @@ class BenchmarkViewModel(
         return result
     }
 
-    // 붙여넣기로 여러 날짜의 벤치마크를 한 번에 저장한다. 날짜별로 독립된 문서라 일부가 실패해도
-    // 나머지는 그대로 반영하고, 실패한 날짜만 모아 하나의 에러로 보고한다.
+    // 붙여넣기로 여러 날짜의 벤치마크를 하나의 배치로 한 번에 저장한다. 배치는 원자적이라
+    // 일부만 저장된 상태가 되지 않고, 실패하면 아무것도 저장되지 않는다.
     fun importBenchmarks(benchmarks: List<Benchmark>) {
+        if (benchmarks.isEmpty()) return
         viewModelScope.launch {
-            val failures = benchmarks.mapNotNull { benchmark ->
-                runCatching { repository.upsertBenchmark(benchmark) }
-                    .exceptionOrNull()
-                    ?.let { benchmark.date to it }
-            }
-            if (failures.isNotEmpty()) {
-                val detail = failures.joinToString("\n") { (date, e) -> "$date: ${e.localizedMessage ?: "알 수 없는 오류"}" }
-                _actionError.value = "일부 벤치마크를 저장하지 못했습니다:\n$detail"
-            }
+            runCatching { repository.upsertBenchmarks(benchmarks) }
+                .onFailure { e ->
+                    _actionError.value = "벤치마크 저장에 실패했습니다: ${e.localizedMessage ?: "알 수 없는 오류"}"
+                }
         }
     }
 

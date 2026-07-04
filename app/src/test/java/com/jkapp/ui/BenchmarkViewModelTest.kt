@@ -212,7 +212,7 @@ class BenchmarkViewModelTest {
     }
 
     @Test
-    fun `importBenchmarks는 성공한 항목은 반영하고 실패한 날짜만 actionError로 보고한다`() = runTest {
+    fun `importBenchmarks는 배치가 실패하면 아무것도 저장되지 않고 actionError가 설정된다`() = runTest {
         advanceUntilIdle()
 
         fakeRepository.upsertBenchmarkErrorDates = setOf("2026-07-02")
@@ -222,8 +222,20 @@ class BenchmarkViewModelTest {
         advanceUntilIdle()
 
         val state = viewModel.uiState.value as BenchmarkUiState.Success
-        assertEquals(setOf("2026-07-01", "2026-07-03"), state.benchmarks.map { it.date }.toSet())
-        assertTrue(viewModel.actionError.value!!.contains("2026-07-02"))
+        assertEquals(emptySet<String>(), state.benchmarks.map { it.date }.toSet())
+        assertTrue(viewModel.actionError.value!!.contains("벤치마크 저장에 실패했습니다"))
+    }
+
+    @Test
+    fun `importBenchmarks는 빈 목록이면 아무 것도 호출하지 않는다`() = runTest {
+        advanceUntilIdle()
+
+        viewModel.importBenchmarks(emptyList())
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as BenchmarkUiState.Success
+        assertEquals(emptySet<String>(), state.benchmarks.map { it.date }.toSet())
+        assertNull(viewModel.actionError.value)
     }
 
     @Test

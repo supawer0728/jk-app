@@ -22,6 +22,7 @@ interface FirestoreRepository {
 
     fun getBenchmarks(): Flow<List<Benchmark>>
     suspend fun upsertBenchmark(benchmark: Benchmark)
+    suspend fun upsertBenchmarks(benchmarks: List<Benchmark>)
     suspend fun deleteBenchmark(date: String)
     suspend fun deleteBenchmarks(dates: List<String>)
 }

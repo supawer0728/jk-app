@@ -112,6 +112,24 @@ class FakeFirestoreRepository : FirestoreRepository {
         }
     }
 
+    // 실제 Firestore 배치처럼 원자적으로 동작한다: 하나라도 실패 대상이면 아무것도 저장하지 않고 예외를 던진다.
+    override suspend fun upsertBenchmarks(benchmarks: List<Benchmark>) {
+        upsertBenchmarkError?.let { throw it }
+        if (benchmarks.any { it.date in upsertBenchmarkErrorDates }) {
+            throw RuntimeException("저장 실패: ${benchmarks.filter { it.date in upsertBenchmarkErrorDates }.map { it.date }}")
+        }
+        var updated = _benchmarks.value
+        benchmarks.forEach { benchmark ->
+            val existingIndex = updated.indexOfFirst { it.date == benchmark.date }
+            updated = if (existingIndex >= 0) {
+                updated.mapIndexed { index, existing -> if (index == existingIndex) benchmark else existing }
+            } else {
+                updated + benchmark
+            }
+        }
+        _benchmarks.value = updated
+    }
+
     override suspend fun deleteBenchmark(date: String) {
         deleteBenchmarkError?.let { throw it }
         if (date in deleteBenchmarkErrorDates) throw RuntimeException("삭제 실패: $date")
