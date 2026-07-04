@@ -162,6 +162,19 @@ class BenchmarkTest {
     }
 
     @Test
+    fun `지수 MDD는 누적 고점이 0이면 계산 불가로 null을 반환한다`() {
+        val benchmarks = listOf(
+            makeBenchmark("2026-07-01", kospi = BigDecimal.ZERO),
+            makeBenchmark("2026-07-02", kospi = BigDecimal("-100")),
+        )
+
+        val result = benchmarks.withRowMetrics()
+
+        assertNull(result[0].kospi.mdd)
+        assertNull(result[1].kospi.mdd)
+    }
+
+    @Test
     fun `S&P500과 나스닥도 동일한 방식으로 독립적으로 계산된다`() {
         val benchmarks = listOf(
             makeBenchmark("2026-07-01", snp500 = BigDecimal("5000"), nasdaq = BigDecimal("16000")),

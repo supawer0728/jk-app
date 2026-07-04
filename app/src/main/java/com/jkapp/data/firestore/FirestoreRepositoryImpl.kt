@@ -211,6 +211,20 @@ class FirestoreRepositoryImpl : FirestoreRepository {
             .addOnFailureListener { cont.resumeWithException(it) }
     }
 
+    // getBenchmarks()의 필터링된 목록이 아니라 컬렉션을 직접 조회해 삭제 대상을 정하므로,
+    // 역직렬화에 실패한 손상된 문서도 함께 삭제된다.
+    override suspend fun deleteAllBenchmarks(): Unit = suspendCancellableCoroutine { cont ->
+        benchmarksRef.get()
+            .addOnSuccessListener { snapshot ->
+                val batch = db.batch()
+                snapshot.documents.forEach { doc -> batch.delete(doc.reference) }
+                batch.commit()
+                    .addOnSuccessListener { cont.resume(Unit) }
+                    .addOnFailureListener { cont.resumeWithException(it) }
+            }
+            .addOnFailureListener { cont.resumeWithException(it) }
+    }
+
     private fun Benchmark.toMap() = mapOf(
         FIELD_DATE to date,
         FIELD_ADDITIONAL_INVESTMENT to additionalInvestment.toPlainString(),

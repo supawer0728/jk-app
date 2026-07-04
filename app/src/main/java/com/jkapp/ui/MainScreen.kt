@@ -160,27 +160,23 @@ private fun NetWorthBanner(netWorth: BigDecimal?, investmentAmount: BigDecimal?)
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = stringResource(R.string.net_worth_label),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text(
-            text = netWorth?.toDisplayAmount() ?: "-",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-        )
-        Text(
-            text = stringResource(R.string.investment_asset_label),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text(
-            text = investmentAmount?.toDisplayAmount() ?: "-",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-        )
+        BannerStat(labelRes = R.string.net_worth_label, value = netWorth)
+        BannerStat(labelRes = R.string.investment_asset_label, value = investmentAmount)
     }
+}
+
+@Composable
+private fun BannerStat(@StringRes labelRes: Int, value: BigDecimal?) {
+    Text(
+        text = stringResource(labelRes),
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Text(
+        text = value?.toDisplayAmount() ?: "-",
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.Bold,
+    )
 }
 
 @Composable

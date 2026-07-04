@@ -169,6 +169,34 @@ class BenchmarkViewModelTest {
     }
 
     @Test
+    fun `deleteAllBenchmarks는 컬렉션 전체를 삭제한다`() = runTest {
+        fakeRepository.setBenchmarks(
+            listOf(makeBenchmark("2026-07-01"), makeBenchmark("2026-07-02"))
+        )
+        advanceUntilIdle()
+
+        viewModel.deleteAllBenchmarks()
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as BenchmarkUiState.Success
+        assertEquals(emptyList<Benchmark>(), state.benchmarks)
+    }
+
+    @Test
+    fun `deleteAllBenchmarks 실패 시 uiState는 유지되고 actionError가 설정된다`() = runTest {
+        fakeRepository.setBenchmarks(listOf(makeBenchmark("2026-07-01")))
+        advanceUntilIdle()
+
+        fakeRepository.deleteAllBenchmarksError = RuntimeException("삭제 실패")
+        viewModel.deleteAllBenchmarks()
+        advanceUntilIdle()
+
+        assertTrue(viewModel.actionError.value!!.contains("벤치마크 삭제에 실패했습니다"))
+        val state = viewModel.uiState.value as BenchmarkUiState.Success
+        assertEquals(1, state.benchmarks.size)
+    }
+
+    @Test
     fun `deleteBenchmarks는 빈 목록이면 아무 것도 호출하지 않는다`() = runTest {
         fakeRepository.setBenchmarks(listOf(makeBenchmark("2026-07-01")))
         advanceUntilIdle()

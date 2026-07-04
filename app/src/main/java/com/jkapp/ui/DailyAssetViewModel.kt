@@ -34,10 +34,8 @@ class DailyAssetViewModel(
     // 데이터가 없거나 전부 숨김이면 null. 미래 날짜로 잘못 입력된 항목은 제외한다.
     val netWorth: StateFlow<BigDecimal?> = uiState
         .map { state ->
-            val today = DiaryViewModel.todayDate()
             (state as? DailyAssetUiState.Success)?.dailyAssets
-                ?.filter { it.date <= today }
-                ?.maxByOrNull { it.date }
+                ?.let { DiaryViewModel.latestNotFuture(it) { asset -> asset.date } }
                 ?.assets
                 ?.filterNot { it.hidden }
                 ?.takeIf { it.isNotEmpty() }

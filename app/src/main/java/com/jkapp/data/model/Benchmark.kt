@@ -21,7 +21,8 @@ data class IndexMetrics(
     // 직전 날짜 대비 상승률(%). 직전 항목이 없으면(최초 항목) null.
     val changePercent: BigDecimal?,
     // 지금까지의 고점 대비 하락폭(%, 0 이하). 원본 값 시리즈 기준으로 계산한다.
-    val mdd: BigDecimal,
+    // 고점이 0이면 변화율을 정의할 수 없으므로 null(0%로 오인되지 않도록 값을 대체하지 않는다).
+    val mdd: BigDecimal?,
 )
 
 data class BenchmarkRowMetrics(
@@ -60,7 +61,7 @@ private fun computeIndexMetrics(values: List<BigDecimal>): List<IndexMetrics> {
         val returnRate = percentChange(first, value) ?: BigDecimal.ZERO
         val change = previous?.let { percentChange(it, value) }
         peak = peak.max(value)
-        val mdd = percentChange(peak, value) ?: BigDecimal.ZERO
+        val mdd = percentChange(peak, value)
         previous = value
         IndexMetrics(value = value, returnRatePercent = returnRate, changePercent = change, mdd = mdd)
     }

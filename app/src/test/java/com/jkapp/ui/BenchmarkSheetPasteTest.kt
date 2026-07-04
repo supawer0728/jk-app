@@ -133,6 +133,15 @@ class BenchmarkSheetPasteTest {
     }
 
     @Test
+    fun `음수 부호가 있는 금액은 부호를 보존해 파싱한다`() {
+        val text = listOf(fullHeader, fullDataRow(additionalInvestment = "-500,000")).joinToString("\n")
+
+        val result = parseBenchmarkSheetPaste(text)
+
+        assertEquals(BigDecimal("-500000"), result.single().benchmark?.additionalInvestment)
+    }
+
+    @Test
     fun `같은 붙여넣기 안에 날짜가 중복되면 두 행 모두 에러로 처리한다`() {
         val text = listOf(fullHeader, fullDataRow(date = "2026-07-03"), fullDataRow(date = "2026-07-03")).joinToString("\n")
 

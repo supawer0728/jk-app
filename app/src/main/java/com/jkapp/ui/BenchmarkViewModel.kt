@@ -37,10 +37,8 @@ class BenchmarkViewModel(
     // 오늘 혹은 그보다 가까운 과거 날짜 중 가장 최신인 벤치마크의 현재금액(투자자산). 데이터가 없으면 null.
     val latestCurrentAmount: StateFlow<BigDecimal?> = uiState
         .map { state ->
-            val today = DiaryViewModel.todayDate()
             (state as? BenchmarkUiState.Success)?.benchmarks
-                ?.filter { it.date <= today }
-                ?.maxByOrNull { it.date }
+                ?.let { DiaryViewModel.latestNotFuture(it) { benchmark -> benchmark.date } }
                 ?.currentAmount
         }
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
@@ -97,12 +95,23 @@ class BenchmarkViewModel(
         _actionError.value = null
     }
 
-    // 여러 날짜를 하나의 배치로 한 번에 삭제한다(전체 삭제/선택 삭제). 배치는 원자적이라
+    // 여러 날짜를 하나의 배치로 한 번에 삭제한다(선택 삭제). 배치는 원자적이라
     // 일부만 삭제된 상태가 되지 않고, 실패하면 아무것도 삭제되지 않는다.
     fun deleteBenchmarks(dates: List<String>) {
         if (dates.isEmpty()) return
         viewModelScope.launch {
             runCatching { repository.deleteBenchmarks(dates) }
+                .onFailure { e ->
+                    _actionError.value = "벤치마크 삭제에 실패했습니다: ${e.localizedMessage ?: "알 수 없는 오류"}"
+                }
+        }
+    }
+
+    // 화면에 표시된(파싱에 성공한) 날짜 목록이 아니라 컬렉션 전체를 대상으로 삭제하므로,
+    // 역직렬화에 실패해 표에 나타나지 않는 손상된 문서도 함께 삭제된다.
+    fun deleteAllBenchmarks() {
+        viewModelScope.launch {
+            runCatching { repository.deleteAllBenchmarks() }
                 .onFailure { e ->
                     _actionError.value = "벤치마크 삭제에 실패했습니다: ${e.localizedMessage ?: "알 수 없는 오류"}"
                 }

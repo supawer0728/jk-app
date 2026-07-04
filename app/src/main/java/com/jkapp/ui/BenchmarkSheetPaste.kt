@@ -29,6 +29,7 @@ private val AMOUNT_COLUMN_LABELS = listOf("추가투자", "현재금액", "KOSPI
 private val ISO_DATE_REGEX = Regex("""\d{4}-\d{2}-\d{2}""")
 
 // 통화 기호·콤마·공백 등 잡음 문자에 기대지 않고 숫자와 소수점만 뽑아 재조합한다.
+// 부호(-)는 별도로 감지해 재조합 후 다시 적용한다(음수는 출금을 의미하므로 보존해야 한다).
 private val AMOUNT_DIGITS_PATTERN = Regex("[0-9.]")
 
 // 구글 스프레드시트에서 복사한 벤치마크 표(첫 줄은 헤더)를 파싱한다.
@@ -137,6 +138,7 @@ private fun parseAmountCell(raw: String): BenchmarkAmountParseResult {
         val looksLikeText = raw.any { it.isLetter() }
         return if (looksLikeText) BenchmarkAmountParseResult.Invalid else BenchmarkAmountParseResult.Blank
     }
-    val amount = digitsAndDot.toBigDecimalOrNull() ?: return BenchmarkAmountParseResult.Invalid
+    val unsigned = digitsAndDot.toBigDecimalOrNull() ?: return BenchmarkAmountParseResult.Invalid
+    val amount = if (raw.contains('-')) unsigned.negate() else unsigned
     return BenchmarkAmountParseResult.Value(amount)
 }

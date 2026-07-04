@@ -610,20 +610,59 @@ private fun AssetPasteImportDialog(
     onParse: (text: String, hasHeader: Boolean) -> List<ParsedAssetRow>,
     onImport: (List<AssetItem>) -> Unit,
 ) {
-    var text by rememberSaveable { mutableStateOf("") }
     var hasHeader by rememberSaveable { mutableStateOf(true) }
-    var parsed by remember { mutableStateOf<List<ParsedAssetRow>?>(null) }
+
+    PasteImportDialog(
+        title = stringResource(R.string.asset_paste_import_title),
+        description = stringResource(R.string.asset_paste_import_description),
+        extraOptions = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = hasHeader, onCheckedChange = { hasHeader = it })
+                Text(stringResource(R.string.asset_paste_import_has_header))
+            }
+        },
+        onDismiss = onDismiss,
+        onParse = { text -> onParse(text, hasHeader) },
+        itemOf = { it.item },
+        errorOf = { it.error },
+        rawLineOf = { it.rawLine },
+        onImport = onImport,
+    ) { item ->
+        Text(
+            text = "${item.owner} · ${item.name}" + (item.amount?.let { " · ${it.toDisplayAmount()}" } ?: ""),
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+}
+
+// 텍스트 붙여넣기 → 파싱 → 미리보기 → 확인 후 저장이라는 공통 흐름을 자산/벤치마크 붙여넣기 다이얼로그가
+// 함께 사용한다. hasHeader 체크박스(extraOptions)나 미리보기 행 스타일처럼 다른 부분만 콜백으로 뺀다.
+@Composable
+private fun <T, R> PasteImportDialog(
+    title: String,
+    description: String,
+    extraOptions: (@Composable () -> Unit)? = null,
+    onDismiss: () -> Unit,
+    onParse: (text: String) -> List<R>,
+    itemOf: (R) -> T?,
+    errorOf: (R) -> String?,
+    rawLineOf: (R) -> String,
+    onImport: (List<T>) -> Unit,
+    rowContent: @Composable (T) -> Unit,
+) {
+    var text by rememberSaveable { mutableStateOf("") }
+    var parsed by remember { mutableStateOf<List<R>?>(null) }
 
     val result = parsed
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.asset_paste_import_title)) },
+        title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (result == null) {
                     Text(
-                        text = stringResource(R.string.asset_paste_import_description),
+                        text = description,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -635,12 +674,9 @@ private fun AssetPasteImportDialog(
                         maxLines = 12,
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked = hasHeader, onCheckedChange = { hasHeader = it })
-                        Text(stringResource(R.string.asset_paste_import_has_header))
-                    }
+                    extraOptions?.invoke()
                 } else {
-                    val validCount = result.count { it.item != null }
+                    val validCount = result.count { itemOf(it) != null }
                     val errorCount = result.size - validCount
                     Text(
                         text = stringResource(R.string.asset_paste_import_summary, validCount, errorCount),
@@ -651,16 +687,12 @@ private fun AssetPasteImportDialog(
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         items(result) { row ->
-                            val item = row.item
+                            val item = itemOf(row)
                             if (item != null) {
-                                Text(
-                                    text = "${item.owner} · ${item.name}" +
-                                        (item.amount?.let { " · ${it.toDisplayAmount()}" } ?: ""),
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
+                                rowContent(item)
                             } else {
                                 Text(
-                                    text = "⚠ ${row.error}: ${row.rawLine.take(30)}",
+                                    text = "⚠ ${errorOf(row)}: ${rawLineOf(row).take(30)}",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.error,
                                 )
@@ -673,13 +705,13 @@ private fun AssetPasteImportDialog(
         confirmButton = {
             if (result == null) {
                 TextButton(
-                    onClick = { parsed = onParse(text, hasHeader) },
+                    onClick = { parsed = onParse(text) },
                     enabled = text.isNotBlank(),
                 ) { Text(stringResource(R.string.asset_paste_import_parse)) }
             } else {
                 TextButton(
-                    onClick = { onImport(result.mapNotNull { it.item }) },
-                    enabled = result.any { it.item != null },
+                    onClick = { onImport(result.mapNotNull(itemOf)) },
+                    enabled = result.any { itemOf(it) != null },
                 ) { Text(stringResource(R.string.save)) }
             }
         },
@@ -927,7 +959,7 @@ private fun BenchmarkTab(viewModel: BenchmarkViewModel) {
             text = { Text(stringResource(R.string.benchmark_delete_all_confirm_message)) },
             confirmButton = {
                 TextButton(onClick = {
-                    viewModel.deleteBenchmarks(existingDates.toList())
+                    viewModel.deleteAllBenchmarks()
                     showDeleteAllConfirm = false
                     exitSelectionMode()
                 }) {
@@ -1060,16 +1092,15 @@ private fun BenchmarkPercentCell(value: BigDecimal?) {
     BenchmarkCell(
         text = value?.let { "$it%" } ?: "—",
         width = BENCHMARK_PERCENT_COLUMN_WIDTH,
-        color = when {
-            value == null -> MaterialTheme.colorScheme.onSurfaceVariant
-            value.signum() < 0 -> MaterialTheme.colorScheme.error
-            else -> MaterialTheme.colorScheme.primary
-        },
+        color = signColor(value),
     )
 }
 
+// 값의 부호에 따른 강조 색상: 음수는 error, 양수는 강조색, 0이거나 계산 불가(null)면 중립색.
+// 수익금 컬러와 퍼센트 셀(BenchmarkPercentCell) 색상 로직이 서로 어긋나지 않도록 하나로 통합해 공유한다.
 @Composable
-private fun signColor(value: BigDecimal): Color = when {
+private fun signColor(value: BigDecimal?): Color = when {
+    value == null -> MaterialTheme.colorScheme.onSurfaceVariant
     value.signum() < 0 -> MaterialTheme.colorScheme.error
     value.signum() > 0 -> MaterialTheme.colorScheme.primary
     else -> Color.Unspecified
@@ -1201,82 +1232,22 @@ private fun BenchmarkPasteImportDialog(
     onParse: (text: String) -> List<ParsedBenchmarkRow>,
     onImport: (List<Benchmark>) -> Unit,
 ) {
-    var text by rememberSaveable { mutableStateOf("") }
-    var parsed by remember { mutableStateOf<List<ParsedBenchmarkRow>?>(null) }
-
-    val result = parsed
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.benchmark_paste_import_title)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (result == null) {
-                    Text(
-                        text = stringResource(R.string.benchmark_paste_import_description),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    OutlinedTextField(
-                        value = text,
-                        onValueChange = { text = it },
-                        label = { Text(stringResource(R.string.asset_paste_import_field)) },
-                        minLines = 8,
-                        maxLines = 12,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                } else {
-                    val validCount = result.count { it.benchmark != null }
-                    val errorCount = result.size - validCount
-                    Text(
-                        text = stringResource(R.string.asset_paste_import_summary, validCount, errorCount),
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    LazyColumn(
-                        modifier = Modifier.fillMaxWidth().heightIn(max = 280.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        items(result) { row ->
-                            val benchmark = row.benchmark
-                            if (benchmark != null) {
-                                val willOverwrite = benchmark.date in existingDates
-                                Text(
-                                    text = "${benchmark.date} · ${benchmark.currentAmount.toDisplayAmount()}" +
-                                        if (willOverwrite) " · ${stringResource(R.string.benchmark_paste_import_overwrite)}" else "",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = if (willOverwrite) MaterialTheme.colorScheme.tertiary else Color.Unspecified,
-                                )
-                            } else {
-                                Text(
-                                    text = "⚠ ${row.error}: ${row.rawLine.take(30)}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.error,
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            if (result == null) {
-                TextButton(
-                    onClick = { parsed = onParse(text) },
-                    enabled = text.isNotBlank(),
-                ) { Text(stringResource(R.string.asset_paste_import_parse)) }
-            } else {
-                TextButton(
-                    onClick = { onImport(result.mapNotNull { it.benchmark }) },
-                    enabled = result.any { it.benchmark != null },
-                ) { Text(stringResource(R.string.save)) }
-            }
-        },
-        dismissButton = {
-            if (result == null) {
-                TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
-            } else {
-                TextButton(onClick = { parsed = null }) { Text(stringResource(R.string.asset_paste_import_back)) }
-            }
-        }
-    )
+    PasteImportDialog(
+        title = stringResource(R.string.benchmark_paste_import_title),
+        description = stringResource(R.string.benchmark_paste_import_description),
+        onDismiss = onDismiss,
+        onParse = onParse,
+        itemOf = { it.benchmark },
+        errorOf = { it.error },
+        rawLineOf = { it.rawLine },
+        onImport = onImport,
+    ) { benchmark ->
+        val willOverwrite = benchmark.date in existingDates
+        Text(
+            text = "${benchmark.date} · ${benchmark.currentAmount.toDisplayAmount()}" +
+                if (willOverwrite) " · ${stringResource(R.string.benchmark_paste_import_overwrite)}" else "",
+            style = MaterialTheme.typography.bodySmall,
+            color = if (willOverwrite) MaterialTheme.colorScheme.tertiary else Color.Unspecified,
+        )
+    }
 }
