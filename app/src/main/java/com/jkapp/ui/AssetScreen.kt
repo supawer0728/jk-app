@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -738,7 +739,7 @@ private fun BenchmarkTab(viewModel: BenchmarkViewModel, tabTappedAtMs: Long?) {
     var isSelectionMode by rememberSaveable { mutableStateOf(false) }
     var selectedDates by remember { mutableStateOf<Set<String>>(emptySet()) }
     var showDeleteAllConfirm by remember { mutableStateOf(false) }
-    val verticalScrollState = rememberScrollState()
+    val listState = rememberLazyListState()
     val existingDates = remember(entries) {
         entries.map { it.benchmark.date }.toSet()
     }
@@ -764,7 +765,7 @@ private fun BenchmarkTab(viewModel: BenchmarkViewModel, tabTappedAtMs: Long?) {
 
     // 선택 모드에 들어가면 최신 날짜(맨 앞 행)부터 볼 수 있도록 목록 맨 위로 이동한다.
     LaunchedEffect(isSelectionMode) {
-        if (isSelectionMode) verticalScrollState.animateScrollTo(0)
+        if (isSelectionMode) listState.animateScrollToItem(0)
     }
 
     fun exitSelectionMode() {
@@ -825,13 +826,13 @@ private fun BenchmarkTab(viewModel: BenchmarkViewModel, tabTappedAtMs: Long?) {
                                 }
                             },
                         )
-                        Column(
+                        LazyColumn(
                             modifier = Modifier
                                 .weight(1f)
-                                .verticalScroll(verticalScrollState)
                                 .padding(bottom = 80.dp),
+                            state = listState,
                         ) {
-                            entries.forEach { entry ->
+                            items(entries, key = { it.benchmark.date }) { entry ->
                                 BenchmarkRow(
                                     entry = entry,
                                     isSelectionMode = isSelectionMode,
