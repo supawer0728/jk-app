@@ -10,12 +10,15 @@ import com.jkapp.data.firestore.FirestoreRepository
 import com.jkapp.data.firestore.FirestoreRepositoryImpl
 import com.jkapp.data.model.AssetItem
 import com.jkapp.data.model.DailyAsset
+import java.math.BigDecimal
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class DailyAssetViewModel(
@@ -24,6 +27,17 @@ class DailyAssetViewModel(
 
     private val _uiState = MutableStateFlow<DailyAssetUiState>(DailyAssetUiState.Loading)
     val uiState: StateFlow<DailyAssetUiState> = _uiState.asStateFlow()
+
+    // 가장 최신 날짜의 자산 중 숨김 처리되지 않은 항목의 합계(순자산). 데이터가 없으면 null.
+    val netWorth: StateFlow<BigDecimal?> = uiState
+        .map { state ->
+            (state as? DailyAssetUiState.Success)?.dailyAssets
+                ?.maxByOrNull { it.date }
+                ?.assets
+                ?.filterNot { it.hidden }
+                ?.sumOf { it.amount ?: BigDecimal.ZERO }
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     private var dataJob: Job? = null
 
@@ -64,7 +78,8 @@ class DailyAssetViewModel(
 
     // 이름+명의가 같은 항목은 필드 단위로 갱신하고, 없는 항목은 새로 추가한다(구글시트 붙여넣기용).
     // 이름이 같아도 명의가 다르면 별개의 자산으로 취급한다.
-    // 붙여넣기 데이터에 없는 필드(card)는 기존 값을 그대로 유지해, 재붙여넣기로 개별 입력한 값이 지워지지 않게 한다.
+    // 붙여넣기 데이터에 없거나 사용자가 직접 관리하는 필드(card, hidden)는 기존 값을 그대로 유지해,
+    // 재붙여넣기로 개별 입력/수정한 값이 지워지지 않게 한다.
     fun importAssets(date: String, items: List<AssetItem>) {
         updateAssetList(date) { existing ->
             val merged = existing.toMutableList()

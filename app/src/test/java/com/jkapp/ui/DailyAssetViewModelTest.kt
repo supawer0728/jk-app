@@ -223,6 +223,78 @@ class DailyAssetViewModelTest {
     }
 
     @Test
+    fun `netWorth는 가장 최신 날짜의 숨김되지 않은 자산 합계다`() = runTest {
+        fakeRepository.setDailyAssets(
+            listOf(
+                DailyAsset(
+                    date = "2026-07-01",
+                    assets = listOf(makeAsset("과거현금", amount = BigDecimal("999999"))),
+                ),
+                DailyAsset(
+                    date = "2026-07-04",
+                    assets = listOf(
+                        makeAsset("현금", amount = BigDecimal("1000")),
+                        makeAsset("주식", amount = BigDecimal("2000")),
+                    ),
+                ),
+            )
+        )
+        advanceUntilIdle()
+
+        assertEquals(BigDecimal("3000"), viewModel.netWorth.value)
+    }
+
+    @Test
+    fun `netWorth는 숨김 처리된 자산을 제외한다`() = runTest {
+        fakeRepository.setDailyAssets(
+            listOf(
+                DailyAsset(
+                    date = "2026-07-04",
+                    assets = listOf(
+                        AssetItem(name = "공용 계좌", owner = "공동", amount = BigDecimal("5000"), hidden = true),
+                        makeAsset("현금", amount = BigDecimal("1000")),
+                    ),
+                )
+            )
+        )
+        advanceUntilIdle()
+
+        assertEquals(BigDecimal("1000"), viewModel.netWorth.value)
+    }
+
+    @Test
+    fun `netWorth는 금액이 없는 자산을 0으로 계산한다`() = runTest {
+        fakeRepository.setDailyAssets(
+            listOf(DailyAsset(date = "2026-07-04", assets = listOf(makeAsset("현금", amount = null))))
+        )
+        advanceUntilIdle()
+
+        assertEquals(BigDecimal.ZERO, viewModel.netWorth.value)
+    }
+
+    @Test
+    fun `netWorth는 자산 데이터가 없으면 null이다`() = runTest {
+        advanceUntilIdle()
+
+        assertNull(viewModel.netWorth.value)
+    }
+
+    @Test
+    fun `importAssets는 기존 항목의 hidden 값을 보존한다`() = runTest {
+        val existing = AssetItem(name = "현금", owner = "전지훈", hidden = true, amount = BigDecimal("100"))
+        fakeRepository.setDailyAssets(listOf(DailyAsset(date = "2026-07-04", assets = listOf(existing))))
+        advanceUntilIdle()
+
+        viewModel.importAssets("2026-07-04", listOf(makeAsset("현금", amount = BigDecimal("200"))))
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as DailyAssetUiState.Success
+        val updated = state.dailyAssets.find { it.date == "2026-07-04" }?.assets?.single { it.name == "현금" }
+        assertEquals(true, updated?.hidden)
+        assertEquals(BigDecimal("200"), updated?.amount)
+    }
+
+    @Test
     fun `자산 저장 실패 시 uiState가 Error가 된다`() = runTest {
         advanceUntilIdle()
 

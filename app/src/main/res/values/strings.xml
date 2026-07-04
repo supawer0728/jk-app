@@ -71,4 +71,8 @@
     <string name="asset_paste_import_parse">확인</string>
     <string name="asset_paste_import_back">다시 입력</string>
     <string name="asset_paste_import_summary">%1$d건 인식, %2$d건 오류</string>
+    <string name="asset_hidden">숨김</string>
+    <string name="asset_field_hidden">숨김 (순자산 계산에서 제외)</string>
+    <string name="asset_toggle_show_hidden">숨김 자산 표시</string>
+    <string name="net_worth_label">순자산</string>
 </resources>

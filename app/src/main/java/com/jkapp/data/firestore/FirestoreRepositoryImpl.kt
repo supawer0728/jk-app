@@ -172,6 +172,7 @@ class FirestoreRepositoryImpl : FirestoreRepository {
         FIELD_ASSET_ACCOUNT_NUMBER to accountNumber,
         FIELD_ASSET_CARD to card,
         FIELD_ASSET_AMOUNT to amount?.toPlainString(),
+        FIELD_ASSET_HIDDEN to hidden,
     )
 
     private fun Map<String, Any?>.toAssetItem(): AssetItem? {
@@ -184,6 +185,7 @@ class FirestoreRepositoryImpl : FirestoreRepository {
             accountNumber = this[FIELD_ASSET_ACCOUNT_NUMBER] as? String,
             card = this[FIELD_ASSET_CARD] as? String,
             amount = (this[FIELD_ASSET_AMOUNT] as? String)?.toBigDecimalOrNull(),
+            hidden = this[FIELD_ASSET_HIDDEN] as? Boolean ?: false,
         )
     }
 
@@ -244,5 +246,6 @@ class FirestoreRepositoryImpl : FirestoreRepository {
         private const val FIELD_ASSET_ACCOUNT_NUMBER = "accountNumber"
         private const val FIELD_ASSET_CARD = "card"
         private const val FIELD_ASSET_AMOUNT = "amount"
+        private const val FIELD_ASSET_HIDDEN = "hidden"
     }
 }

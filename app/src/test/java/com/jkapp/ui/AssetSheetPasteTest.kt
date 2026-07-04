@@ -229,6 +229,19 @@ class AssetSheetPasteTest {
     }
 
     @Test
+    fun `기본 숨김 목록에 있는 이름은 hidden이 true로 파싱된다`() {
+        val text = listOf(
+            row("공용 계좌", "K", "토스뱅크", "-", "-", "₩ 3,000,000"),
+            row("현금", "K", "-", "-", "-", "₩ 1,000"),
+        ).joinToString("\n")
+
+        val result = parseGoogleSheetPaste(text, hasHeader = false)
+
+        assertEquals(true, result[0].item?.hidden)
+        assertEquals(false, result[1].item?.hidden)
+    }
+
+    @Test
     fun `이름이 같아도 명의가 다르면 중복이 아니다`() {
         val text = listOf(
             row("적금", "J", "-", "-", "-", "₩ 100"),

@@ -1,6 +1,7 @@
 package com.jkapp.ui
 
 import com.jkapp.data.model.AssetItem
+import com.jkapp.data.model.DEFAULT_HIDDEN_ASSET_NAMES
 import java.math.BigDecimal
 
 data class ParsedAssetRow(
@@ -84,6 +85,7 @@ private fun String.toAssetRow(cells: List<String>, amount: BigDecimal?): ParsedA
         accountNumber = cells[3].blankOrDashToNull(),
         card = null,
         amount = amount,
+        hidden = cells[0] in DEFAULT_HIDDEN_ASSET_NAMES,
     ),
     error = null,
     rawLine = this,
