@@ -1,7 +1,5 @@
 package com.jkapp.ui
 
-import android.os.SystemClock
-import android.util.Log
 import androidx.annotation.StringRes
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.text.KeyboardOptions
@@ -64,7 +62,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -91,21 +88,13 @@ private enum class AssetTab(@StringRes val labelRes: Int) {
 @Composable
 fun AssetScreen(viewModel: DailyAssetViewModel, benchmarkViewModel: BenchmarkViewModel) {
     var selectedTab by rememberSaveable { mutableStateOf(AssetTab.DAILY_ASSET) }
-    // 벤치마크 탭 표시 지연을 진단하기 위한 임시 계측: 탭을 누른 시점을 기록해 BenchmarkTab에 전달한다.
-    var benchmarkTabTappedAtMs by remember { mutableStateOf<Long?>(null) }
 
     Column(modifier = Modifier.fillMaxSize()) {
         SecondaryTabRow(selectedTabIndex = selectedTab.ordinal) {
             AssetTab.entries.forEach { tab ->
                 Tab(
                     selected = selectedTab == tab,
-                    onClick = {
-                        if (tab == AssetTab.BENCHMARK) {
-                            benchmarkTabTappedAtMs = SystemClock.elapsedRealtime()
-                            logBenchmarkPerf(benchmarkTabTappedAtMs, "0-탭클릭")
-                        }
-                        selectedTab = tab
-                    },
+                    onClick = { selectedTab = tab },
                     text = { Text(stringResource(tab.labelRes)) }
                 )
             }
@@ -114,7 +103,7 @@ fun AssetScreen(viewModel: DailyAssetViewModel, benchmarkViewModel: BenchmarkVie
             when (selectedTab) {
                 AssetTab.DAILY_ASSET -> DailyAssetTab(viewModel = viewModel)
                 AssetTab.INVESTMENT -> PlaceholderTabContent(stringResource(R.string.asset_tab_investment_placeholder))
-                AssetTab.BENCHMARK -> BenchmarkTab(viewModel = benchmarkViewModel, tabTappedAtMs = benchmarkTabTappedAtMs)
+                AssetTab.BENCHMARK -> BenchmarkTab(viewModel = benchmarkViewModel)
             }
         }
     }
@@ -709,14 +698,6 @@ private sealed interface BenchmarkFormTarget {
     data class Edit(val benchmark: Benchmark) : BenchmarkFormTarget
 }
 
-// 벤치마크 탭 표시 지연 진단용 임시 로그 태그. adb logcat -s BenchmarkPerf 로 확인한다.
-private const val BENCHMARK_PERF_TAG = "BenchmarkPerf"
-
-private fun logBenchmarkPerf(tabTappedAtMs: Long?, step: String, detail: String = "") {
-    val elapsed = tabTappedAtMs?.let { "${SystemClock.elapsedRealtime() - it}ms" } ?: "unknown"
-    Log.d(BENCHMARK_PERF_TAG, "[$step] 탭 클릭 후 $elapsed${if (detail.isNotEmpty()) " · $detail" else ""}")
-}
-
 private val BENCHMARK_DATE_COLUMN_WIDTH = 96.dp
 private val BENCHMARK_VALUE_COLUMN_WIDTH = 104.dp
 private val BENCHMARK_PERCENT_COLUMN_WIDTH = 84.dp
@@ -724,7 +705,7 @@ private val BENCHMARK_ACTION_COLUMN_WIDTH = 88.dp
 private val BENCHMARK_CHECKBOX_COLUMN_WIDTH = 40.dp
 
 @Composable
-private fun BenchmarkTab(viewModel: BenchmarkViewModel, tabTappedAtMs: Long?) {
+private fun BenchmarkTab(viewModel: BenchmarkViewModel) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val actionError by viewModel.actionError.collectAsStateWithLifecycle()
     // 20개 열의 파생 지표는 뷰모델(BenchmarkViewModel.rowMetrics)에서 데이터가 실제로 바뀔 때만
@@ -744,25 +725,6 @@ private fun BenchmarkTab(viewModel: BenchmarkViewModel, tabTappedAtMs: Long?) {
         entries.map { it.benchmark.date }.toSet()
     }
 
-    // --- 표시 지연 진단용 임시 계측 (adb logcat -s BenchmarkPerf) ---
-    var hasLoggedRootLayout by remember { mutableStateOf(false) }
-    var hasLoggedTableLayout by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        logBenchmarkPerf(tabTappedAtMs, "1-BenchmarkTab컴포지션진입")
-    }
-    LaunchedEffect(uiState) {
-        val state = uiState
-        if (state is BenchmarkUiState.Success) {
-            logBenchmarkPerf(tabTappedAtMs, "2-uiState=Success", "문서수=${state.benchmarks.size}")
-        }
-    }
-    LaunchedEffect(entries) {
-        if (entries.isNotEmpty()) {
-            logBenchmarkPerf(tabTappedAtMs, "3-rowMetrics반영", "행수=${entries.size}")
-        }
-    }
-    // --- 계측 끝 ---
-
     // 선택 모드에 들어가면 최신 날짜(맨 앞 행)부터 볼 수 있도록 목록 맨 위로 이동한다.
     LaunchedEffect(isSelectionMode) {
         if (isSelectionMode) listState.animateScrollToItem(0)
@@ -773,16 +735,7 @@ private fun BenchmarkTab(viewModel: BenchmarkViewModel, tabTappedAtMs: Long?) {
         selectedDates = emptySet()
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .onGloballyPositioned {
-                if (!hasLoggedRootLayout) {
-                    hasLoggedRootLayout = true
-                    logBenchmarkPerf(tabTappedAtMs, "4-루트레이아웃완료")
-                }
-            },
-    ) {
+    Box(modifier = Modifier.fillMaxSize()) {
         when (val state = uiState) {
             is BenchmarkUiState.Loading -> {
                 LoadingIndicator(modifier = Modifier.align(Alignment.Center))
@@ -807,13 +760,7 @@ private fun BenchmarkTab(viewModel: BenchmarkViewModel, tabTappedAtMs: Long?) {
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
-                            .horizontalScroll(rememberScrollState())
-                            .onGloballyPositioned {
-                                if (!hasLoggedTableLayout) {
-                                    hasLoggedTableLayout = true
-                                    logBenchmarkPerf(tabTappedAtMs, "5-표레이아웃완료(첫프레임)", "행수=${entries.size}")
-                                }
-                            },
+                            .horizontalScroll(rememberScrollState()),
                     ) {
                         BenchmarkHeaderRow(
                             isSelectionMode = isSelectionMode,
