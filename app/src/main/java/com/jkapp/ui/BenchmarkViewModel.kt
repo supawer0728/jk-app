@@ -1,5 +1,6 @@
 package com.jkapp.ui
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -68,7 +69,34 @@ class BenchmarkViewModel(
         _actionError.value = null
     }
 
+    // 구글시트 붙여넣기 텍스트를 파싱한다. 파싱 실패 행은 원본 값을 그대로 로그에 남겨 디버깅에 활용한다.
+    fun parsePasteText(text: String): List<ParsedBenchmarkRow> {
+        val result = parseBenchmarkSheetPaste(text)
+        result.filter { it.error != null }.forEach { row ->
+            Log.w(TAG, "벤치마크 붙여넣기 파싱 실패: error=${row.error}, input=\"${row.rawLine}\"")
+        }
+        return result
+    }
+
+    // 붙여넣기로 여러 날짜의 벤치마크를 한 번에 저장한다. 날짜별로 독립된 문서라 일부가 실패해도
+    // 나머지는 그대로 반영하고, 실패한 날짜만 모아 하나의 에러로 보고한다.
+    fun importBenchmarks(benchmarks: List<Benchmark>) {
+        viewModelScope.launch {
+            val failures = benchmarks.mapNotNull { benchmark ->
+                runCatching { repository.upsertBenchmark(benchmark) }
+                    .exceptionOrNull()
+                    ?.let { benchmark.date to it }
+            }
+            if (failures.isNotEmpty()) {
+                val detail = failures.joinToString("\n") { (date, e) -> "$date: ${e.localizedMessage ?: "알 수 없는 오류"}" }
+                _actionError.value = "일부 벤치마크를 저장하지 못했습니다:\n$detail"
+            }
+        }
+    }
+
     companion object {
+        private const val TAG = "BenchmarkViewModel"
+
         fun factory(): ViewModelProvider.Factory =
             viewModelFactory { initializer { BenchmarkViewModel() } }
     }

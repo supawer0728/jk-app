@@ -705,6 +705,8 @@ private fun BenchmarkTab(viewModel: BenchmarkViewModel) {
     // Benchmark는 Parcelable/Serializable이 아니므로 rememberSaveable로 저장할 수 없다(회전 시 초기화됨).
     var formTarget by remember { mutableStateOf<BenchmarkFormTarget?>(null) }
     var pendingDelete by remember { mutableStateOf<Benchmark?>(null) }
+    var showFabMenu by remember { mutableStateOf(false) }
+    var showPasteImport by rememberSaveable { mutableStateOf(false) }
     val existingDates = remember(uiState) {
         (uiState as? BenchmarkUiState.Success)?.benchmarks?.map { it.date }?.toSet() ?: emptySet()
     }
@@ -755,8 +757,24 @@ private fun BenchmarkTab(viewModel: BenchmarkViewModel) {
                 }
 
                 Box(modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)) {
-                    FloatingActionButton(onClick = { formTarget = BenchmarkFormTarget.New }) {
+                    FloatingActionButton(onClick = { showFabMenu = true }) {
                         Icon(Icons.Default.Add, contentDescription = stringResource(R.string.benchmark_add))
+                    }
+                    DropdownMenu(expanded = showFabMenu, onDismissRequest = { showFabMenu = false }) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.asset_add_individual)) },
+                            onClick = {
+                                showFabMenu = false
+                                formTarget = BenchmarkFormTarget.New
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.asset_add_paste)) },
+                            onClick = {
+                                showFabMenu = false
+                                showPasteImport = true
+                            },
+                        )
                     }
                 }
             }
@@ -771,6 +789,18 @@ private fun BenchmarkTab(viewModel: BenchmarkViewModel) {
             onSave = { benchmark ->
                 viewModel.saveBenchmark(benchmark)
                 formTarget = null
+            },
+        )
+    }
+
+    if (showPasteImport) {
+        BenchmarkPasteImportDialog(
+            existingDates = existingDates,
+            onDismiss = { showPasteImport = false },
+            onParse = viewModel::parsePasteText,
+            onImport = { benchmarks ->
+                viewModel.importBenchmarks(benchmarks)
+                showPasteImport = false
             },
         )
     }
@@ -1003,5 +1033,92 @@ private fun BenchmarkNumberField(
             if (value.isNotBlank() && !valid) Text(stringResource(R.string.asset_amount_invalid))
         },
         modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+@Composable
+private fun BenchmarkPasteImportDialog(
+    existingDates: Set<String>,
+    onDismiss: () -> Unit,
+    onParse: (text: String) -> List<ParsedBenchmarkRow>,
+    onImport: (List<Benchmark>) -> Unit,
+) {
+    var text by rememberSaveable { mutableStateOf("") }
+    var parsed by remember { mutableStateOf<List<ParsedBenchmarkRow>?>(null) }
+
+    val result = parsed
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.benchmark_paste_import_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (result == null) {
+                    Text(
+                        text = stringResource(R.string.benchmark_paste_import_description),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    OutlinedTextField(
+                        value = text,
+                        onValueChange = { text = it },
+                        label = { Text(stringResource(R.string.asset_paste_import_field)) },
+                        minLines = 8,
+                        maxLines = 12,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                } else {
+                    val validCount = result.count { it.benchmark != null }
+                    val errorCount = result.size - validCount
+                    Text(
+                        text = stringResource(R.string.asset_paste_import_summary, validCount, errorCount),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 280.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        items(result) { row ->
+                            val benchmark = row.benchmark
+                            if (benchmark != null) {
+                                val willOverwrite = benchmark.date in existingDates
+                                Text(
+                                    text = "${benchmark.date} · ${benchmark.currentAmount.toDisplayAmount()}" +
+                                        if (willOverwrite) " · ${stringResource(R.string.benchmark_paste_import_overwrite)}" else "",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (willOverwrite) MaterialTheme.colorScheme.tertiary else Color.Unspecified,
+                                )
+                            } else {
+                                Text(
+                                    text = "⚠ ${row.error}: ${row.rawLine.take(30)}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            if (result == null) {
+                TextButton(
+                    onClick = { parsed = onParse(text) },
+                    enabled = text.isNotBlank(),
+                ) { Text(stringResource(R.string.asset_paste_import_parse)) }
+            } else {
+                TextButton(
+                    onClick = { onImport(result.mapNotNull { it.benchmark }) },
+                    enabled = result.any { it.benchmark != null },
+                ) { Text(stringResource(R.string.save)) }
+            }
+        },
+        dismissButton = {
+            if (result == null) {
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+            } else {
+                TextButton(onClick = { parsed = null }) { Text(stringResource(R.string.asset_paste_import_back)) }
+            }
+        }
     )
 }

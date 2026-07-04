@@ -121,6 +121,45 @@ class BenchmarkViewModelTest {
     }
 
     @Test
+    fun `importBenchmarks는 붙여넣기로 여러 날짜를 한 번에 저장한다`() = runTest {
+        advanceUntilIdle()
+
+        viewModel.importBenchmarks(listOf(makeBenchmark("2026-07-01"), makeBenchmark("2026-07-02")))
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as BenchmarkUiState.Success
+        assertEquals(setOf("2026-07-01", "2026-07-02"), state.benchmarks.map { it.date }.toSet())
+    }
+
+    @Test
+    fun `importBenchmarks는 성공한 항목은 반영하고 실패한 날짜만 actionError로 보고한다`() = runTest {
+        advanceUntilIdle()
+
+        fakeRepository.upsertBenchmarkErrorDates = setOf("2026-07-02")
+        viewModel.importBenchmarks(
+            listOf(makeBenchmark("2026-07-01"), makeBenchmark("2026-07-02"), makeBenchmark("2026-07-03"))
+        )
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as BenchmarkUiState.Success
+        assertEquals(setOf("2026-07-01", "2026-07-03"), state.benchmarks.map { it.date }.toSet())
+        assertTrue(viewModel.actionError.value!!.contains("2026-07-02"))
+    }
+
+    @Test
+    fun `parsePasteText는 파서 결과를 그대로 반환한다`() = runTest {
+        val text = listOf(
+            listOf("날짜", "추가투자", "원금", "현재금액", "KOSPI", "S&P500", "나스닥").joinToString("\t"),
+            listOf("2026-07-04", "0", "1000000", "1100000", "9000", "7500", "26000").joinToString("\t"),
+        ).joinToString("\n")
+
+        val result = viewModel.parsePasteText(text)
+
+        assertEquals(1, result.size)
+        assertEquals("2026-07-04", result.single().benchmark?.date)
+    }
+
+    @Test
     fun `deleteBenchmark 실패 시 uiState는 유지되고 actionError가 설정된다`() = runTest {
         fakeRepository.setBenchmarks(listOf(makeBenchmark("2026-07-04")))
         advanceUntilIdle()
