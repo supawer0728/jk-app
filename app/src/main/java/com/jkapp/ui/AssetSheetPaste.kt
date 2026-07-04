@@ -96,7 +96,13 @@ private fun mapOwnerCode(code: String): String {
 }
 
 private fun parseWonAmount(raw: String): AmountParseResult {
-    val cleaned = raw.replace("₩", "").replace(",", "").trim()
+    var cleaned = raw.replace("₩", "").replace(",", "").trim()
+    if (cleaned.isBlank() || cleaned == "-") return AmountParseResult.Blank
+    // 구글 스프레드시트의 회계 표기(괄호)는 음수가 아니라 통화 서식으로 붙는 경우가 있어
+    // 부호를 뒤집지 않고 괄호만 제거한 값을 사용한다.
+    if (cleaned.startsWith("(") && cleaned.endsWith(")")) {
+        cleaned = cleaned.substring(1, cleaned.length - 1).trim()
+    }
     if (cleaned.isBlank() || cleaned == "-") return AmountParseResult.Blank
     val amount = cleaned.toBigDecimalOrNull() ?: return AmountParseResult.Invalid
     return AmountParseResult.Value(amount)

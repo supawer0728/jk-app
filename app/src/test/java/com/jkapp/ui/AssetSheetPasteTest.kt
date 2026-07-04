@@ -101,6 +101,17 @@ class AssetSheetPasteTest {
     }
 
     @Test
+    fun `괄호로 감싼 회계 표기 금액은 음수가 아닌 양수로 파싱한다`() {
+        val text = row("퇴직연금(DC)", "K", "미래에셋증권", "-", "-", "(₩ 23,779,706)")
+
+        val result = parseGoogleSheetPaste(text, hasHeader = false)
+
+        val parsed = result.single()
+        assertEquals(BigDecimal("23779706"), parsed.item?.amount)
+        assertEquals(null, parsed.error)
+    }
+
+    @Test
     fun `카드 열은 무시한다`() {
         val text = row("K 용돈", "K", "카카오뱅크", "3333095726187", "현대/카카오", "₩ 1,100,000")
 
