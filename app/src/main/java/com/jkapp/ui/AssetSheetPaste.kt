@@ -93,16 +93,21 @@ private fun String.toAssetRow(cells: List<String>, amount: BigDecimal?): ParsedA
 private fun mapOwnerCode(code: String): String =
     OWNER_CODE_MAP[code.trim().uppercase()] ?: "공동"
 
-// ₩, 괄호(회계 표기), 콤마, 공백 등 통화 서식 문자를 제거한 뒤 남은 값을 숫자로 판단한다.
-// 괄호는 음수를 의미하지 않는 통화 서식으로 취급해 부호를 뒤집지 않는다.
-private val AMOUNT_NOISE_PATTERN = Regex("[₩(),\\s]")
-private val NUMERIC_PATTERN = Regex("^-?\\d+(\\.\\d+)?$")
+// 통화 기호(₩, 유사 전각문자 등)·괄호(회계 표기)·콤마·공백이 정확히 어떤 문자인지 나열해서
+// 제거하는 대신, 숫자(0-9)와 소수점만 뽑아 재조합한다. 잡음 문자 목록에 기대지 않으므로
+// 예상치 못한 통화 기호/공백 변형이 섞여도 안정적으로 동작한다. 괄호(회계상 음수 표기)도
+// 부호로 해석하지 않는다 — 이 데이터에서 "-"는 항상 "값 없음"을 의미할 뿐 실제 음수가 아니다.
+private val AMOUNT_DIGITS_PATTERN = Regex("[0-9.]")
 
 private fun parseWonAmount(raw: String): AmountParseResult {
-    val cleaned = raw.replace(AMOUNT_NOISE_PATTERN, "")
-    if (cleaned.isEmpty() || cleaned == "-") return AmountParseResult.Blank
-    if (!NUMERIC_PATTERN.matches(cleaned)) return AmountParseResult.Invalid
-    val amount = cleaned.toBigDecimalOrNull() ?: return AmountParseResult.Invalid
+    val digitsAndDot = AMOUNT_DIGITS_PATTERN.findAll(raw).joinToString("") { it.value }
+    if (digitsAndDot.isEmpty()) {
+        // 숫자가 전혀 없을 때, 글자(한글/영문 등)가 섞여 있으면 오타/미기입 텍스트로 보고 에러 처리하고,
+        // 기호(-, ₩, 괄호, 공백 등)만 있으면 "값 없음"으로 처리한다.
+        val looksLikeText = raw.any { it.isLetter() }
+        return if (looksLikeText) AmountParseResult.Invalid else AmountParseResult.Blank
+    }
+    val amount = digitsAndDot.toBigDecimalOrNull() ?: return AmountParseResult.Invalid
     return AmountParseResult.Value(amount)
 }
 

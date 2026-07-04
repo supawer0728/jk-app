@@ -136,12 +136,23 @@ class AssetSheetPasteTest {
     }
 
     @Test
-    fun `괄호 없이 명시적인 음수 부호가 있으면 음수로 파싱한다`() {
-        val text = row("마이너스통장", "J", "-", "-", "-", "-3,000,000")
+    fun `대시 부호는 음수가 아닌 값 없음으로 취급한다`() {
+        val text = row("마이너스표기", "J", "-", "-", "-", "-3,000,000")
 
         val result = parseGoogleSheetPaste(text, hasHeader = false)
 
-        assertEquals(BigDecimal("-3000000"), result.single().item?.amount)
+        assertEquals(BigDecimal("3000000"), result.single().item?.amount)
+    }
+
+    @Test
+    fun `계좌번호와 은행명에 숫자가 섞여 있어도 금액 칸만 정확히 파싱한다`() {
+        val text = row("해외계좌", "J", "삼성증권", "7131769648-01", "-", "(₩ 19,304,122)")
+
+        val result = parseGoogleSheetPaste(text, hasHeader = false)
+
+        val parsed = result.single()
+        assertEquals(BigDecimal("19304122"), parsed.item?.amount)
+        assertEquals(null, parsed.error)
     }
 
     @Test
