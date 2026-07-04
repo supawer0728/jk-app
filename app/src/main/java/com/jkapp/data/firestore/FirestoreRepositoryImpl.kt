@@ -191,6 +191,16 @@ class FirestoreRepositoryImpl : FirestoreRepository {
             .addOnFailureListener { cont.resumeWithException(it) }
     }
 
+    // 여러 날짜를 개별 delete()로 순차 호출하는 대신 하나의 배치로 묶어 한 번에 커밋한다.
+    // Firestore 배치는 원자적이라 일부만 삭제되는 상태 없이 전체 성공/실패로 귀결된다.
+    override suspend fun deleteBenchmarks(dates: List<String>): Unit = suspendCancellableCoroutine { cont ->
+        val batch = db.batch()
+        dates.forEach { date -> batch.delete(benchmarksRef.document(date)) }
+        batch.commit()
+            .addOnSuccessListener { cont.resume(Unit) }
+            .addOnFailureListener { cont.resumeWithException(it) }
+    }
+
     private fun Benchmark.toMap() = mapOf(
         FIELD_DATE to date,
         FIELD_ADDITIONAL_INVESTMENT to additionalInvestment.toPlainString(),

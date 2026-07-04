@@ -136,7 +136,7 @@ class BenchmarkViewModelTest {
     }
 
     @Test
-    fun `deleteBenchmarks는 성공한 항목은 반영하고 실패한 날짜만 actionError로 보고한다`() = runTest {
+    fun `deleteBenchmarks는 배치가 실패하면 아무것도 삭제되지 않고 actionError가 설정된다`() = runTest {
         fakeRepository.setBenchmarks(
             listOf(makeBenchmark("2026-07-01"), makeBenchmark("2026-07-02"), makeBenchmark("2026-07-03"))
         )
@@ -147,8 +147,21 @@ class BenchmarkViewModelTest {
         advanceUntilIdle()
 
         val state = viewModel.uiState.value as BenchmarkUiState.Success
-        assertEquals(setOf("2026-07-02"), state.benchmarks.map { it.date }.toSet())
-        assertTrue(viewModel.actionError.value!!.contains("2026-07-02"))
+        assertEquals(setOf("2026-07-01", "2026-07-02", "2026-07-03"), state.benchmarks.map { it.date }.toSet())
+        assertTrue(viewModel.actionError.value!!.contains("벤치마크 삭제에 실패했습니다"))
+    }
+
+    @Test
+    fun `deleteBenchmarks는 빈 목록이면 아무 것도 호출하지 않는다`() = runTest {
+        fakeRepository.setBenchmarks(listOf(makeBenchmark("2026-07-01")))
+        advanceUntilIdle()
+
+        viewModel.deleteBenchmarks(emptyList())
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as BenchmarkUiState.Success
+        assertEquals(1, state.benchmarks.size)
+        assertNull(viewModel.actionError.value)
     }
 
     @Test

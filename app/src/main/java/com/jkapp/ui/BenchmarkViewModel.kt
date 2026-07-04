@@ -83,19 +83,15 @@ class BenchmarkViewModel(
         _actionError.value = null
     }
 
-    // 여러 날짜를 한 번에 삭제한다(전체 삭제/선택 삭제). 날짜별로 독립된 문서라 일부가 실패해도
-    // 나머지는 그대로 반영하고, 실패한 날짜만 모아 하나의 에러로 보고한다.
+    // 여러 날짜를 하나의 배치로 한 번에 삭제한다(전체 삭제/선택 삭제). 배치는 원자적이라
+    // 일부만 삭제된 상태가 되지 않고, 실패하면 아무것도 삭제되지 않는다.
     fun deleteBenchmarks(dates: List<String>) {
+        if (dates.isEmpty()) return
         viewModelScope.launch {
-            val failures = dates.mapNotNull { date ->
-                runCatching { repository.deleteBenchmark(date) }
-                    .exceptionOrNull()
-                    ?.let { date to it }
-            }
-            if (failures.isNotEmpty()) {
-                val detail = failures.joinToString("\n") { (date, e) -> "$date: ${e.localizedMessage ?: "알 수 없는 오류"}" }
-                _actionError.value = "일부 벤치마크를 삭제하지 못했습니다:\n$detail"
-            }
+            runCatching { repository.deleteBenchmarks(dates) }
+                .onFailure { e ->
+                    _actionError.value = "벤치마크 삭제에 실패했습니다: ${e.localizedMessage ?: "알 수 없는 오류"}"
+                }
         }
     }
 

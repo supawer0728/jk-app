@@ -117,4 +117,13 @@ class FakeFirestoreRepository : FirestoreRepository {
         if (date in deleteBenchmarkErrorDates) throw RuntimeException("삭제 실패: $date")
         _benchmarks.value = _benchmarks.value.filter { it.date != date }
     }
+
+    // 실제 Firestore 배치처럼 원자적으로 동작한다: 하나라도 실패 대상이면 아무것도 지우지 않고 예외를 던진다.
+    override suspend fun deleteBenchmarks(dates: List<String>) {
+        deleteBenchmarkError?.let { throw it }
+        if (dates.any { it in deleteBenchmarkErrorDates }) {
+            throw RuntimeException("삭제 실패: ${dates.filter { it in deleteBenchmarkErrorDates }}")
+        }
+        _benchmarks.value = _benchmarks.value.filter { it.date !in dates }
+    }
 }
