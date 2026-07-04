@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -20,6 +21,7 @@ import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenu
@@ -60,7 +62,7 @@ import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-private val ASSET_OWNERS = listOf("전지훈", "권유경")
+private val ASSET_OWNERS = listOf("전지훈", "권유경", "공동")
 
 private enum class AssetTab(@StringRes val labelRes: Int) {
     DAILY_ASSET(R.string.asset_tab_daily_asset),
@@ -109,6 +111,8 @@ private fun DailyAssetTab(viewModel: DailyAssetViewModel) {
     var showDatePicker by rememberSaveable { mutableStateOf(false) }
     var editingIndex by rememberSaveable { mutableStateOf<Int?>(null) }
     var showForm by rememberSaveable { mutableStateOf(false) }
+    var showFabMenu by remember { mutableStateOf(false) }
+    var showPasteImport by rememberSaveable { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<AssetPendingDelete?>(null) }
 
     val success = uiState as? DailyAssetUiState.Success
@@ -187,14 +191,27 @@ private fun DailyAssetTab(viewModel: DailyAssetViewModel) {
                     }
                 }
 
-                FloatingActionButton(
-                    onClick = {
-                        editingIndex = null
-                        showForm = true
-                    },
-                    modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.asset_add))
+                Box(modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)) {
+                    FloatingActionButton(onClick = { showFabMenu = true }) {
+                        Icon(Icons.Default.Add, contentDescription = stringResource(R.string.asset_add))
+                    }
+                    DropdownMenu(expanded = showFabMenu, onDismissRequest = { showFabMenu = false }) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.asset_add_individual)) },
+                            onClick = {
+                                showFabMenu = false
+                                editingIndex = null
+                                showForm = true
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.asset_add_paste)) },
+                            onClick = {
+                                showFabMenu = false
+                                showPasteImport = true
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -226,6 +243,19 @@ private fun DailyAssetTab(viewModel: DailyAssetViewModel) {
                     viewModel.addAsset(dateForForm, item)
                 }
                 showForm = false
+            },
+        )
+    }
+
+    if (showPasteImport) {
+        // 자산이 하나도 없어 선택된 날짜가 없을 때는 오늘 날짜로 첫 문서를 생성한다.
+        val dateForImport = selectedDate ?: DiaryViewModel.todayDate()
+        AssetPasteImportDialog(
+            onDismiss = { showPasteImport = false },
+            onParse = viewModel::parsePasteText,
+            onImport = { items ->
+                viewModel.importAssets(dateForImport, items)
+                showPasteImport = false
             },
         )
     }
@@ -321,6 +351,7 @@ private fun AssetListItem(
             Column(modifier = Modifier.weight(1f)) {
                 Text(asset.name, style = MaterialTheme.typography.bodyLarge)
                 val details = listOfNotNull(
+                    asset.institution?.takeIf { it.isNotBlank() },
                     asset.accountNumber?.takeIf { it.isNotBlank() }?.let { "계좌 $it" },
                     asset.card?.takeIf { it.isNotBlank() }?.let { "카드 $it" },
                 ).joinToString(" · ")
@@ -388,6 +419,7 @@ private fun AssetFormDialog(
     var name by rememberSaveable { mutableStateOf(initial?.name ?: "") }
     var owner by rememberSaveable { mutableStateOf(initial?.owner ?: ASSET_OWNERS.first()) }
     var ownerDropdownExpanded by remember { mutableStateOf(false) }
+    var institution by rememberSaveable { mutableStateOf(initial?.institution ?: "") }
     var accountNumber by rememberSaveable { mutableStateOf(initial?.accountNumber ?: "") }
     var card by rememberSaveable { mutableStateOf(initial?.card ?: "") }
     var amountText by rememberSaveable { mutableStateOf(initial?.amount?.toPlainString() ?: "") }
@@ -439,6 +471,13 @@ private fun AssetFormDialog(
                 }
 
                 OutlinedTextField(
+                    value = institution,
+                    onValueChange = { institution = it },
+                    label = { Text(stringResource(R.string.asset_field_institution)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
                     value = accountNumber,
                     onValueChange = { accountNumber = it },
                     label = { Text(stringResource(R.string.asset_field_account_number)) },
@@ -472,6 +511,7 @@ private fun AssetFormDialog(
                         AssetItem(
                             name = name.trim(),
                             owner = owner,
+                            institution = institution.trim().ifBlank { null },
                             accountNumber = accountNumber.trim().ifBlank { null },
                             card = card.trim().ifBlank { null },
                             amount = amountText.trim().ifBlank { null }?.toBigDecimalOrNull(),
@@ -483,6 +523,95 @@ private fun AssetFormDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        }
+    )
+}
+
+@Composable
+private fun AssetPasteImportDialog(
+    onDismiss: () -> Unit,
+    onParse: (text: String, hasHeader: Boolean) -> List<ParsedAssetRow>,
+    onImport: (List<AssetItem>) -> Unit,
+) {
+    var text by rememberSaveable { mutableStateOf("") }
+    var hasHeader by rememberSaveable { mutableStateOf(true) }
+    var parsed by remember { mutableStateOf<List<ParsedAssetRow>?>(null) }
+
+    val result = parsed
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.asset_paste_import_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (result == null) {
+                    Text(
+                        text = stringResource(R.string.asset_paste_import_description),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    OutlinedTextField(
+                        value = text,
+                        onValueChange = { text = it },
+                        label = { Text(stringResource(R.string.asset_paste_import_field)) },
+                        minLines = 8,
+                        maxLines = 12,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = hasHeader, onCheckedChange = { hasHeader = it })
+                        Text(stringResource(R.string.asset_paste_import_has_header))
+                    }
+                } else {
+                    val validCount = result.count { it.item != null }
+                    val errorCount = result.size - validCount
+                    Text(
+                        text = stringResource(R.string.asset_paste_import_summary, validCount, errorCount),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 280.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        items(result) { row ->
+                            val item = row.item
+                            if (item != null) {
+                                Text(
+                                    text = "${item.owner} · ${item.name}" +
+                                        (item.amount?.let { " · ${it.toDisplayAmount()}" } ?: ""),
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            } else {
+                                Text(
+                                    text = "⚠ ${row.error}: ${row.rawLine.take(30)}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            if (result == null) {
+                TextButton(
+                    onClick = { parsed = onParse(text, hasHeader) },
+                    enabled = text.isNotBlank(),
+                ) { Text(stringResource(R.string.asset_paste_import_parse)) }
+            } else {
+                TextButton(
+                    onClick = { onImport(result.mapNotNull { it.item }) },
+                    enabled = result.any { it.item != null },
+                ) { Text(stringResource(R.string.save)) }
+            }
+        },
+        dismissButton = {
+            if (result == null) {
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+            } else {
+                TextButton(onClick = { parsed = null }) { Text(stringResource(R.string.asset_paste_import_back)) }
+            }
         }
     )
 }

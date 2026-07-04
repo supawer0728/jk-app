@@ -11,6 +11,7 @@ data class DailyAsset(
 data class AssetItem(
     val name: String,
     val owner: String,
+    val institution: String? = null,
     val accountNumber: String? = null,
     val card: String? = null,
     val amount: BigDecimal? = null,

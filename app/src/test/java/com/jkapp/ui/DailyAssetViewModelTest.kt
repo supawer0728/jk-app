@@ -79,6 +79,105 @@ class DailyAssetViewModelTest {
     }
 
     @Test
+    fun `parsePasteText는 파서 결과를 그대로 반환한다`() = runTest {
+        val text = "현금\tJ\t-\t-\t-\t₩ 1,000"
+
+        val result = viewModel.parsePasteText(text, hasHeader = false)
+
+        assertEquals(1, result.size)
+        assertEquals("전지훈", result.single().item?.owner)
+    }
+
+    @Test
+    fun `parsePasteText는 파싱 실패 행이 있어도 예외 없이 전체 결과를 반환한다`() = runTest {
+        val text = "컬럼부족\tJ"
+
+        val result = viewModel.parsePasteText(text, hasHeader = false)
+
+        assertEquals(1, result.size)
+        assertNull(result.single().item)
+        assertTrue(result.single().error!!.isNotBlank())
+    }
+
+    @Test
+    fun `importAssets는 이름과 명의가 같은 항목을 교체하고 없는 항목은 추가한다`() = runTest {
+        fakeRepository.setDailyAssets(
+            listOf(DailyAsset(date = "2026-07-04", assets = listOf(makeAsset("현금", amount = BigDecimal("100")))))
+        )
+        advanceUntilIdle()
+
+        viewModel.importAssets(
+            "2026-07-04",
+            listOf(
+                makeAsset("현금", amount = BigDecimal("200")),
+                makeAsset("주식"),
+            ),
+        )
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as DailyAssetUiState.Success
+        val dailyAsset = state.dailyAssets.find { it.date == "2026-07-04" }
+        assertEquals(
+            listOf(makeAsset("현금", amount = BigDecimal("200")), makeAsset("주식")),
+            dailyAsset?.assets,
+        )
+    }
+
+    @Test
+    fun `importAssets는 이름이 같아도 명의가 다르면 별도 항목으로 유지한다`() = runTest {
+        fakeRepository.setDailyAssets(
+            listOf(
+                DailyAsset(
+                    date = "2026-07-04",
+                    assets = listOf(makeAsset("적금", owner = "전지훈", amount = BigDecimal("100"))),
+                )
+            )
+        )
+        advanceUntilIdle()
+
+        viewModel.importAssets("2026-07-04", listOf(makeAsset("적금", owner = "권유경", amount = BigDecimal("200"))))
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as DailyAssetUiState.Success
+        val dailyAsset = state.dailyAssets.find { it.date == "2026-07-04" }
+        assertEquals(
+            listOf(
+                makeAsset("적금", owner = "전지훈", amount = BigDecimal("100")),
+                makeAsset("적금", owner = "권유경", amount = BigDecimal("200")),
+            ),
+            dailyAsset?.assets,
+        )
+    }
+
+    @Test
+    fun `importAssets는 기존 항목의 card처럼 붙여넣기에 없는 필드는 보존한다`() = runTest {
+        val existing = AssetItem(name = "현금", owner = "전지훈", card = "체크카드", amount = BigDecimal("100"))
+        fakeRepository.setDailyAssets(listOf(DailyAsset(date = "2026-07-04", assets = listOf(existing))))
+        advanceUntilIdle()
+
+        viewModel.importAssets("2026-07-04", listOf(makeAsset("현금", amount = BigDecimal("200"))))
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as DailyAssetUiState.Success
+        val dailyAsset = state.dailyAssets.find { it.date == "2026-07-04" }
+        val updated = dailyAsset?.assets?.single { it.name == "현금" }
+        assertEquals("체크카드", updated?.card)
+        assertEquals(BigDecimal("200"), updated?.amount)
+    }
+
+    @Test
+    fun `importAssets는 자산이 없는 날짜에도 새 문서를 생성한다`() = runTest {
+        advanceUntilIdle()
+
+        viewModel.importAssets("2026-07-04", listOf(makeAsset("현금"), makeAsset("주식")))
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as DailyAssetUiState.Success
+        val dailyAsset = state.dailyAssets.find { it.date == "2026-07-04" }
+        assertEquals(listOf(makeAsset("현금"), makeAsset("주식")), dailyAsset?.assets)
+    }
+
+    @Test
     fun `updateAsset은 지정한 인덱스의 항목만 교체한다`() = runTest {
         fakeRepository.setDailyAssets(
             listOf(DailyAsset(date = "2026-07-04", assets = listOf(makeAsset("현금"), makeAsset("주식"))))

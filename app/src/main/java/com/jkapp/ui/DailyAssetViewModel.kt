@@ -1,5 +1,6 @@
 package com.jkapp.ui
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -52,6 +53,39 @@ class DailyAssetViewModel(
         }
     }
 
+    // 구글시트 붙여넣기 텍스트를 파싱한다. 파싱 실패 행은 원본 값을 그대로 로그에 남겨 디버깅에 활용한다.
+    fun parsePasteText(text: String, hasHeader: Boolean): List<ParsedAssetRow> {
+        val result = parseGoogleSheetPaste(text, hasHeader)
+        result.filter { it.error != null }.forEach { row ->
+            Log.w(TAG, "구글시트 붙여넣기 파싱 실패: error=${row.error}, input=\"${row.rawLine}\"")
+        }
+        return result
+    }
+
+    // 이름+명의가 같은 항목은 필드 단위로 갱신하고, 없는 항목은 새로 추가한다(구글시트 붙여넣기용).
+    // 이름이 같아도 명의가 다르면 별개의 자산으로 취급한다.
+    // 붙여넣기 데이터에 없는 필드(card)는 기존 값을 그대로 유지해, 재붙여넣기로 개별 입력한 값이 지워지지 않게 한다.
+    fun importAssets(date: String, items: List<AssetItem>) {
+        updateAssetList(date) { existing ->
+            val merged = existing.toMutableList()
+            items.forEach { imported ->
+                val index = merged.indexOfFirst { it.name == imported.name && it.owner == imported.owner }
+                if (index >= 0) {
+                    val current = merged[index]
+                    merged[index] = current.copy(
+                        owner = imported.owner,
+                        institution = imported.institution,
+                        accountNumber = imported.accountNumber,
+                        amount = imported.amount,
+                    )
+                } else {
+                    merged.add(imported)
+                }
+            }
+            merged
+        }
+    }
+
     fun deleteAsset(date: String, index: Int) {
         viewModelScope.launch {
             val current = currentDailyAsset(date) ?: return@launch
@@ -88,6 +122,8 @@ class DailyAssetViewModel(
         (uiState.value as? DailyAssetUiState.Success)?.dailyAssets?.find { it.date == date }
 
     companion object {
+        private const val TAG = "DailyAssetViewModel"
+
         fun factory(): ViewModelProvider.Factory =
             viewModelFactory { initializer { DailyAssetViewModel() } }
     }

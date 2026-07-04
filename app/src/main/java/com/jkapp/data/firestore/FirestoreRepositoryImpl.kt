@@ -168,6 +168,7 @@ class FirestoreRepositoryImpl : FirestoreRepository {
     private fun AssetItem.toMap(): Map<String, Any?> = mapOf(
         FIELD_ASSET_NAME to name,
         FIELD_ASSET_OWNER to owner,
+        FIELD_ASSET_INSTITUTION to institution,
         FIELD_ASSET_ACCOUNT_NUMBER to accountNumber,
         FIELD_ASSET_CARD to card,
         FIELD_ASSET_AMOUNT to amount?.toPlainString(),
@@ -179,6 +180,7 @@ class FirestoreRepositoryImpl : FirestoreRepository {
         return AssetItem(
             name = name,
             owner = owner,
+            institution = this[FIELD_ASSET_INSTITUTION] as? String,
             accountNumber = this[FIELD_ASSET_ACCOUNT_NUMBER] as? String,
             card = this[FIELD_ASSET_CARD] as? String,
             amount = (this[FIELD_ASSET_AMOUNT] as? String)?.toBigDecimalOrNull(),
@@ -238,6 +240,7 @@ class FirestoreRepositoryImpl : FirestoreRepository {
         private const val FIELD_ASSETS = "assets"
         private const val FIELD_ASSET_NAME = "name"
         private const val FIELD_ASSET_OWNER = "owner"
+        private const val FIELD_ASSET_INSTITUTION = "institution"
         private const val FIELD_ASSET_ACCOUNT_NUMBER = "accountNumber"
         private const val FIELD_ASSET_CARD = "card"
         private const val FIELD_ASSET_AMOUNT = "amount"
