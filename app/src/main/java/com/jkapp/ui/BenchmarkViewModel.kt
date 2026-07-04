@@ -9,6 +9,8 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.jkapp.data.firestore.FirestoreRepository
 import com.jkapp.data.firestore.FirestoreRepositoryImpl
 import com.jkapp.data.model.Benchmark
+import com.jkapp.data.model.BenchmarkRowMetrics
+import com.jkapp.data.model.withRowMetrics
 import java.math.BigDecimal
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -42,6 +44,18 @@ class BenchmarkViewModel(
                 ?.currentAmount
         }
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    // 표에 필요한 20개 열의 파생 지표(원금 누적, 수익률, 상승률, MDD 등)를 데이터가 실제로
+    // 바뀔 때만 계산해 캐시한다. 컴포저블의 remember에 두면 탭을 오갈 때마다 화면이 새로
+    // 컴포지션되면서 매번 다시 계산되므로, 뷰모델 레벨에서 한 번만 계산하도록 여기에 둔다.
+    val rowMetrics: StateFlow<List<BenchmarkRowMetrics>> = uiState
+        .map { state ->
+            (state as? BenchmarkUiState.Success)?.benchmarks
+                ?.withRowMetrics()
+                ?.reversed() // 최신 날짜부터 표시
+                ?: emptyList()
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private var dataJob: Job? = null
 

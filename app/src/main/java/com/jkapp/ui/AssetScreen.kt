@@ -72,7 +72,6 @@ import com.jkapp.data.model.AssetItem
 import com.jkapp.data.model.Benchmark
 import com.jkapp.data.model.BenchmarkRowMetrics
 import com.jkapp.data.model.DEFAULT_HIDDEN_ASSET_NAMES
-import com.jkapp.data.model.withRowMetrics
 import java.math.BigDecimal
 import java.text.NumberFormat
 import java.util.Locale
@@ -708,6 +707,10 @@ private val BENCHMARK_CHECKBOX_COLUMN_WIDTH = 40.dp
 private fun BenchmarkTab(viewModel: BenchmarkViewModel) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val actionError by viewModel.actionError.collectAsStateWithLifecycle()
+    // 20개 열의 파생 지표는 뷰모델(BenchmarkViewModel.rowMetrics)에서 데이터가 실제로 바뀔 때만
+    // 계산되어 캐시된다. 여기서 remember로 다시 계산하면 탭을 오갈 때마다 컴포지션이 새로
+    // 생성되면서 매번 재계산되므로, 뷰모델의 StateFlow를 그대로 구독한다.
+    val entries by viewModel.rowMetrics.collectAsStateWithLifecycle()
     // Benchmark는 Parcelable/Serializable이 아니므로 rememberSaveable로 저장할 수 없다(회전 시 초기화됨).
     var formTarget by remember { mutableStateOf<BenchmarkFormTarget?>(null) }
     var pendingDelete by remember { mutableStateOf<Benchmark?>(null) }
@@ -717,8 +720,8 @@ private fun BenchmarkTab(viewModel: BenchmarkViewModel) {
     var selectedDates by remember { mutableStateOf<Set<String>>(emptySet()) }
     var showDeleteAllConfirm by remember { mutableStateOf(false) }
     val verticalScrollState = rememberScrollState()
-    val existingDates = remember(uiState) {
-        (uiState as? BenchmarkUiState.Success)?.benchmarks?.map { it.date }?.toSet() ?: emptySet()
+    val existingDates = remember(entries) {
+        entries.map { it.benchmark.date }.toSet()
     }
 
     // 선택 모드에 들어가면 최신 날짜(맨 앞 행)부터 볼 수 있도록 목록 맨 위로 이동한다.
@@ -745,7 +748,7 @@ private fun BenchmarkTab(viewModel: BenchmarkViewModel) {
                 )
             }
             is BenchmarkUiState.Success -> {
-                if (state.benchmarks.isEmpty()) {
+                if (entries.isEmpty()) {
                     Text(
                         text = stringResource(R.string.benchmark_empty),
                         style = MaterialTheme.typography.bodyMedium,
@@ -753,10 +756,6 @@ private fun BenchmarkTab(viewModel: BenchmarkViewModel) {
                         modifier = Modifier.align(Alignment.Center),
                     )
                 } else {
-                    // withRowMetrics()는 날짜 오름차순으로 계산하므로, 최신 날짜부터 보여주려면 뒤집는다.
-                    val entries = remember(state.benchmarks) {
-                        state.benchmarks.withRowMetrics().reversed()
-                    }
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
@@ -809,7 +808,7 @@ private fun BenchmarkTab(viewModel: BenchmarkViewModel) {
                     ) {
                         Button(
                             onClick = { showDeleteAllConfirm = true },
-                            enabled = state.benchmarks.isNotEmpty(),
+                            enabled = entries.isNotEmpty(),
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                             modifier = Modifier.weight(1f),
                         ) { Text(stringResource(R.string.benchmark_delete_all)) }
@@ -851,7 +850,7 @@ private fun BenchmarkTab(viewModel: BenchmarkViewModel) {
                                     )
                                 }
                             }
-                            if (state.benchmarks.isNotEmpty()) {
+                            if (entries.isNotEmpty()) {
                                 FloatingActionButton(onClick = { isSelectionMode = true }) {
                                     Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.benchmark_bulk_delete))
                                 }

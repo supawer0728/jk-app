@@ -2,6 +2,7 @@ package com.jkapp.ui
 
 import com.jkapp.data.firestore.FakeFirestoreRepository
 import com.jkapp.data.model.Benchmark
+import com.jkapp.data.model.withRowMetrics
 import java.math.BigDecimal
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -55,6 +56,22 @@ class BenchmarkViewModelTest {
 
         val state = viewModel.uiState.value as BenchmarkUiState.Success
         assertEquals(benchmarks, state.benchmarks)
+    }
+
+    @Test
+    fun `rowMetrics는 uiState의 벤치마크를 withRowMetrics로 변환한 값을 최신 날짜부터 흘려보낸다`() = runTest {
+        val benchmarks = listOf(makeBenchmark("2026-07-01"), makeBenchmark("2026-07-02"))
+        fakeRepository.setBenchmarks(benchmarks)
+        advanceUntilIdle()
+
+        assertEquals(benchmarks.withRowMetrics().reversed(), viewModel.rowMetrics.value)
+    }
+
+    @Test
+    fun `rowMetrics는 데이터가 없으면 빈 목록이다`() = runTest {
+        advanceUntilIdle()
+
+        assertEquals(emptyList<Any>(), viewModel.rowMetrics.value)
     }
 
     @Test
