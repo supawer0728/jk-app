@@ -66,6 +66,19 @@ class AssetSheetPasteTest {
     }
 
     @Test
+    fun `J K 이외의 명의 값은 모두 공동으로 매핑한다`() {
+        val text = listOf(
+            row("자산A", "본인", "-", "-", "-", "-"),
+            row("자산B", "전지훈", "-", "-", "-", "-"),
+        ).joinToString("\n")
+
+        val result = parseGoogleSheetPaste(text, hasHeader = false)
+
+        assertEquals("공동", result[0].item?.owner)
+        assertEquals("공동", result[1].item?.owner)
+    }
+
+    @Test
     fun `명의가 대시이거나 비어있으면 공동으로 매핑한다`() {
         val text = listOf(
             row("전세보증금", "-", "-", "-", "-", "₩ -"),
@@ -109,6 +122,26 @@ class AssetSheetPasteTest {
         val parsed = result.single()
         assertEquals(BigDecimal("23779706"), parsed.item?.amount)
         assertEquals(null, parsed.error)
+    }
+
+    @Test
+    fun `괄호로 감싼 금액은 은행 콤보와 계좌번호가 있어도 정상 파싱한다`() {
+        val text = row("공용 계좌", "K", "토스뱅크", "1002-3212-1520", "-", "(₩ 3,000,000)")
+
+        val result = parseGoogleSheetPaste(text, hasHeader = false)
+
+        val parsed = result.single()
+        assertEquals(BigDecimal("3000000"), parsed.item?.amount)
+        assertEquals(null, parsed.error)
+    }
+
+    @Test
+    fun `괄호 없이 명시적인 음수 부호가 있으면 음수로 파싱한다`() {
+        val text = row("마이너스통장", "J", "-", "-", "-", "-3,000,000")
+
+        val result = parseGoogleSheetPaste(text, hasHeader = false)
+
+        assertEquals(BigDecimal("-3000000"), result.single().item?.amount)
     }
 
     @Test

@@ -89,21 +89,19 @@ private fun String.toAssetRow(cells: List<String>, amount: BigDecimal?): ParsedA
     rawLine = this,
 )
 
-private fun mapOwnerCode(code: String): String {
-    val trimmed = code.trim()
-    if (trimmed.isBlank() || trimmed == "-") return "공동"
-    return OWNER_CODE_MAP[trimmed.uppercase()] ?: trimmed
-}
+// J는 전지훈, K는 권유경으로 매핑하고, 그 외의 값(빈 값, "-", 오타, 전체 이름 등)은 모두 공동으로 처리한다.
+private fun mapOwnerCode(code: String): String =
+    OWNER_CODE_MAP[code.trim().uppercase()] ?: "공동"
+
+// ₩, 괄호(회계 표기), 콤마, 공백 등 통화 서식 문자를 제거한 뒤 남은 값을 숫자로 판단한다.
+// 괄호는 음수를 의미하지 않는 통화 서식으로 취급해 부호를 뒤집지 않는다.
+private val AMOUNT_NOISE_PATTERN = Regex("[₩(),\\s]")
+private val NUMERIC_PATTERN = Regex("^-?\\d+(\\.\\d+)?$")
 
 private fun parseWonAmount(raw: String): AmountParseResult {
-    var cleaned = raw.replace("₩", "").replace(",", "").trim()
-    if (cleaned.isBlank() || cleaned == "-") return AmountParseResult.Blank
-    // 구글 스프레드시트의 회계 표기(괄호)는 음수가 아니라 통화 서식으로 붙는 경우가 있어
-    // 부호를 뒤집지 않고 괄호만 제거한 값을 사용한다.
-    if (cleaned.startsWith("(") && cleaned.endsWith(")")) {
-        cleaned = cleaned.substring(1, cleaned.length - 1).trim()
-    }
-    if (cleaned.isBlank() || cleaned == "-") return AmountParseResult.Blank
+    val cleaned = raw.replace(AMOUNT_NOISE_PATTERN, "")
+    if (cleaned.isEmpty() || cleaned == "-") return AmountParseResult.Blank
+    if (!NUMERIC_PATTERN.matches(cleaned)) return AmountParseResult.Invalid
     val amount = cleaned.toBigDecimalOrNull() ?: return AmountParseResult.Invalid
     return AmountParseResult.Value(amount)
 }
