@@ -18,14 +18,13 @@ private data class BenchmarkColumn(val label: String, val aliases: Set<String>)
 private val BENCHMARK_COLUMNS = listOf(
     BenchmarkColumn("날짜", setOf("날짜")),
     BenchmarkColumn("추가투자", setOf("추가투자")),
-    BenchmarkColumn("원금", setOf("원금")),
     BenchmarkColumn("현재금액", setOf("현재금액", "계")),
     BenchmarkColumn("KOSPI", setOf("KOSPI")),
     BenchmarkColumn("S&P500", setOf("S&P500", "SNP500")),
     BenchmarkColumn("나스닥", setOf("나스닥")),
 ).map { column -> column.copy(aliases = column.aliases.mapTo(mutableSetOf()) { it.normalizeHeaderCell() }) }
 
-private val AMOUNT_COLUMN_LABELS = listOf("추가투자", "원금", "현재금액", "KOSPI", "S&P500", "나스닥")
+private val AMOUNT_COLUMN_LABELS = listOf("추가투자", "현재금액", "KOSPI", "S&P500", "나스닥")
 
 private val ISO_DATE_REGEX = Regex("""\d{4}-\d{2}-\d{2}""")
 
@@ -114,7 +113,6 @@ private fun parseBenchmarkRow(line: String, columnIndexes: Map<String, Int>): Pa
             firestoreId = date,
             date = date,
             additionalInvestment = amounts.getValue("추가투자"),
-            principal = amounts.getValue("원금"),
             currentAmount = amounts.getValue("현재금액"),
             kospi = amounts.getValue("KOSPI"),
             snp500 = amounts.getValue("S&P500"),

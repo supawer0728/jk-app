@@ -194,7 +194,6 @@ class FirestoreRepositoryImpl : FirestoreRepository {
     private fun Benchmark.toMap() = mapOf(
         FIELD_DATE to date,
         FIELD_ADDITIONAL_INVESTMENT to additionalInvestment.toPlainString(),
-        FIELD_PRINCIPAL to principal.toPlainString(),
         FIELD_CURRENT_AMOUNT to currentAmount.toPlainString(),
         FIELD_KOSPI to kospi.toPlainString(),
         FIELD_SNP500 to snp500.toPlainString(),
@@ -204,12 +203,11 @@ class FirestoreRepositoryImpl : FirestoreRepository {
     // 숫자 필드가 하나라도 없거나 파싱에 실패하면 표에 잘못된 값을 보여주는 대신 건너뛰고 로그를 남긴다.
     private fun DocumentSnapshot.toBenchmark(): Benchmark? {
         val additionalInvestment = getString(FIELD_ADDITIONAL_INVESTMENT)?.toBigDecimalOrNull()
-        val principal = getString(FIELD_PRINCIPAL)?.toBigDecimalOrNull()
         val currentAmount = getString(FIELD_CURRENT_AMOUNT)?.toBigDecimalOrNull()
         val kospi = getString(FIELD_KOSPI)?.toBigDecimalOrNull()
         val snp500 = getString(FIELD_SNP500)?.toBigDecimalOrNull()
         val nasdaq = getString(FIELD_NASDAQ)?.toBigDecimalOrNull()
-        if (additionalInvestment == null || principal == null || currentAmount == null ||
+        if (additionalInvestment == null || currentAmount == null ||
             kospi == null || snp500 == null || nasdaq == null
         ) {
             Log.w(TAG, "benchmarks 문서에 숫자 필드가 누락되어 건너뜁니다: id=$id")
@@ -219,7 +217,6 @@ class FirestoreRepositoryImpl : FirestoreRepository {
             firestoreId = id,
             date = getString(FIELD_DATE) ?: id,
             additionalInvestment = additionalInvestment,
-            principal = principal,
             currentAmount = currentAmount,
             kospi = kospi,
             snp500 = snp500,
@@ -326,7 +323,6 @@ class FirestoreRepositoryImpl : FirestoreRepository {
 
         // Field names - Benchmark
         private const val FIELD_ADDITIONAL_INVESTMENT = "additionalInvestment"
-        private const val FIELD_PRINCIPAL = "principal"
         private const val FIELD_CURRENT_AMOUNT = "currentAmount"
         private const val FIELD_KOSPI = "kospi"
         private const val FIELD_SNP500 = "snp500"

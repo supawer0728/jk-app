@@ -22,13 +22,12 @@ class BenchmarkSheetPasteTest {
     private fun fullDataRow(
         date: String = "2026-07-03",
         additionalInvestment: String = "₩0",
-        principal: String = "₩364,500,000",
         currentAmount: String = "₩576,968,966",
         kospi: String = "8930.3",
         snp500: String = "7358.22",
         nasdaq: String = "25476.64",
     ) = row(
-        date, additionalInvestment, principal, "₩212,468,966", "58.29%", currentAmount, "", date,
+        date, additionalInvestment, "₩364,500,000", "₩212,468,966", "58.29%", currentAmount, "", date,
         kospi, "192.89%", "0.00%",
         snp500, "60.84%", "0.00%",
         nasdaq, "67.22%", "0.00%",
@@ -46,7 +45,6 @@ class BenchmarkSheetPasteTest {
         val benchmark = result.single().benchmark!!
         assertEquals("2026-07-03", benchmark.date)
         assertEquals(BigDecimal("0"), benchmark.additionalInvestment)
-        assertEquals(BigDecimal("364500000"), benchmark.principal)
         assertEquals(BigDecimal("576968966"), benchmark.currentAmount)
         assertEquals(BigDecimal("8930.3"), benchmark.kospi)
         assertEquals(BigDecimal("7358.22"), benchmark.snp500)
@@ -64,15 +62,15 @@ class BenchmarkSheetPasteTest {
 
     @Test
     fun `열 순서가 달라도 헤더 이름만 맞으면 정상 파싱한다`() {
-        val header = row("KOSPI", "나스닥", "S&P500", "날짜", "원금", "추가투자", "현재금액")
-        val data = row("9000", "26000", "7500", "2026-07-04", "1000000", "0", "1200000")
+        val header = row("KOSPI", "나스닥", "S&P500", "날짜", "추가투자", "현재금액")
+        val data = row("9000", "26000", "7500", "2026-07-04", "1000000", "1200000")
         val text = listOf(header, data).joinToString("\n")
 
         val result = parseBenchmarkSheetPaste(text)
 
         val benchmark = result.single().benchmark!!
         assertEquals("2026-07-04", benchmark.date)
-        assertEquals(BigDecimal("1000000"), benchmark.principal)
+        assertEquals(BigDecimal("1000000"), benchmark.additionalInvestment)
         assertEquals(BigDecimal("1200000"), benchmark.currentAmount)
         assertEquals(BigDecimal("9000"), benchmark.kospi)
         assertEquals(BigDecimal("7500"), benchmark.snp500)
@@ -81,8 +79,8 @@ class BenchmarkSheetPasteTest {
 
     @Test
     fun `현재금액 열은 계라는 헤더 이름도 인식한다`() {
-        val header = row("날짜", "추가투자", "원금", "계", "KOSPI", "S&P500", "나스닥")
-        val data = row("2026-07-04", "0", "1000000", "1200000", "9000", "7500", "26000")
+        val header = row("날짜", "추가투자", "계", "KOSPI", "S&P500", "나스닥")
+        val data = row("2026-07-04", "0", "1200000", "9000", "7500", "26000")
         val text = listOf(header, data).joinToString("\n")
 
         val result = parseBenchmarkSheetPaste(text)
@@ -92,7 +90,7 @@ class BenchmarkSheetPasteTest {
 
     @Test
     fun `필요한 열이 헤더에 없으면 모든 데이터 행이 에러로 처리된다`() {
-        val header = row("날짜", "원금")
+        val header = row("날짜", "추가투자")
         val data = row("2026-07-04", "1000000")
         val text = listOf(header, data).joinToString("\n")
 
@@ -116,13 +114,22 @@ class BenchmarkSheetPasteTest {
 
     @Test
     fun `숫자로 변환할 수 없는 값은 에러로 처리한다`() {
-        val text = listOf(fullHeader, fullDataRow(principal = "미정")).joinToString("\n")
+        val text = listOf(fullHeader, fullDataRow(currentAmount = "미정")).joinToString("\n")
 
         val result = parseBenchmarkSheetPaste(text)
 
         val parsed = result.single()
         assertNull(parsed.benchmark)
-        assertTrue(parsed.error!!.contains("원금 값을 숫자로 변환할 수 없습니다"))
+        assertTrue(parsed.error!!.contains("현재금액 값을 숫자로 변환할 수 없습니다"))
+    }
+
+    @Test
+    fun `추가투자가 비어 있으면 0으로 처리한다`() {
+        val text = listOf(fullHeader, fullDataRow(additionalInvestment = "-")).joinToString("\n")
+
+        val result = parseBenchmarkSheetPaste(text)
+
+        assertEquals(BigDecimal.ZERO, result.single().benchmark?.additionalInvestment)
     }
 
     @Test

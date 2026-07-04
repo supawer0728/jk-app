@@ -38,8 +38,7 @@ class BenchmarkViewModelTest {
 
     private fun makeBenchmark(date: String, currentAmount: BigDecimal = BigDecimal("1000000")) = Benchmark(
         date = date,
-        additionalInvestment = BigDecimal.ZERO,
-        principal = BigDecimal("1000000"),
+        additionalInvestment = BigDecimal("1000000"),
         currentAmount = currentAmount,
         kospi = BigDecimal("2500"),
         snp500 = BigDecimal("5000"),
@@ -149,8 +148,8 @@ class BenchmarkViewModelTest {
     @Test
     fun `parsePasteText는 파서 결과를 그대로 반환한다`() = runTest {
         val text = listOf(
-            listOf("날짜", "추가투자", "원금", "현재금액", "KOSPI", "S&P500", "나스닥").joinToString("\t"),
-            listOf("2026-07-04", "0", "1000000", "1100000", "9000", "7500", "26000").joinToString("\t"),
+            listOf("날짜", "추가투자", "현재금액", "KOSPI", "S&P500", "나스닥").joinToString("\t"),
+            listOf("2026-07-04", "1000000", "1100000", "9000", "7500", "26000").joinToString("\t"),
         ).joinToString("\n")
 
         val result = viewModel.parsePasteText(text)

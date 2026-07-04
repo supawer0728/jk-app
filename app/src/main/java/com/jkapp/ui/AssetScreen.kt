@@ -67,8 +67,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jkapp.R
 import com.jkapp.data.model.AssetItem
 import com.jkapp.data.model.Benchmark
+import com.jkapp.data.model.BenchmarkPrincipal
 import com.jkapp.data.model.DEFAULT_HIDDEN_ASSET_NAMES
 import com.jkapp.data.model.returnRatePercent
+import com.jkapp.data.model.withCumulativePrincipal
 import java.math.BigDecimal
 import java.text.NumberFormat
 import java.util.Locale
@@ -733,6 +735,10 @@ private fun BenchmarkTab(viewModel: BenchmarkViewModel) {
                         modifier = Modifier.align(Alignment.Center),
                     )
                 } else {
+                    // withCumulativePrincipal()은 날짜 오름차순으로 계산하므로, 최신 날짜부터 보여주려면 뒤집는다.
+                    val entries = remember(state.benchmarks) {
+                        state.benchmarks.withCumulativePrincipal().reversed()
+                    }
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
@@ -745,11 +751,11 @@ private fun BenchmarkTab(viewModel: BenchmarkViewModel) {
                                 .verticalScroll(rememberScrollState())
                                 .padding(bottom = 80.dp),
                         ) {
-                            state.benchmarks.forEach { benchmark ->
+                            entries.forEach { entry ->
                                 BenchmarkRow(
-                                    benchmark = benchmark,
-                                    onEditRequest = { formTarget = BenchmarkFormTarget.Edit(benchmark) },
-                                    onDeleteRequest = { pendingDelete = benchmark },
+                                    entry = entry,
+                                    onEditRequest = { formTarget = BenchmarkFormTarget.Edit(entry.benchmark) },
+                                    onDeleteRequest = { pendingDelete = entry.benchmark },
                                 )
                             }
                         }
@@ -862,18 +868,19 @@ private fun BenchmarkHeaderRow() {
 
 @Composable
 private fun BenchmarkRow(
-    benchmark: Benchmark,
+    entry: BenchmarkPrincipal,
     onEditRequest: () -> Unit,
     onDeleteRequest: () -> Unit,
 ) {
-    val returnRate = remember(benchmark) { benchmark.returnRatePercent() }
+    val benchmark = entry.benchmark
+    val returnRate = remember(entry) { entry.returnRatePercent() }
     Column {
         Row(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             BenchmarkCell(benchmark.date, BENCHMARK_DATE_COLUMN_WIDTH)
-            BenchmarkCell(benchmark.principal.toDisplayAmount(), BENCHMARK_VALUE_COLUMN_WIDTH)
+            BenchmarkCell(entry.principal.toDisplayAmount(), BENCHMARK_VALUE_COLUMN_WIDTH)
             BenchmarkCell(benchmark.additionalInvestment.toDisplayAmount(), BENCHMARK_VALUE_COLUMN_WIDTH)
             BenchmarkCell(benchmark.currentAmount.toDisplayAmount(), BENCHMARK_VALUE_COLUMN_WIDTH)
             BenchmarkCell(
@@ -923,14 +930,12 @@ private fun BenchmarkFormDialog(
 ) {
     var date by rememberSaveable { mutableStateOf(initial?.date ?: DiaryViewModel.todayDate()) }
     var showDatePicker by rememberSaveable { mutableStateOf(false) }
-    var principalText by rememberSaveable { mutableStateOf(initial?.principal?.toPlainString() ?: "") }
     var additionalInvestmentText by rememberSaveable { mutableStateOf(initial?.additionalInvestment?.toPlainString() ?: "") }
     var currentAmountText by rememberSaveable { mutableStateOf(initial?.currentAmount?.toPlainString() ?: "") }
     var kospiText by rememberSaveable { mutableStateOf(initial?.kospi?.toPlainString() ?: "") }
     var snp500Text by rememberSaveable { mutableStateOf(initial?.snp500?.toPlainString() ?: "") }
     var nasdaqText by rememberSaveable { mutableStateOf(initial?.nasdaq?.toPlainString() ?: "") }
 
-    val principal = principalText.trim().toBigDecimalOrNull()
     val additionalInvestment = additionalInvestmentText.trim().toBigDecimalOrNull()
     val currentAmount = currentAmountText.trim().toBigDecimalOrNull()
     val kospi = kospiText.trim().toBigDecimalOrNull()
@@ -938,7 +943,7 @@ private fun BenchmarkFormDialog(
     val nasdaq = nasdaqText.trim().toBigDecimalOrNull()
     // 신규 추가인데 이미 존재하는 날짜를 고르면 저장 시 기존 문서를 조용히 덮어쓰게 되므로 막는다.
     val dateConflict = initial == null && date in existingDates
-    val isValid = !dateConflict && principal != null && additionalInvestment != null && currentAmount != null &&
+    val isValid = !dateConflict && additionalInvestment != null && currentAmount != null &&
         kospi != null && snp500 != null && nasdaq != null
 
     AlertDialog(
@@ -966,7 +971,6 @@ private fun BenchmarkFormDialog(
                     },
                     modifier = Modifier.fillMaxWidth(),
                 )
-                BenchmarkNumberField(principalText, { principalText = it }, R.string.benchmark_field_principal, principal != null)
                 BenchmarkNumberField(
                     additionalInvestmentText,
                     { additionalInvestmentText = it },
@@ -987,7 +991,6 @@ private fun BenchmarkFormDialog(
                             firestoreId = date,
                             date = date,
                             additionalInvestment = additionalInvestment!!,
-                            principal = principal!!,
                             currentAmount = currentAmount!!,
                             kospi = kospi!!,
                             snp500 = snp500!!,
