@@ -11,3 +11,5 @@ local.properties
 .claude/settings.local.json
 .omc
 .kotlin
+/doc/import-json-to-firestore/
+/graphify-out/

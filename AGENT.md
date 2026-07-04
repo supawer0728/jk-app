@@ -148,6 +148,16 @@ UI (Compose) → ViewModel → Repository (인터페이스)
 
 기존 구글 시트의 육묘 기록 데이터를 참고해 스키마를 설계한다. 확정 전까지 코드 작성 보류.
 
+## graphify
+
+이 프로젝트는 `graphify-out/`에 god nodes, community structure, 파일 간 관계를 담은 지식 그래프를 갖고 있다.
+
+규칙:
+- 코드베이스 관련 질문에는 `graphify-out/graph.json`이 존재할 경우 먼저 `graphify query "<question>"`을 실행한다. 관계 파악에는 `graphify path "<A>" "<B>"`, 특정 개념 파악에는 `graphify explain "<concept>"`을 사용한다. 이들은 GRAPH_REPORT.md나 원시 grep 결과보다 훨씬 작은 범위의 서브그래프를 반환한다.
+- `graphify-out/wiki/index.md`가 존재하면 원시 소스 탐색 대신 이를 활용해 전체 구조를 파악한다.
+- `graphify-out/GRAPH_REPORT.md`는 폭넓은 아키텍처 리뷰가 필요하거나 query/path/explain으로 충분한 컨텍스트를 얻지 못할 때만 읽는다.
+- 코드 수정 후에는 `graphify update .`을 실행해 그래프를 최신 상태로 유지한다 (AST 기반, API 비용 없음).
+
 ## 보안 / 자격 증명
 
 - `google-services.json`, OAuth 클라이언트 ID, 토큰 등은 커밋하지 않는다 (`.gitignore` 필수).
