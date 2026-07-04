@@ -49,8 +49,12 @@ class AppPreferences(private val context: Context) {
         }
 
     suspend fun setDarkModeSetting(setting: DarkModeSetting) {
-        context.dataStore.edit { prefs ->
-            prefs[KEY_DARK_MODE_SETTING] = setting.name
+        try {
+            context.dataStore.edit { prefs ->
+                prefs[KEY_DARK_MODE_SETTING] = setting.name
+            }
+        } catch (e: IOException) {
+            // 읽기 경로(safePreferencesData)와 동일하게 쓰기 실패도 크래시 없이 무시한다.
         }
     }
 }
