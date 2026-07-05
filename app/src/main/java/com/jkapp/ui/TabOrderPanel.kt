@@ -44,7 +44,7 @@ import com.jkapp.R
 import kotlin.math.roundToInt
 
 private val TAB_ITEM_SIZE = 64.dp
-private const val TAB_GRID_COLUMNS = 4
+private const val TAB_GRID_COLUMNS = 5
 
 @Composable
 fun TabOrderPanel(

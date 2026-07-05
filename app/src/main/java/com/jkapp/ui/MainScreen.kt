@@ -59,7 +59,7 @@ import com.jkapp.R
 import java.math.BigDecimal
 
 private const val TAB_PANEL_SWIPE_THRESHOLD_PX = 60f
-private const val BOTTOM_BAR_VISIBLE_TAB_COUNT = 4
+private const val BOTTOM_BAR_VISIBLE_TAB_COUNT = 5
 private val TAB_BAR_COLOR_LIGHT = Color(0xFFDBD6EB)
 private val TAB_BAR_COLOR_DARK = Color(0xFF30264F)
 
