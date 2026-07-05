@@ -56,6 +56,10 @@ class DailyAssetViewModel(
         .map { state -> (state as? DailyAssetUiState.Success)?.dailyAssets?.map { it.date }?.sortedDescending() ?: emptyList() }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
+    // _selectedDate/_selectedOwners/_showHidden는 SavedStateHandle 없는 평범한 MutableStateFlow라
+    // process death 후 복원 시 기본값으로 초기화된다(기존에는 AssetScreen.kt의 rememberSaveable로
+    // 유지됐음). DiaryViewModel의 _selectedTypeIds/_selectedYearMonth도 이 프로젝트에서 이미 같은
+    // 패턴이라 이 PR 스코프에서는 현행을 유지하고, SavedStateHandle 도입은 별도 이슈로 다룬다.
     private val _selectedDate = MutableStateFlow<String?>(null)
 
     // selectedDate를 availableDates와 combine해서 매번 in-list 여부로 걸러내면, 사용자가
@@ -86,8 +90,17 @@ class DailyAssetViewModel(
         _showHidden.update { !it }
     }
 
+    // selectedDate가 null -> 실제 날짜로의 보정은 availableDates를 구독하는 별도 collector(init 참고)
+    // 에서 비동기로 이뤄진다. 콜드 스타트에서 uiState가 Loading -> Success로 바뀌는 프레임에 이 combine이
+    // 그 보정보다 먼저 반응하면 (Success, null) 조합으로 currentDailyAsset이 한 프레임 null이 될 수
+    // 있어, date가 null인 경우에 한해 여기서도 동일한 fallback을 즉시 계산해 그 프레임을 없앤다.
+    // (date가 non-null인데 목록에 없는 경우는 아직 자산이 없는 새 날짜를 고른 것이라 그대로 null을
+    // 유지해야 한다 — 위 selectedDate 주석 참고.) 실제 조회는 findDailyAsset을 재사용해 조회 로직이
+    // 두 곳에 중복되지 않게 한다.
     val currentDailyAsset: StateFlow<DailyAsset?> = combine(uiState, selectedDate) { state, date ->
-        (state as? DailyAssetUiState.Success)?.dailyAssets?.find { it.date == date }
+        if (state !is DailyAssetUiState.Success) return@combine null
+        val resolvedDate = date ?: state.dailyAssets.map { it.date }.maxOrNull()
+        resolvedDate?.let(::findDailyAsset)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     // 필터 칩은 고정된 ASSET_OWNERS에 더해, 과거 데이터 등으로 그 외의 명의 값이 존재하면 함께 노출한다.
