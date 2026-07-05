@@ -114,8 +114,11 @@ class DailyAssetInvestmentViewModel(
         dataJob?.cancel()
     }
 
+    // 개별 입력 다이얼로그는 날짜를 오늘로 기본값을 두되 자유롭게 고를 수 있게 했으므로, 저장 후
+    // 방금 고른 날짜로 화면을 전환해 새로 추가한 항목이 바로 보이게 한다.
     fun addInvestment(date: String, owner: String, item: InvestmentItem) {
         mutateInvestments(date, owner, "투자 종목 저장에 실패했습니다") { it + item }
+        selectDate(date)
     }
 
     // target과 완전히 일치하는 항목을 찾아 교체한다(리스트 index 대신 항목 내용으로 식별).
@@ -186,7 +189,9 @@ class DailyAssetInvestmentViewModel(
             }
             merged
         }
+        // 붙여넣기 다이얼로그에서 고른 날짜/명의로 화면을 전환해, 저장한 내용이 바로 보이게 한다.
         selectOwner(owner)
+        selectDate(date)
     }
 
     fun consumeActionError() {

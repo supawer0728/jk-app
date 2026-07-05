@@ -897,15 +897,18 @@ private fun InvestmentTab(viewModel: DailyAssetInvestmentViewModel) {
     }
 
     formTarget?.let { target ->
-        // 투자 종목이 하나도 없어 선택된 날짜가 없을 때는 오늘 날짜로 첫 문서를 생성한다.
-        val dateForForm = selectedDate ?: DiaryViewModel.todayDate()
+        // 신규 입력은 기본 날짜를 오늘로 하고 사용자가 DatePicker로 바꿀 수 있다. 수정은 항목이
+        // 이미 속한 날짜(현재 화면에 표시 중인 날짜)를 그대로 쓰고 바꿀 수 없다(문서 이동 미지원).
+        val editTarget = target as? InvestmentFormTarget.Edit
+        val initialDate = if (editTarget != null) selectedDate ?: DiaryViewModel.todayDate() else DiaryViewModel.todayDate()
         InvestmentFormDialog(
-            initial = (target as? InvestmentFormTarget.Edit)?.target,
+            initial = editTarget?.target,
+            initialDate = initialDate,
             onDismiss = { formTarget = null },
-            onSave = { item ->
+            onSave = { date, item ->
                 when (target) {
-                    is InvestmentFormTarget.Edit -> viewModel.updateInvestment(dateForForm, selectedOwner, target.target, item)
-                    InvestmentFormTarget.New -> viewModel.addInvestment(dateForForm, selectedOwner, item)
+                    is InvestmentFormTarget.Edit -> viewModel.updateInvestment(date, selectedOwner, target.target, item)
+                    InvestmentFormTarget.New -> viewModel.addInvestment(date, selectedOwner, item)
                 }
                 formTarget = null
             },
@@ -913,14 +916,13 @@ private fun InvestmentTab(viewModel: DailyAssetInvestmentViewModel) {
     }
 
     if (showPasteImport) {
-        // 투자 종목이 하나도 없어 선택된 날짜가 없을 때는 오늘 날짜로 첫 문서를 생성한다.
-        val dateForImport = selectedDate ?: DiaryViewModel.todayDate()
         InvestmentPasteImportDialog(
             initialOwner = selectedOwner,
+            initialDate = DiaryViewModel.todayDate(),
             onDismiss = { showPasteImport = false },
             onParse = viewModel::parsePasteText,
-            onImport = { owner, items ->
-                viewModel.importInvestments(dateForImport, owner, items)
+            onImport = { date, owner, items ->
+                viewModel.importInvestments(date, owner, items)
                 showPasteImport = false
             },
         )
@@ -1061,9 +1063,12 @@ private fun PurchasePrice.toDisplayString(): String = when (currency) {
 @Composable
 private fun InvestmentFormDialog(
     initial: InvestmentItem?,
+    initialDate: String,
     onDismiss: () -> Unit,
-    onSave: (InvestmentItem) -> Unit,
+    onSave: (date: String, item: InvestmentItem) -> Unit,
 ) {
+    var date by rememberSaveable { mutableStateOf(initialDate) }
+    var showDatePicker by rememberSaveable { mutableStateOf(false) }
     var assetName by rememberSaveable { mutableStateOf(initial?.assetName ?: "") }
     var category by rememberSaveable { mutableStateOf(initial?.category ?: "") }
     var investmentName by rememberSaveable { mutableStateOf(initial?.investmentName ?: "") }
@@ -1092,6 +1097,21 @@ private fun InvestmentFormDialog(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                // 날짜는 문서 ID({date}_{owner})의 일부라 수정 중에는 바꿀 수 없다(항목을 다른
+                // 날짜 문서로 옮기는 것은 지원하지 않는다). 신규 입력은 오늘 날짜가 기본값이다.
+                OutlinedTextField(
+                    value = date,
+                    onValueChange = {},
+                    readOnly = true,
+                    enabled = initial == null,
+                    label = { Text(stringResource(R.string.benchmark_field_date)) },
+                    trailingIcon = {
+                        IconButton(onClick = { showDatePicker = true }, enabled = initial == null) {
+                            Icon(Icons.Default.DateRange, contentDescription = stringResource(R.string.asset_pick_date))
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                )
                 OutlinedTextField(
                     value = assetName,
                     onValueChange = { assetName = it },
@@ -1153,6 +1173,7 @@ private fun InvestmentFormDialog(
             TextButton(
                 onClick = {
                     onSave(
+                        date,
                         InvestmentItem(
                             assetName = assetName.trim(),
                             category = category.trim(),
@@ -1172,26 +1193,54 @@ private fun InvestmentFormDialog(
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
         }
     )
+
+    if (showDatePicker) {
+        IsoDatePickerDialog(
+            initialDate = date,
+            onDismiss = { showDatePicker = false },
+            onConfirm = {
+                date = it
+                showDatePicker = false
+            },
+        )
+    }
 }
 
-// 구글시트 붙여넣기와 개별 입력이 명의를 다루는 방식이 다르다: 개별 입력은 현재 화면에 표시 중인
-// 명의 탭(selectedOwner)에 저장되지만, 붙여넣기 시트에는 명의 열이 없어 다이얼로그 자체에서
-// 명의를 선택하게 한다(요구사항: "구글시트 붙여넣기할 때 어떤 명의의 투자종목인지 선택할 수 있다").
+// 구글시트 붙여넣기와 개별 입력이 날짜/명의를 다루는 방식이 다르다: 개별 입력은 현재 화면에
+// 표시 중인 명의 탭(selectedOwner)에 저장되지만, 붙여넣기 시트에는 명의 열이 없어 다이얼로그
+// 자체에서 명의를 선택하게 한다(요구사항: "구글시트 붙여넣기할 때 어떤 명의의 투자종목인지
+// 선택할 수 있다"). 날짜도 마찬가지로 시트에 열이 없어 다이얼로그에서 직접 고르며, 기본값은
+// 오늘 날짜다.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun InvestmentPasteImportDialog(
     initialOwner: String,
+    initialDate: String,
     onDismiss: () -> Unit,
     onParse: (text: String, owner: String) -> List<ParsedInvestmentRow>,
-    onImport: (owner: String, items: List<InvestmentItem>) -> Unit,
+    onImport: (date: String, owner: String, items: List<InvestmentItem>) -> Unit,
 ) {
     var owner by rememberSaveable { mutableStateOf(initialOwner) }
     var ownerDropdownExpanded by remember { mutableStateOf(false) }
+    var date by rememberSaveable { mutableStateOf(initialDate) }
+    var showDatePicker by rememberSaveable { mutableStateOf(false) }
 
     PasteImportDialog(
         title = stringResource(R.string.investment_paste_import_title),
         description = stringResource(R.string.investment_paste_import_description),
         extraOptions = {
+            OutlinedTextField(
+                value = date,
+                onValueChange = {},
+                readOnly = true,
+                label = { Text(stringResource(R.string.benchmark_field_date)) },
+                trailingIcon = {
+                    IconButton(onClick = { showDatePicker = true }) {
+                        Icon(Icons.Default.DateRange, contentDescription = stringResource(R.string.asset_pick_date))
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
             ExposedDropdownMenuBox(
                 expanded = ownerDropdownExpanded,
                 onExpandedChange = { ownerDropdownExpanded = !ownerDropdownExpanded },
@@ -1227,11 +1276,22 @@ private fun InvestmentPasteImportDialog(
         itemOf = { it.item },
         errorOf = { it.error },
         rawLineOf = { it.rawLine },
-        onImport = { items -> onImport(owner, items) },
+        onImport = { items -> onImport(date, owner, items) },
     ) { item ->
         Text(
             text = "${item.assetName} · ${item.investmentName} · ${item.valuationAmount.toDisplayAmount()}",
             style = MaterialTheme.typography.bodySmall,
+        )
+    }
+
+    if (showDatePicker) {
+        IsoDatePickerDialog(
+            initialDate = date,
+            onDismiss = { showDatePicker = false },
+            onConfirm = {
+                date = it
+                showDatePicker = false
+            },
         )
     }
 }

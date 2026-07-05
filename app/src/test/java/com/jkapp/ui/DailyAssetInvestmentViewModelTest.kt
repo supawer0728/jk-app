@@ -134,6 +134,20 @@ class DailyAssetInvestmentViewModelTest {
     }
 
     @Test
+    fun `addInvestment는 저장 후 방금 고른 날짜로 화면을 전환한다`() = runTest {
+        fakeRepository.setDailyAssetInvestments(
+            listOf(DailyAssetInvestment(date = "2026-07-01", owner = "전지훈", investments = listOf(makeItem())))
+        )
+        advanceUntilIdle()
+        assertEquals("2026-07-01", viewModel.selectedDate.value)
+
+        viewModel.addInvestment("2026-07-10", "전지훈", makeItem(investmentName = "카카오"))
+        advanceUntilIdle()
+
+        assertEquals("2026-07-10", viewModel.selectedDate.value)
+    }
+
+    @Test
     fun `addInvestment는 기존 날짜+명의 문서에 종목을 추가한다`() = runTest {
         fakeRepository.setDailyAssetInvestments(
             listOf(DailyAssetInvestment(date = "2026-07-04", owner = "전지훈", investments = listOf(makeItem(investmentName = "카카오"))))
@@ -322,6 +336,7 @@ class DailyAssetInvestmentViewModelTest {
         val doc = state.investments.find { it.date == "2026-07-04" && it.owner == "권유경" }
         assertEquals(setOf("카카오", "삼성전자"), doc?.investments?.map { it.investmentName }?.toSet())
         assertEquals("권유경", viewModel.selectedOwner.value)
+        assertEquals("2026-07-04", viewModel.selectedDate.value)
     }
 
     @Test
