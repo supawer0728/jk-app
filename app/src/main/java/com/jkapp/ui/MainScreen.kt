@@ -45,6 +45,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
@@ -58,6 +60,8 @@ import java.math.BigDecimal
 
 private const val TAB_PANEL_SWIPE_THRESHOLD_PX = 60f
 private const val BOTTOM_BAR_VISIBLE_TAB_COUNT = 4
+private val TAB_BAR_COLOR_LIGHT = Color(0xFFDBD6EB)
+private val TAB_BAR_COLOR_DARK = Color(0xFF30264F)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -165,8 +169,14 @@ fun MainScreen(
             )
         },
         bottomBar = {
+            // 다크 모드 설정(SYSTEM/ON/OFF)에 따라 실제 적용된 색상 스킴의 밝기로 판단한다.
+            val tabBarColor = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) {
+                TAB_BAR_COLOR_DARK
+            } else {
+                TAB_BAR_COLOR_LIGHT
+            }
             Column(
-                modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainer),
+                modifier = Modifier.background(tabBarColor),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 if (selectedTab == MainTab.ASSET) {
@@ -215,7 +225,7 @@ fun MainScreen(
                             },
                         )
                     } else {
-                        NavigationBar {
+                        NavigationBar(containerColor = tabBarColor) {
                             tabOrder.take(BOTTOM_BAR_VISIBLE_TAB_COUNT).forEach { tab ->
                                 NavigationBarItem(
                                     selected = selectedTab == tab,
@@ -251,18 +261,29 @@ fun MainScreen(
     }
 }
 
+private val TAB_BAR_HANDLE_WIDTH = 96.dp // 기본 32dp의 3배
+private val TAB_BAR_HANDLE_HEIGHT = 4.dp
+private val TAB_BAR_HANDLE_TOUCH_HEIGHT = TAB_BAR_HANDLE_HEIGHT * 3
+
 // 하단바를 스와이프해 탭 목록 패널을 열 수 있다는 것을 알려주는 손잡이.
+// 인식 범위(터치 영역)는 화면에 보이는 손잡이보다 세로로 3배 넓게 잡아 스와이프 제스처를 더 쉽게 인식한다.
 @Composable
 private fun TabBarHandle(modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .padding(vertical = 8.dp)
-            .size(width = 32.dp, height = 4.dp)
-            .background(
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                shape = RoundedCornerShape(2.dp),
-            )
-    )
+            .size(width = TAB_BAR_HANDLE_WIDTH, height = TAB_BAR_HANDLE_TOUCH_HEIGHT),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(width = TAB_BAR_HANDLE_WIDTH, height = TAB_BAR_HANDLE_HEIGHT)
+                .background(
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                    shape = RoundedCornerShape(2.dp),
+                )
+        )
+    }
 }
 
 @Composable

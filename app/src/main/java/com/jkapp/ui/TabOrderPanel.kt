@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -19,10 +20,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -61,8 +65,11 @@ fun TabOrderPanel(
                 .padding(horizontal = 16.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.End,
         ) {
-            TextButton(onClick = onToggleEditMode) {
-                Text(stringResource(if (isEditMode) R.string.done else R.string.edit))
+            IconButton(onClick = onToggleEditMode) {
+                Icon(
+                    imageVector = if (isEditMode) Icons.Default.Check else Icons.Default.Edit,
+                    contentDescription = stringResource(if (isEditMode) R.string.done else R.string.edit),
+                )
             }
         }
         LazyVerticalGrid(
@@ -90,6 +97,8 @@ fun TabOrderPanel(
                 )
             }
         }
+        // 슬라이드업 시 하단 공백이 부족하다는 피드백에 따라 탭 행 높이의 절반을 여백으로 추가한다.
+        Spacer(modifier = Modifier.height(TAB_ITEM_SIZE / 2))
     }
 }
 
