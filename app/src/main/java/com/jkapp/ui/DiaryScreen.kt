@@ -66,6 +66,10 @@ fun DiaryScreen(
     val selectedYearMonth by viewModel.selectedYearMonth.collectAsStateWithLifecycle()
     val canMovePrevious by viewModel.canMovePrevious.collectAsStateWithLifecycle()
     val canMoveNext by viewModel.canMoveNext.collectAsStateWithLifecycle()
+    // 월별 필터링/그룹핑은 ViewModel에서 데이터가 실제로 바뀔 때만 계산되어 캐시된다. 여기서
+    // remember로 다시 계산하면 탭을 오갈 때마다 컴포지션이 새로 생성되면서 전체 레코드를 매번
+    // 다시 필터링/그룹핑하게 되므로(이슈 #37), 뷰모델의 StateFlow를 그대로 구독한다.
+    val recordsByMonth by viewModel.recordsByMonth.collectAsStateWithLifecycle()
 
     Box(modifier = Modifier.fillMaxSize()) {
         when (val state = uiState) {
@@ -121,17 +125,7 @@ fun DiaryScreen(
                             key = { availableMonths.getOrNull(it) ?: it },
                         ) { page ->
                             val pageMonth = availableMonths[page]
-                            val filteredRecords = remember(state.records, selectedTypeIds, pageMonth) {
-                                val monthFiltered = DiaryViewModel.filterRecordsByMonth(state.records, pageMonth)
-                                DiaryViewModel.filterRecords(monthFiltered, selectedTypeIds)
-                            }
-                            val groupedDates = remember(filteredRecords) {
-                                filteredRecords
-                                    .groupBy { it.date }
-                                    .entries
-                                    .sortedByDescending { it.key }
-                                    .map { (date, records) -> date to records }
-                            }
+                            val groupedDates = recordsByMonth[pageMonth] ?: emptyList()
                             LazyColumn(
                                 modifier = Modifier.fillMaxSize(),
                                 contentPadding = PaddingValues(

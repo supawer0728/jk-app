@@ -46,6 +46,9 @@ import java.util.UUID
 private fun String.toYearMonthOrNull(): YearMonth? =
     runCatching { YearMonth.from(LocalDate.parse(this, DateTimeFormatter.ISO_LOCAL_DATE)) }.getOrNull()
 
+private fun List<CatRecord>.groupedByDateDescending(): List<Pair<String, List<CatRecord>>> =
+    groupBy { it.date }.entries.sortedByDescending { it.key }.map { it.key to it.value }
+
 class DiaryViewModel(
     private val repository: FirestoreRepository = FirestoreRepositoryImpl(),
     private val driveRepository: DriveRepository = DriveRepository.NoOp,
@@ -61,6 +64,19 @@ class DiaryViewModel(
 
     private val _selectedYearMonth = MutableStateFlow<YearMonth?>(null)
     val selectedYearMonth: StateFlow<YearMonth?> = _selectedYearMonth.asStateFlow()
+
+    // 월별로 미리 필터링/그룹핑해 캐시해둔다. 원래 DiaryScreen.kt의 HorizontalPager 페이지
+    // 컴포저블 remember 안에 있었는데, MainScreen의 탭 전환이 when(selectedTab) 단순 분기라
+    // 다른 탭에 갔다가 돌아오면 컴포지션이 통째로 새로 생성되어 remember가 초기화되고
+    // 전체 레코드를 매번 다시 필터링/그룹핑했다(이슈 #37).
+    val recordsByMonth: StateFlow<Map<YearMonth, List<Pair<String, List<CatRecord>>>>> =
+        _uiState.combine(_selectedTypeIds) { state, typeIds ->
+            val records = (state as? DiaryUiState.Success)?.records.orEmpty()
+            filterRecords(records, typeIds)
+                .groupBy { it.date.toYearMonthOrNull() }
+                .mapNotNull { (month, monthRecords) -> month?.let { it to monthRecords.groupedByDateDescending() } }
+                .toMap()
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
 
     val canMovePrevious: StateFlow<Boolean> = _uiState.combine(_selectedYearMonth) { state, month ->
         val months = (state as? DiaryUiState.Success)?.availableMonths ?: emptyList()
@@ -587,11 +603,6 @@ class DiaryViewModel(
             if (selectedTypeIds.isEmpty()) return records
             val normalizedSelected = selectedTypeIds.map { it.trim().lowercase() }.toSet()
             return records.filter { it.recordType.trim().lowercase() in normalizedSelected }
-        }
-
-        fun filterRecordsByMonth(records: List<CatRecord>, yearMonth: YearMonth?): List<CatRecord> {
-            if (yearMonth == null) return records
-            return records.filter { it.date.toYearMonthOrNull() == yearMonth }
         }
 
         fun todayDate(): String =

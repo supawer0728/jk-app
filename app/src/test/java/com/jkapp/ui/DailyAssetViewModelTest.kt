@@ -401,4 +401,194 @@ class DailyAssetViewModelTest {
         val error = viewModel.uiState.value as DailyAssetUiState.Error
         assertTrue(error.message.contains("자산 삭제에 실패했습니다"))
     }
+
+    // --- availableDates / selectedDate / currentDailyAsset (이슈 #37) ---
+
+    @Test
+    fun `availableDates는 날짜를 최신순으로 정렬한다`() = runTest {
+        fakeRepository.setDailyAssets(
+            listOf(
+                DailyAsset(date = "2026-07-01", assets = listOf(makeAsset("현금"))),
+                DailyAsset(date = "2026-07-03", assets = listOf(makeAsset("주식"))),
+            )
+        )
+        advanceUntilIdle()
+
+        assertEquals(listOf("2026-07-03", "2026-07-01"), viewModel.availableDates.value)
+    }
+
+    @Test
+    fun `selectedDate는 초기에 가장 최신 날짜로 채워진다`() = runTest {
+        fakeRepository.setDailyAssets(
+            listOf(
+                DailyAsset(date = "2026-07-01", assets = listOf(makeAsset("현금"))),
+                DailyAsset(date = "2026-07-03", assets = listOf(makeAsset("주식"))),
+            )
+        )
+        advanceUntilIdle()
+
+        assertEquals("2026-07-03", viewModel.selectedDate.value)
+    }
+
+    @Test
+    fun `selectDate 호출 시 selectedDate가 변경된다`() = runTest {
+        fakeRepository.setDailyAssets(
+            listOf(
+                DailyAsset(date = "2026-07-01", assets = listOf(makeAsset("현금"))),
+                DailyAsset(date = "2026-07-03", assets = listOf(makeAsset("주식"))),
+            )
+        )
+        advanceUntilIdle()
+
+        viewModel.selectDate("2026-07-01")
+        advanceUntilIdle()
+
+        assertEquals("2026-07-01", viewModel.selectedDate.value)
+    }
+
+    @Test
+    fun `selectedDate는 선택한 날짜가 삭제되면 최신 날짜로 대체된다`() = runTest {
+        fakeRepository.setDailyAssets(
+            listOf(
+                DailyAsset(date = "2026-07-01", assets = listOf(makeAsset("현금"))),
+                DailyAsset(date = "2026-07-02", assets = listOf(makeAsset("주식"))),
+            )
+        )
+        advanceUntilIdle()
+        viewModel.selectDate("2026-07-01")
+        advanceUntilIdle()
+        assertEquals("2026-07-01", viewModel.selectedDate.value)
+
+        viewModel.deleteAsset("2026-07-01", makeAsset("현금"))
+        advanceUntilIdle()
+
+        assertEquals("2026-07-02", viewModel.selectedDate.value)
+    }
+
+    @Test
+    fun `selectDate로 아직 자산이 없는 새 날짜를 고르면 최신 날짜로 되돌아가지 않는다`() = runTest {
+        fakeRepository.setDailyAssets(
+            listOf(
+                DailyAsset(date = "2026-07-01", assets = listOf(makeAsset("현금"))),
+                DailyAsset(date = "2026-07-03", assets = listOf(makeAsset("주식"))),
+            )
+        )
+        advanceUntilIdle()
+
+        viewModel.selectDate("2026-07-10")
+        advanceUntilIdle()
+
+        assertEquals("2026-07-10", viewModel.selectedDate.value)
+        assertNull(viewModel.currentDailyAsset.value)
+    }
+
+    @Test
+    fun `currentDailyAsset는 selectedDate에 해당하는 자산을 반환한다`() = runTest {
+        val dailyAssets = listOf(
+            DailyAsset(date = "2026-07-01", assets = listOf(makeAsset("현금"))),
+            DailyAsset(date = "2026-07-03", assets = listOf(makeAsset("주식"))),
+        )
+        fakeRepository.setDailyAssets(dailyAssets)
+        advanceUntilIdle()
+
+        viewModel.selectDate("2026-07-01")
+        advanceUntilIdle()
+
+        assertEquals(dailyAssets[0], viewModel.currentDailyAsset.value)
+    }
+
+    // --- ownerFilterOptions / groupedAssets (이슈 #37) ---
+
+    @Test
+    fun `ownerFilterOptions는 고정 명의에 없는 다른 명의도 포함한다`() = runTest {
+        fakeRepository.setDailyAssets(
+            listOf(DailyAsset(date = "2026-07-01", assets = listOf(makeAsset("현금", owner = "기타명의"))))
+        )
+        advanceUntilIdle()
+
+        assertEquals(ASSET_OWNERS + listOf("기타명의"), viewModel.ownerFilterOptions.value)
+    }
+
+    @Test
+    fun `toggleOwnerFilter는 선택된 명의를 추가하고 다시 호출하면 제거한다`() = runTest {
+        advanceUntilIdle()
+
+        viewModel.toggleOwnerFilter("전지훈")
+        assertEquals(setOf("전지훈"), viewModel.selectedOwners.value)
+
+        viewModel.toggleOwnerFilter("전지훈")
+        assertEquals(emptySet<String>(), viewModel.selectedOwners.value)
+    }
+
+    @Test
+    fun `clearOwnerFilter는 선택된 명의를 모두 비운다`() = runTest {
+        advanceUntilIdle()
+        viewModel.toggleOwnerFilter("전지훈")
+        viewModel.toggleOwnerFilter("권유경")
+
+        viewModel.clearOwnerFilter()
+
+        assertEquals(emptySet<String>(), viewModel.selectedOwners.value)
+    }
+
+    @Test
+    fun `groupedAssets는 선택된 명의로 필터링해 명의별로 그룹핑한다`() = runTest {
+        fakeRepository.setDailyAssets(
+            listOf(
+                DailyAsset(
+                    date = "2026-07-01",
+                    assets = listOf(makeAsset("현금", owner = "전지훈"), makeAsset("주식", owner = "권유경")),
+                )
+            )
+        )
+        advanceUntilIdle()
+
+        viewModel.toggleOwnerFilter("전지훈")
+        advanceUntilIdle()
+
+        val grouped = viewModel.groupedAssets.value
+        assertEquals(setOf("전지훈"), grouped.keys)
+        assertEquals(listOf("현금"), grouped.getValue("전지훈").map { it.value.name })
+    }
+
+    @Test
+    fun `groupedAssets는 showHidden이 false면 숨김 자산을 제외한다`() = runTest {
+        fakeRepository.setDailyAssets(
+            listOf(
+                DailyAsset(
+                    date = "2026-07-01",
+                    assets = listOf(
+                        AssetItem(name = "숨김자산", owner = "전지훈", hidden = true),
+                        makeAsset("현금", owner = "전지훈"),
+                    ),
+                )
+            )
+        )
+        advanceUntilIdle()
+
+        val grouped = viewModel.groupedAssets.value
+        assertEquals(listOf("현금"), grouped.getValue("전지훈").map { it.value.name })
+    }
+
+    @Test
+    fun `toggleShowHidden 호출 시 숨김 자산도 포함된다`() = runTest {
+        fakeRepository.setDailyAssets(
+            listOf(
+                DailyAsset(
+                    date = "2026-07-01",
+                    assets = listOf(
+                        AssetItem(name = "숨김자산", owner = "전지훈", hidden = true),
+                        makeAsset("현금", owner = "전지훈"),
+                    ),
+                )
+            )
+        )
+        advanceUntilIdle()
+
+        viewModel.toggleShowHidden()
+        advanceUntilIdle()
+
+        val grouped = viewModel.groupedAssets.value
+        assertEquals(setOf("숨김자산", "현금"), grouped.getValue("전지훈").map { it.value.name }.toSet())
+    }
 }

@@ -395,20 +395,59 @@ class DiaryViewModelTest {
         assertNull(viewModel.selectedYearMonth.value)
     }
 
-    // --- filterRecordsByMonth (companion) ---
+    // --- recordsByMonth ---
 
     @Test
-    fun `filterRecordsByMonth는 yearMonth가 null이면 전체를 반환한다`() {
-        val records = listOf(makeRecord("2024-01-10"), makeRecord("2024-02-15"))
-        assertEquals(records, DiaryViewModel.filterRecordsByMonth(records, null))
+    fun `recordsByMonth는 데이터가 없으면 빈 맵이다`() = runTest {
+        advanceUntilIdle()
+
+        assertEquals(emptyMap<YearMonth, List<Pair<String, List<CatRecord>>>>(), viewModel.recordsByMonth.value)
     }
 
     @Test
-    fun `filterRecordsByMonth는 해당 월의 레코드만 반환한다`() {
-        val jan = makeRecord("2024-01-10")
-        val feb = makeRecord("2024-02-15")
-        val result = DiaryViewModel.filterRecordsByMonth(listOf(jan, feb), YearMonth.of(2024, 1))
-        assertEquals(listOf(jan), result)
+    fun `recordsByMonth는 레코드를 월별로 그룹핑한다`() = runTest {
+        fakeRepository.setRecords(listOf(makeRecord("2024-01-10"), makeRecord("2024-02-15")))
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+
+        val byMonth = viewModel.recordsByMonth.value
+        assertEquals(setOf(YearMonth.of(2024, 1), YearMonth.of(2024, 2)), byMonth.keys)
+        assertEquals(listOf("2024-01-10"), byMonth.getValue(YearMonth.of(2024, 1)).map { it.first })
+    }
+
+    @Test
+    fun `recordsByMonth는 같은 달 안에서 날짜를 최신순으로 정렬한다`() = runTest {
+        fakeRepository.setRecords(listOf(makeRecord("2024-01-10"), makeRecord("2024-01-20")))
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+
+        val dates = viewModel.recordsByMonth.value.getValue(YearMonth.of(2024, 1)).map { it.first }
+        assertEquals(listOf("2024-01-20", "2024-01-10"), dates)
+    }
+
+    @Test
+    fun `recordsByMonth는 같은 날짜의 레코드를 함께 묶는다`() = runTest {
+        fakeRepository.setRecords(listOf(makeRecord("2024-01-10"), makeRecord("2024-01-10")))
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+
+        val recordsOnDate = viewModel.recordsByMonth.value.getValue(YearMonth.of(2024, 1)).single().second
+        assertEquals(2, recordsOnDate.size)
+    }
+
+    @Test
+    fun `recordsByMonth는 selectedTypeIds 필터를 반영한다`() = runTest {
+        val meal = makeRecord("2024-01-10").copy(recordType = "MEAL")
+        val note = makeRecord("2024-01-11").copy(recordType = "DAILY_NOTE")
+        fakeRepository.setRecords(listOf(meal, note))
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+
+        viewModel.toggleTypeFilter("MEAL")
+        advanceUntilIdle()
+
+        val dates = viewModel.recordsByMonth.value.getValue(YearMonth.of(2024, 1)).map { it.first }
+        assertEquals(listOf("2024-01-10"), dates)
     }
 
     // --- helpers ---
