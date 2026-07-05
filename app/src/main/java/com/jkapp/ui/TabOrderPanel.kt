@@ -6,12 +6,11 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -20,11 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -58,20 +53,13 @@ fun TabOrderPanel(
     var draggingTabName by remember { mutableStateOf<String?>(null) }
     val rows = (tabs.size + TAB_GRID_COLUMNS - 1) / TAB_GRID_COLUMNS
 
-    Column(modifier = modifier) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.End,
-        ) {
-            IconButton(onClick = onToggleEditMode) {
-                Icon(
-                    imageVector = if (isEditMode) Icons.Default.Check else Icons.Default.Edit,
-                    contentDescription = stringResource(if (isEditMode) R.string.done else R.string.edit),
-                )
-            }
+    Column(
+        // 편집 모드일 때 화면(패널) 어디를 탭해도 위치 수정을 확정하고 편집 모드를 종료한다.
+        modifier = modifier.pointerInput(isEditMode) {
+            if (!isEditMode) return@pointerInput
+            detectTapGestures(onTap = { onToggleEditMode() })
         }
+    ) {
         LazyVerticalGrid(
             columns = GridCells.Fixed(TAB_GRID_COLUMNS),
             modifier = Modifier
@@ -91,6 +79,7 @@ fun TabOrderPanel(
                     columns = TAB_GRID_COLUMNS,
                     isEditMode = isEditMode,
                     onMove = onMove,
+                    onEnterEditMode = onToggleEditMode,
                     onDraggingChanged = { dragging -> draggingTabName = if (dragging) tab.name else null },
                     onClick = { onSelectTab(tab) },
                     modifier = itemModifier,
@@ -110,6 +99,7 @@ private fun ReorderableTabIcon(
     columns: Int,
     isEditMode: Boolean,
     onMove: (from: Int, to: Int) -> Unit,
+    onEnterEditMode: () -> Unit,
     onDraggingChanged: (Boolean) -> Unit,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -121,7 +111,6 @@ private fun ReorderableTabIcon(
     val currentOnMove by rememberUpdatedState(onMove)
     var offsetX by remember { mutableFloatStateOf(0f) }
     var offsetY by remember { mutableFloatStateOf(0f) }
-    var isDragging by remember { mutableStateOf(false) }
 
     val infiniteTransition = rememberInfiniteTransition(label = "tabJiggle")
     val jiggleAngle by infiniteTransition.animateFloat(
@@ -135,7 +124,6 @@ private fun ReorderableTabIcon(
     )
 
     fun endDrag() {
-        isDragging = false
         offsetX = 0f
         offsetY = 0f
         onDraggingChanged(false)
@@ -146,16 +134,14 @@ private fun ReorderableTabIcon(
         .graphicsLayer {
             translationX = offsetX
             translationY = offsetY
-            rotationZ = if (isDragging) jiggleAngle else 0f
+            // 편집 모드임을 알 수 있도록 드래그 중인 아이템뿐 아니라 모든 아이템이 흔들린다.
+            rotationZ = if (isEditMode) jiggleAngle else 0f
         }
 
     val interactiveModifier = if (isEditMode) {
         baseModifier.pointerInput(Unit) {
             detectDragGestures(
-                onDragStart = {
-                    isDragging = true
-                    onDraggingChanged(true)
-                },
+                onDragStart = { onDraggingChanged(true) },
                 onDragEnd = { endDrag() },
                 onDragCancel = { endDrag() },
                 onDrag = { change, dragAmount ->
@@ -186,7 +172,13 @@ private fun ReorderableTabIcon(
             )
         }
     } else {
-        baseModifier.clickable(onClick = onClick)
+        // 짧게 탭하면 해당 탭으로 이동하고, 길게 누르면 편집(재배열) 모드로 진입한다.
+        baseModifier.pointerInput(Unit) {
+            detectTapGestures(
+                onTap = { onClick() },
+                onLongPress = { onEnterEditMode() },
+            )
+        }
     }
 
     Column(
