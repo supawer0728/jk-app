@@ -167,7 +167,12 @@ class DailyAssetInvestmentViewModel(
     // 개별 입력 다이얼로그는 날짜를 오늘로 기본값을 두되 자유롭게 고를 수 있게 했으므로, 저장 후
     // 방금 고른 날짜로 화면을 전환해 새로 추가한 항목이 바로 보이게 한다.
     fun addInvestment(date: String, owner: String, item: InvestmentItem) {
-        mutateInvestments(date, owner, "투자 종목 저장에 실패했습니다") { it + item }
+        mutateInvestments(date, owner, "투자 종목 저장에 실패했습니다") { items ->
+            // (계좌, 카테고리, 투자종목)이 같은 항목이 이미 있으면 LazyColumn의 key가 중복되어
+            // 크래시로 이어지므로(구글시트 붙여넣기의 duplicateKeys 검증과 동일한 이유), 여기서도 막는다.
+            check(items.none { it.isSameInvestmentKey(item) }) { "이미 같은 계좌·카테고리·투자종목 조합이 존재합니다" }
+            items + item
+        }
         selectDate(date)
     }
 
@@ -176,6 +181,9 @@ class DailyAssetInvestmentViewModel(
         mutateInvestments(date, owner, "투자 종목 저장에 실패했습니다") { items ->
             val index = items.indexOf(target)
             check(index >= 0) { "수정하려는 투자 종목을 찾을 수 없습니다(다른 곳에서 이미 변경되었을 수 있습니다)" }
+            check(items.withIndex().none { (i, existing) -> i != index && existing.isSameInvestmentKey(item) }) {
+                "이미 같은 계좌·카테고리·투자종목 조합이 존재합니다"
+            }
             items.mapIndexed { i, existing -> if (i == index) item else existing }
         }
     }
@@ -276,6 +284,9 @@ class DailyAssetInvestmentViewModel(
 
     private fun findInvestment(date: String, owner: String): DailyAssetInvestment? =
         (uiState.value as? DailyAssetInvestmentUiState.Success)?.investments?.find { it.date == date && it.owner == owner }
+
+    private fun InvestmentItem.isSameInvestmentKey(other: InvestmentItem): Boolean =
+        assetName == other.assetName && category == other.category && investmentName == other.investmentName
 
     companion object {
         private const val TAG = "DailyAssetInvestmentViewModel"

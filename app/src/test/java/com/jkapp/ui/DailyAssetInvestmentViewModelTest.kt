@@ -406,6 +406,41 @@ class DailyAssetInvestmentViewModelTest {
     }
 
     @Test
+    fun `addInvestment는 계좌·카테고리·투자종목이 같은 항목이 이미 있으면 actionError를 설정하고 추가하지 않는다`() = runTest {
+        val existing = makeItem(investmentName = "삼성전자")
+        fakeRepository.setDailyAssetInvestments(
+            listOf(DailyAssetInvestment(date = "2026-07-04", owner = "전지훈", investments = listOf(existing)))
+        )
+        advanceUntilIdle()
+
+        viewModel.addInvestment("2026-07-04", "전지훈", makeItem(investmentName = "삼성전자", valuationAmount = BigDecimal("900000")))
+        advanceUntilIdle()
+
+        assertTrue(viewModel.actionError.value!!.contains("이미 같은"))
+        val state = viewModel.uiState.value as DailyAssetInvestmentUiState.Success
+        val doc = state.investments.find { it.date == "2026-07-04" && it.owner == "전지훈" }
+        assertEquals(listOf(existing), doc?.investments)
+    }
+
+    @Test
+    fun `updateInvestment는 다른 항목과 계좌·카테고리·투자종목이 겹치면 actionError를 설정하고 바꾸지 않는다`() = runTest {
+        val kakao = makeItem(investmentName = "카카오")
+        val samsung = makeItem(investmentName = "삼성전자")
+        fakeRepository.setDailyAssetInvestments(
+            listOf(DailyAssetInvestment(date = "2026-07-04", owner = "전지훈", investments = listOf(kakao, samsung)))
+        )
+        advanceUntilIdle()
+
+        viewModel.updateInvestment("2026-07-04", "전지훈", kakao, kakao.copy(investmentName = "삼성전자"))
+        advanceUntilIdle()
+
+        assertTrue(viewModel.actionError.value!!.contains("이미 같은"))
+        val state = viewModel.uiState.value as DailyAssetInvestmentUiState.Success
+        val doc = state.investments.find { it.date == "2026-07-04" && it.owner == "전지훈" }
+        assertEquals(setOf("카카오", "삼성전자"), doc?.investments?.map { it.investmentName }?.toSet())
+    }
+
+    @Test
     fun `deleteInvestments는 빈 목록이면 아무 것도 삭제하지 않는다`() = runTest {
         val item = makeItem()
         fakeRepository.setDailyAssetInvestments(

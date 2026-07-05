@@ -1153,7 +1153,7 @@ private fun InvestmentListItem(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
-                    text = "${item.quantity.toPlainString()}주 · 1주 ${item.pricePerShare.toDisplayAmount()} · 매수단가 ${item.derivedPurchasePricePerShareDisplay()}",
+                    text = "${item.quantity.toPlainString()}주 · 1주 ${item.pricePerShareDisplay()} · 매수단가 ${item.derivedPurchasePricePerShareDisplay()}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1183,6 +1183,12 @@ private fun CurrencyAmount.toDisplayString(): String = when (currency) {
     "KRW" -> amount.toDisplayAmount()
     else -> "${NumberFormat.getNumberInstance(Locale.US).format(amount)} $currency"
 }
+
+// pricePerShare 자체에는 통화 정보가 없다(해외 주식도 숫자만 저장). 입력 폼에서 통화를 하나만
+// 고르게 되어 있어(매수금액과 동일 종목 기준) 매수금액의 통화(purchaseAmount.currency)를 그대로
+// 따르면 되고, 이렇게 해야 해외 주식이 "308.63원"처럼 원화로 오인 표시되지 않는다.
+private fun InvestmentItem.pricePerShareDisplay(): String =
+    CurrencyAmount(currency = purchaseAmount.currency, amount = pricePerShare).toDisplayString()
 
 // 매수단가는 저장하지 않고 매수금액/보유수량으로 계산해 보여준다. 보유수량이 0이면(이론상 존재하지
 // 않아야 하지만) 나눗셈이 불가능하므로 표시할 수 없음을 나타낸다.
