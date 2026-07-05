@@ -13,10 +13,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
@@ -69,11 +72,16 @@ fun TabOrderPanel(
     }
 
     Column(
-        // 편집 모드일 때 화면(패널) 어디를 탭해도 위치 수정을 확정하고 편집 모드를 종료한다.
-        modifier = modifier.pointerInput(isEditMode) {
-            if (!isEditMode) return@pointerInput
-            detectTapGestures(onTap = { onToggleEditMode() })
-        }
+        modifier = modifier
+            // 3버튼 내비게이션바처럼 시스템 내비게이션 바가 차지하는 영역과 아이콘이 겹치지 않도록
+            // 패널 하단에 시스템 내비게이션 바 높이만큼 여백을 둔다. 축소된 NavigationBar는 자체적으로
+            // 이 처리를 하지만, 이 패널은 커스텀 레이아웃이라 직접 적용해야 한다.
+            .windowInsetsPadding(WindowInsets.navigationBars)
+            // 편집 모드일 때 화면(패널) 어디를 탭해도 위치 수정을 확정하고 편집 모드를 종료한다.
+            .pointerInput(isEditMode) {
+                if (!isEditMode) return@pointerInput
+                detectTapGestures(onTap = { onToggleEditMode() })
+            }
     ) {
         LazyVerticalGrid(
             columns = GridCells.Fixed(TAB_GRID_COLUMNS),
