@@ -15,9 +15,8 @@ class DailyAssetInvestmentTest {
         investmentName = "삼성전자",
         pricePerShare = BigDecimal("70000"),
         valuationAmount = valuationAmount,
-        purchasePrice = PurchasePrice(currency = "KRW", amount = BigDecimal("65000")),
         quantity = BigDecimal("10"),
-        purchaseAmount = purchaseAmount,
+        purchaseAmount = CurrencyAmount(currency = "KRW", amount = purchaseAmount),
     )
 
     @Test

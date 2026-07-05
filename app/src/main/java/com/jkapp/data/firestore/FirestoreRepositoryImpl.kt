@@ -8,10 +8,10 @@ import com.jkapp.data.model.AssetItem
 import com.jkapp.data.model.Benchmark
 import com.jkapp.data.model.CatRecord
 import com.jkapp.data.model.CatRecordType
+import com.jkapp.data.model.CurrencyAmount
 import com.jkapp.data.model.DailyAsset
 import com.jkapp.data.model.DailyAssetInvestment
 import com.jkapp.data.model.InvestmentItem
-import com.jkapp.data.model.PurchasePrice
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -346,14 +346,9 @@ class FirestoreRepositoryImpl : FirestoreRepository {
         FIELD_INVESTMENT_NAME to investmentName,
         FIELD_INVESTMENT_PRICE_PER_SHARE to pricePerShare.toPlainString(),
         FIELD_INVESTMENT_VALUATION_AMOUNT to valuationAmount.toPlainString(),
-        FIELD_INVESTMENT_PURCHASE_PRICE to purchasePrice.toMap(),
         FIELD_INVESTMENT_QUANTITY to quantity.toPlainString(),
-        FIELD_INVESTMENT_PURCHASE_AMOUNT to purchaseAmount.toPlainString(),
-    )
-
-    private fun PurchasePrice.toMap(): Map<String, Any?> = mapOf(
-        FIELD_PURCHASE_PRICE_CURRENCY to currency,
-        FIELD_PURCHASE_PRICE_AMOUNT to amount.toPlainString(),
+        FIELD_INVESTMENT_PURCHASE_AMOUNT to purchaseAmount.amount.toPlainString(),
+        FIELD_INVESTMENT_PURCHASE_AMOUNT_CURRENCY to purchaseAmount.currency,
     )
 
     // 필드가 하나라도 없거나 파싱에 실패하면 잘못된 값을 보여주는 대신 건너뛰고 로그를 남긴다.
@@ -365,12 +360,12 @@ class FirestoreRepositoryImpl : FirestoreRepository {
         val investmentName = this[FIELD_INVESTMENT_NAME] as? String
         val pricePerShare = (this[FIELD_INVESTMENT_PRICE_PER_SHARE] as? String)?.toBigDecimalOrNull()
         val valuationAmount = (this[FIELD_INVESTMENT_VALUATION_AMOUNT] as? String)?.toBigDecimalOrNull()
-        @Suppress("UNCHECKED_CAST")
-        val purchasePrice = (this[FIELD_INVESTMENT_PURCHASE_PRICE] as? Map<String, Any?>)?.toPurchasePrice()
         val quantity = (this[FIELD_INVESTMENT_QUANTITY] as? String)?.toBigDecimalOrNull()
-        val purchaseAmount = (this[FIELD_INVESTMENT_PURCHASE_AMOUNT] as? String)?.toBigDecimalOrNull()
+        val purchaseAmountValue = (this[FIELD_INVESTMENT_PURCHASE_AMOUNT] as? String)?.toBigDecimalOrNull()
+        // purchaseAmountCurrency는 통화 구분을 추가하기 전에 저장된 기존 문서에는 없으므로 KRW로 간주한다.
+        val purchaseAmountCurrency = this[FIELD_INVESTMENT_PURCHASE_AMOUNT_CURRENCY] as? String ?: "KRW"
         if (assetName == null || category == null || investmentName == null || pricePerShare == null ||
-            valuationAmount == null || purchasePrice == null || quantity == null || purchaseAmount == null
+            valuationAmount == null || quantity == null || purchaseAmountValue == null
         ) {
             Log.w(TAG, "daily-asset-investments 문서에 필드가 누락된 투자 종목 항목이 있어 건너뜁니다: $this")
             return null
@@ -381,16 +376,9 @@ class FirestoreRepositoryImpl : FirestoreRepository {
             investmentName = investmentName,
             pricePerShare = pricePerShare,
             valuationAmount = valuationAmount,
-            purchasePrice = purchasePrice,
             quantity = quantity,
-            purchaseAmount = purchaseAmount,
+            purchaseAmount = CurrencyAmount(currency = purchaseAmountCurrency, amount = purchaseAmountValue),
         )
-    }
-
-    private fun Map<String, Any?>.toPurchasePrice(): PurchasePrice? {
-        val currency = this[FIELD_PURCHASE_PRICE_CURRENCY] as? String ?: return null
-        val amount = (this[FIELD_PURCHASE_PRICE_AMOUNT] as? String)?.toBigDecimalOrNull() ?: return null
-        return PurchasePrice(currency = currency, amount = amount)
     }
 
     private fun CatRecord.toMap() = mapOf(
@@ -456,7 +444,7 @@ class FirestoreRepositoryImpl : FirestoreRepository {
         private const val FIELD_ASSET_AMOUNT = "amount"
         private const val FIELD_ASSET_HIDDEN = "hidden"
 
-        // Field names - DailyAssetInvestment / InvestmentItem / PurchasePrice
+        // Field names - DailyAssetInvestment / InvestmentItem / CurrencyAmount
         private const val FIELD_OWNER = "owner"
         private const val FIELD_INVESTMENTS = "investments"
         private const val FIELD_INVESTMENT_ASSET_NAME = "assetName"
@@ -464,11 +452,9 @@ class FirestoreRepositoryImpl : FirestoreRepository {
         private const val FIELD_INVESTMENT_NAME = "investmentName"
         private const val FIELD_INVESTMENT_PRICE_PER_SHARE = "pricePerShare"
         private const val FIELD_INVESTMENT_VALUATION_AMOUNT = "valuationAmount"
-        private const val FIELD_INVESTMENT_PURCHASE_PRICE = "purchasePrice"
         private const val FIELD_INVESTMENT_QUANTITY = "quantity"
         private const val FIELD_INVESTMENT_PURCHASE_AMOUNT = "purchaseAmount"
-        private const val FIELD_PURCHASE_PRICE_CURRENCY = "currency"
-        private const val FIELD_PURCHASE_PRICE_AMOUNT = "amount"
+        private const val FIELD_INVESTMENT_PURCHASE_AMOUNT_CURRENCY = "purchaseAmountCurrency"
 
         // Field names - Benchmark
         private const val FIELD_ADDITIONAL_INVESTMENT = "additionalInvestment"

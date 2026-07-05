@@ -12,6 +12,7 @@ import com.jkapp.data.model.DailyAssetInvestment
 import com.jkapp.data.model.InvestmentItem
 import com.jkapp.data.model.InvestmentItemMetrics
 import com.jkapp.data.model.withProfitMetrics
+import java.math.BigDecimal
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -75,12 +76,61 @@ class DailyAssetInvestmentViewModel(
         resolvedDate?.let { d -> state.investments.find { it.date == d && it.owner == owner } }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
+    // 계좌(assetName)/카테고리 필터. 앱을 재시작하면 잊어도 되는 휘발성 필터라 SavedStateHandle 없는
+    // 평범한 MutableStateFlow로 두며(DailyAssetViewModel의 _selectedOwners와 동일한 패턴), selectbox
+    // 동작이라 각각 하나만 고를 수 있고 null은 "필터 없음(전체 표시)"을 의미한다.
+    private val _selectedAssetNameFilter = MutableStateFlow<String?>(null)
+    val selectedAssetNameFilter: StateFlow<String?> = _selectedAssetNameFilter.asStateFlow()
+
+    fun selectAssetNameFilter(assetName: String?) {
+        _selectedAssetNameFilter.value = assetName
+    }
+
+    private val _selectedCategoryFilter = MutableStateFlow<String?>(null)
+    val selectedCategoryFilter: StateFlow<String?> = _selectedCategoryFilter.asStateFlow()
+
+    fun selectCategoryFilter(category: String?) {
+        _selectedCategoryFilter.value = category
+    }
+
+    // 필터 selectbox에 노출할 선택지는 필터링 전 currentInvestment 기준이라, 필터를 고른 뒤에도
+    // 다른 선택지가 계속 보인다(선택지 목록 자체가 필터링되어 줄어들지 않음).
+    val assetNameFilterOptions: StateFlow<List<String>> = currentInvestment
+        .map { it?.investments.orEmpty().map { item -> item.assetName }.distinct().sorted() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val categoryFilterOptions: StateFlow<List<String>> = currentInvestment
+        .map { it?.investments.orEmpty().map { item -> item.category }.distinct().sorted() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
     // 종목별 수익금(평가금액 - 매수금액)은 데이터가 실제로 바뀔 때만 계산되어 캐시된다. 컴포저블의
     // remember에 두면 탭을 오갈 때마다 컴포지션이 새로 생성되면서 매번 재계산되므로(이슈 #37과 동일한
     // 문제), 벤치마크 탭(rowMetrics)과 같은 방식으로 뷰모델 StateFlow로 옮긴다.
-    val investmentRowMetrics: StateFlow<List<InvestmentItemMetrics>> = currentInvestment
-        .map { it?.investments.orEmpty().withProfitMetrics() }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val investmentRowMetrics: StateFlow<List<InvestmentItemMetrics>> = combine(
+        currentInvestment, _selectedAssetNameFilter, _selectedCategoryFilter,
+    ) { investment, assetName, category ->
+        investment?.investments.orEmpty()
+            .filter { (assetName == null || it.assetName == assetName) && (category == null || it.category == category) }
+            .withProfitMetrics()
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    // 종목이 많아지면 계좌(assetName) 단위로 묶어 봐야 해서, 화면에서 매번 다시 묶지 않도록
+    // 여기서 한 번만 그룹화해 캐시한다(rowMetrics와 같은 이유). 헤더 순서가 매번 들쭉날쭉하지
+    // 않도록 계좌 이름 기준으로 정렬한다.
+    val groupedInvestmentRowMetrics: StateFlow<Map<String, List<InvestmentItemMetrics>>> = investmentRowMetrics
+        .map { metrics -> metrics.groupBy { it.item.assetName }.toSortedMap() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
+    // 명의와 상관없이 같은 날짜의 모든 투자 종목 평가금액 합계. Benchmark.currentAmount는 명의
+    // 구분 없는 전체 포트폴리오 금액이라, 명의별로 필터링된 currentInvestment 대신 여기서 다시 계산한다.
+    val selectedDateTotalValuationAmount: StateFlow<BigDecimal?> = combine(
+        uiState, selectedDate,
+    ) { state, date ->
+        if (state !is DailyAssetInvestmentUiState.Success || date == null) return@combine null
+        state.investments.filter { it.date == date }
+            .flatMap { it.investments }
+            .sumOf { it.valuationAmount }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     private var dataJob: Job? = null
 
@@ -164,9 +214,8 @@ class DailyAssetInvestmentViewModel(
         return result
     }
 
-    // (계좌, 카테고리, 투자종목)이 같은 항목은 시세/보유수량/매수금액을 갱신하고, 없는 항목은 새로
-    // 추가한다. 매수단가는 붙여넣기 데이터에 없는, 사용자가 직접 관리하는 필드이므로 기존 값을
-    // 그대로 유지한다(DailyAssetViewModel.importAssets의 card/hidden 유지와 동일한 이유).
+    // (계좌, 카테고리, 투자종목)이 같은 항목은 시세/보유수량/매수금액(통화 포함)을 갱신하고,
+    // 없는 항목은 새로 추가한다.
     fun importInvestments(date: String, owner: String, items: List<InvestmentItem>) {
         if (items.isEmpty()) return
         mutateInvestments(date, owner, "투자 종목 저장에 실패했습니다") { existing ->

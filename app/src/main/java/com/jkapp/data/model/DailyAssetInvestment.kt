@@ -15,12 +15,12 @@ data class InvestmentItem(
     val investmentName: String,
     val pricePerShare: BigDecimal,
     val valuationAmount: BigDecimal,
-    val purchasePrice: PurchasePrice,
     val quantity: BigDecimal,
-    val purchaseAmount: BigDecimal,
+    // 매수단가는 purchaseAmount / quantity로 계산해낼 수 있는 값이라 별도로 저장하지 않는다.
+    val purchaseAmount: CurrencyAmount,
 )
 
-data class PurchasePrice(
+data class CurrencyAmount(
     val currency: String,
     val amount: BigDecimal,
 )
@@ -32,4 +32,4 @@ data class InvestmentItemMetrics(
 )
 
 fun List<InvestmentItem>.withProfitMetrics(): List<InvestmentItemMetrics> =
-    map { InvestmentItemMetrics(item = it, profit = it.valuationAmount - it.purchaseAmount) }
+    map { InvestmentItemMetrics(item = it, profit = it.valuationAmount - it.purchaseAmount.amount) }

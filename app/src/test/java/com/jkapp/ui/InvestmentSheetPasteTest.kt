@@ -44,11 +44,11 @@ class InvestmentSheetPasteTest {
         assertEquals(BigDecimal("22250"), item.pricePerShare)
         assertEquals(BigDecimal("106800000"), item.valuationAmount)
         assertEquals(BigDecimal("4800"), item.quantity)
-        assertEquals(BigDecimal("108384000"), item.purchaseAmount)
+        assertEquals(BigDecimal("108384000"), item.purchaseAmount.amount)
     }
 
     @Test
-    fun `매수단가는 붙여넣기 대상이 아니므로 0으로 채워지고 계좌 이름 별칭도 인식한다`() {
+    fun `매수금액에 달러 표시가 없으면 통화가 KRW로 인식되고 계좌 이름 별칭도 인식한다`() {
         val header = row("이름", "카테고리", "투자 종목", "1주 가격", "평가 금액(원화)", "보유수량", "매수금액")
         val data = row("종합", "주식", "삼성전자", "₩70,000", "₩700,000", "10", "₩650,000")
         val text = listOf(header, data).joinToString("\n")
@@ -56,12 +56,12 @@ class InvestmentSheetPasteTest {
         val result = parseInvestmentSheetPaste(text, owner = "전지훈")
 
         val item = result.single().item!!
-        assertEquals("KRW", item.purchasePrice.currency)
-        assertEquals(BigDecimal.ZERO, item.purchasePrice.amount)
+        assertEquals("KRW", item.purchaseAmount.currency)
+        assertEquals(BigDecimal("650000"), item.purchaseAmount.amount)
     }
 
     @Test
-    fun `1주 가격이 달러면 매수단가 통화가 USD로 기본 설정된다`() {
+    fun `매수금액에 달러 표시가 있으면 매수금액 통화가 USD로 인식된다`() {
         val text = listOf(
             fullHeader,
             fullDataRow(investmentName = "애플 AAPL", pricePerShare = "$308.6300", valuationAmount = "₩3,798,865", quantity = "8", purchaseAmount = "$2,503.3200"),
@@ -71,8 +71,22 @@ class InvestmentSheetPasteTest {
 
         val item = result.single().item!!
         assertEquals(BigDecimal("308.6300"), item.pricePerShare)
-        assertEquals(BigDecimal("2503.3200"), item.purchaseAmount)
-        assertEquals("USD", item.purchasePrice.currency)
+        assertEquals(BigDecimal("2503.3200"), item.purchaseAmount.amount)
+        assertEquals("USD", item.purchaseAmount.currency)
+    }
+
+    @Test
+    fun `1주 가격이 달러여도 매수금액에 달러 표시가 없으면 매수금액 통화는 KRW로 인식된다`() {
+        val text = listOf(
+            fullHeader,
+            fullDataRow(investmentName = "애플 AAPL", pricePerShare = "$308.6300", valuationAmount = "₩3,798,865", quantity = "8", purchaseAmount = "₩3,000,000"),
+        ).joinToString("\n")
+
+        val result = parseInvestmentSheetPaste(text, owner = "전지훈")
+
+        val item = result.single().item!!
+        assertEquals("KRW", item.purchaseAmount.currency)
+        assertEquals(BigDecimal("3000000"), item.purchaseAmount.amount)
     }
 
     @Test
@@ -88,7 +102,7 @@ class InvestmentSheetPasteTest {
         assertEquals(BigDecimal("1000"), item.pricePerShare)
         assertEquals(BigDecimal("10000"), item.valuationAmount)
         assertEquals(BigDecimal("10"), item.quantity)
-        assertEquals(BigDecimal("9000"), item.purchaseAmount)
+        assertEquals(BigDecimal("9000"), item.purchaseAmount.amount)
     }
 
     @Test

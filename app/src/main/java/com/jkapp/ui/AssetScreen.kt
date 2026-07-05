@@ -33,7 +33,9 @@ import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -73,13 +75,15 @@ import com.jkapp.R
 import com.jkapp.data.model.AssetItem
 import com.jkapp.data.model.Benchmark
 import com.jkapp.data.model.BenchmarkRowMetrics
+import com.jkapp.data.model.CurrencyAmount
 import com.jkapp.data.model.DEFAULT_HIDDEN_ASSET_NAMES
 import com.jkapp.data.model.InvestmentItem
 import com.jkapp.data.model.InvestmentItemMetrics
-import com.jkapp.data.model.PurchasePrice
 import java.math.BigDecimal
+import java.math.RoundingMode
 import java.text.NumberFormat
 import java.util.Locale
+import kotlinx.coroutines.delay
 
 private enum class AssetTab(@StringRes val labelRes: Int) {
     DAILY_ASSET(R.string.asset_tab_daily_asset),
@@ -108,7 +112,7 @@ fun AssetScreen(
         Box(modifier = Modifier.fillMaxSize()) {
             when (selectedTab) {
                 AssetTab.DAILY_ASSET -> DailyAssetTab(viewModel = viewModel)
-                AssetTab.INVESTMENT -> InvestmentTab(viewModel = investmentViewModel)
+                AssetTab.INVESTMENT -> InvestmentTab(viewModel = investmentViewModel, benchmarkViewModel = benchmarkViewModel)
                 AssetTab.BENCHMARK -> BenchmarkTab(viewModel = benchmarkViewModel)
             }
         }
@@ -388,6 +392,42 @@ private fun OwnerFilterRow(
                 contentDescription = stringResource(R.string.asset_toggle_show_hidden),
                 tint = if (showHidden) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+    }
+}
+
+// 계좌(assetName)/카테고리를 각각 하나만 고를 수 있는 selectbox 버튼. FAB들과 같은 줄에 두려고
+// 세로 공간을 차지하지 않는 버튼+드롭다운 형태로 두며, 화면 하단에 있어 공간이 부족하면
+// DropdownMenu가 자동으로 버튼 위쪽으로 펼쳐진다.
+@Composable
+private fun InvestmentFilterSelectButton(
+    label: String,
+    allLabel: String,
+    options: List<String>,
+    onSelect: (String?) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        FilledTonalButton(onClick = { expanded = true }) {
+            Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(
+                text = { Text(allLabel) },
+                onClick = {
+                    onSelect(null)
+                    expanded = false
+                },
+            )
+            options.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(option) },
+                    onClick = {
+                        onSelect(option)
+                        expanded = false
+                    },
+                )
+            }
         }
     }
 }
@@ -714,7 +754,7 @@ private sealed interface InvestmentFormTarget {
 private val INVESTMENT_CURRENCIES = listOf("KRW", "USD")
 
 @Composable
-private fun InvestmentTab(viewModel: DailyAssetInvestmentViewModel) {
+private fun InvestmentTab(viewModel: DailyAssetInvestmentViewModel, benchmarkViewModel: BenchmarkViewModel) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val actionError by viewModel.actionError.collectAsStateWithLifecycle()
     // 아래 파생 State들은 DailyAssetInvestmentViewModel에서 데이터가 실제로 바뀔 때만 계산되어
@@ -724,6 +764,14 @@ private fun InvestmentTab(viewModel: DailyAssetInvestmentViewModel) {
     val selectedDate by viewModel.selectedDate.collectAsStateWithLifecycle()
     val selectedOwner by viewModel.selectedOwner.collectAsStateWithLifecycle()
     val rowMetrics by viewModel.investmentRowMetrics.collectAsStateWithLifecycle()
+    val groupedRowMetrics by viewModel.groupedInvestmentRowMetrics.collectAsStateWithLifecycle()
+    val currentInvestment by viewModel.currentInvestment.collectAsStateWithLifecycle()
+    val selectedAssetNameFilter by viewModel.selectedAssetNameFilter.collectAsStateWithLifecycle()
+    val selectedCategoryFilter by viewModel.selectedCategoryFilter.collectAsStateWithLifecycle()
+    val assetNameFilterOptions by viewModel.assetNameFilterOptions.collectAsStateWithLifecycle()
+    val categoryFilterOptions by viewModel.categoryFilterOptions.collectAsStateWithLifecycle()
+    val selectedDateTotalValuationAmount by viewModel.selectedDateTotalValuationAmount.collectAsStateWithLifecycle()
+    val benchmarkUiState by benchmarkViewModel.uiState.collectAsStateWithLifecycle()
 
     var showDatePicker by rememberSaveable { mutableStateOf(false) }
     // InvestmentItem은 Parcelable/Serializable이 아니므로 rememberSaveable로 저장할 수 없다(회전 시 초기화됨).
@@ -750,6 +798,32 @@ private fun InvestmentTab(viewModel: DailyAssetInvestmentViewModel) {
     // 더 이상 보이는 목록과 무관해진다(엉뚱한 항목 삭제 방지). 전환 시 선택 모드를 초기화한다.
     LaunchedEffect(selectedOwner, selectedDate) {
         exitSelectionMode()
+    }
+
+    var valuationMismatchMessage by remember { mutableStateOf<String?>(null) }
+    var hasCheckedValuationMismatch by remember { mutableStateOf(false) }
+
+    // 탭 진입 시 1회만 비교하면 되므로, 투자 종목/벤치마크 데이터가 모두 준비된 최초 시점에만
+    // 검사하고 이후 데이터가 갱신되어도 다시 검사하지 않는다(hasCheckedValuationMismatch로 1회성 보장).
+    LaunchedEffect(selectedDate, selectedDateTotalValuationAmount, benchmarkUiState) {
+        if (hasCheckedValuationMismatch) return@LaunchedEffect
+        val date = selectedDate ?: return@LaunchedEffect
+        val total = selectedDateTotalValuationAmount ?: return@LaunchedEffect
+        val benchmarkState = benchmarkUiState as? BenchmarkUiState.Success ?: return@LaunchedEffect
+        hasCheckedValuationMismatch = true
+        val benchmark = benchmarkState.benchmarks.find { it.date == date } ?: return@LaunchedEffect
+        if (total.compareTo(benchmark.currentAmount) != 0) {
+            valuationMismatchMessage =
+                "평가금액 합계 ${total.toDisplayAmount()}와 벤치마크 현재금액 ${benchmark.currentAmount.toDisplayAmount()}이 다릅니다"
+        }
+    }
+
+    // 말풍선은 5초 뒤 자동으로 사라진다.
+    LaunchedEffect(valuationMismatchMessage) {
+        if (valuationMismatchMessage != null) {
+            delay(5000)
+            valuationMismatchMessage = null
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -779,9 +853,13 @@ private fun InvestmentTab(viewModel: DailyAssetInvestmentViewModel) {
                         onSelect = viewModel::selectOwner,
                     )
                     if (rowMetrics.isEmpty()) {
+                        // 필터 때문에 결과가 비었는지, 애초에 해당 명의·날짜에 데이터가 없는지 구분해 안내한다
+                        // (DailyAssetTab의 emptyByFilter와 동일한 패턴).
+                        val emptyByFilter = (selectedAssetNameFilter != null || selectedCategoryFilter != null) &&
+                            !currentInvestment?.investments.isNullOrEmpty()
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Text(
-                                text = stringResource(R.string.investment_empty),
+                                text = stringResource(if (emptyByFilter) R.string.investment_empty_filtered else R.string.investment_empty),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -793,26 +871,36 @@ private fun InvestmentTab(viewModel: DailyAssetInvestmentViewModel) {
                             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 80.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            items(rowMetrics, key = { it.item }) { entry ->
-                                InvestmentListItem(
-                                    entry = entry,
-                                    isSelectionMode = isSelectionMode,
-                                    isSelected = entry.item in selectedItems,
-                                    onToggleSelected = {
-                                        selectedItems = if (entry.item in selectedItems) {
-                                            selectedItems - entry.item
-                                        } else {
-                                            selectedItems + entry.item
-                                        }
-                                    },
-                                    onEditRequest = { formTarget = InvestmentFormTarget.Edit(entry.item) },
-                                    onDeleteRequest = {
-                                        val date = selectedDate
-                                        if (date != null) {
-                                            pendingDelete = InvestmentPendingDelete(date = date, owner = selectedOwner, target = entry.item)
-                                        }
-                                    },
-                                )
+                            // 종목이 많아지면 한눈에 보기 어려우므로 계좌(assetName) 단위로 묶어서 보여준다.
+                            groupedRowMetrics.forEach { (assetName, metrics) ->
+                                item(key = "header-$assetName") {
+                                    Text(assetName, style = MaterialTheme.typography.titleSmall)
+                                }
+                                // LazyColumn의 key는 Bundle에 저장 가능한 타입만 허용되는데(String/Int/Long/
+                                // Parcelable 등), InvestmentItem은 일반 data class라 그대로 key로 쓰면 크래시가
+                                // 난다(SaveableStateHolder). importInvestments의 uniq 키와 동일한 필드 조합으로
+                                // 안정적인 String 키를 만든다.
+                                items(metrics, key = { "${it.item.assetName}|${it.item.category}|${it.item.investmentName}" }) { entry ->
+                                    InvestmentListItem(
+                                        entry = entry,
+                                        isSelectionMode = isSelectionMode,
+                                        isSelected = entry.item in selectedItems,
+                                        onToggleSelected = {
+                                            selectedItems = if (entry.item in selectedItems) {
+                                                selectedItems - entry.item
+                                            } else {
+                                                selectedItems + entry.item
+                                            }
+                                        },
+                                        onEditRequest = { formTarget = InvestmentFormTarget.Edit(entry.item) },
+                                        onDeleteRequest = {
+                                            val date = selectedDate
+                                            if (date != null) {
+                                                pendingDelete = InvestmentPendingDelete(date = date, owner = selectedOwner, target = entry.item)
+                                            }
+                                        },
+                                    )
+                                }
                             }
                         }
                     }
@@ -850,7 +938,25 @@ private fun InvestmentTab(viewModel: DailyAssetInvestmentViewModel) {
                         ) { Text(stringResource(R.string.cancel)) }
                     }
                 } else {
-                    Box(modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            InvestmentFilterSelectButton(
+                                label = selectedAssetNameFilter ?: stringResource(R.string.investment_filter_all_asset_names),
+                                allLabel = stringResource(R.string.investment_filter_all_asset_names),
+                                options = assetNameFilterOptions,
+                                onSelect = viewModel::selectAssetNameFilter,
+                            )
+                            InvestmentFilterSelectButton(
+                                label = selectedCategoryFilter ?: stringResource(R.string.investment_filter_all_categories),
+                                allLabel = stringResource(R.string.investment_filter_all_categories),
+                                options = categoryFilterOptions,
+                                onSelect = viewModel::selectCategoryFilter,
+                            )
+                        }
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             Box {
                                 FloatingActionButton(onClick = { showFabMenu = true }) {
@@ -881,6 +987,20 @@ private fun InvestmentTab(viewModel: DailyAssetInvestmentViewModel) {
                         }
                     }
                 }
+            }
+        }
+
+        valuationMismatchMessage?.let { message ->
+            Card(
+                modifier = Modifier.align(Alignment.TopCenter).padding(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+            ) {
+                Text(
+                    text = message,
+                    modifier = Modifier.padding(12.dp),
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
             }
         }
     }
@@ -970,12 +1090,14 @@ private fun InvestmentTab(viewModel: DailyAssetInvestmentViewModel) {
                 TextButton(onClick = {
                     val date = selectedDate
                     if (date != null) {
-                        viewModel.deleteInvestments(date, selectedOwner, rowMetrics.map { it.item })
+                        // 필터와 무관하게 해당 명의·날짜의 모든 투자 종목을 삭제한다(rowMetrics는 필터가
+                        // 적용된 목록이라 여기서 쓰면 화면에 보이지 않는 항목이 남는다).
+                        viewModel.deleteInvestments(date, selectedOwner, currentInvestment?.investments.orEmpty())
                     }
                     showDeleteAllConfirm = false
                     exitSelectionMode()
                 }) {
-                    Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(android.R.string.ok), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
@@ -1031,11 +1153,14 @@ private fun InvestmentListItem(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
-                    text = "${item.quantity.toPlainString()}주 · 1주 ${item.pricePerShare.toDisplayAmount()} · 매수단가 ${item.purchasePrice.toDisplayString()}",
+                    text = "${item.quantity.toPlainString()}주 · 1주 ${item.pricePerShare.toDisplayAmount()} · 매수단가 ${item.derivedPurchasePricePerShareDisplay()}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Text(text = item.valuationAmount.toDisplayAmount(), style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    text = "${stringResource(R.string.investment_field_valuation_amount)} ${item.valuationAmount.toDisplayAmount()}",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
                 Text(
                     text = "${stringResource(R.string.investment_field_profit)} ${entry.profit.toDisplayAmount()}",
                     style = MaterialTheme.typography.bodyMedium,
@@ -1054,9 +1179,17 @@ private fun InvestmentListItem(
     }
 }
 
-private fun PurchasePrice.toDisplayString(): String = when (currency) {
+private fun CurrencyAmount.toDisplayString(): String = when (currency) {
     "KRW" -> amount.toDisplayAmount()
     else -> "${NumberFormat.getNumberInstance(Locale.US).format(amount)} $currency"
+}
+
+// 매수단가는 저장하지 않고 매수금액/보유수량으로 계산해 보여준다. 보유수량이 0이면(이론상 존재하지
+// 않아야 하지만) 나눗셈이 불가능하므로 표시할 수 없음을 나타낸다.
+private fun InvestmentItem.derivedPurchasePricePerShareDisplay(): String {
+    if (quantity.signum() == 0) return "-"
+    val pricePerShare = purchaseAmount.amount.divide(quantity, 4, RoundingMode.HALF_UP)
+    return CurrencyAmount(currency = purchaseAmount.currency, amount = pricePerShare).toDisplayString()
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1074,20 +1207,17 @@ private fun InvestmentFormDialog(
     var investmentName by rememberSaveable { mutableStateOf(initial?.investmentName ?: "") }
     var pricePerShareText by rememberSaveable { mutableStateOf(initial?.pricePerShare?.toPlainString() ?: "") }
     var valuationAmountText by rememberSaveable { mutableStateOf(initial?.valuationAmount?.toPlainString() ?: "") }
-    var currency by rememberSaveable { mutableStateOf(initial?.purchasePrice?.currency ?: INVESTMENT_CURRENCIES.first()) }
-    var currencyDropdownExpanded by remember { mutableStateOf(false) }
-    var purchasePriceAmountText by rememberSaveable { mutableStateOf(initial?.purchasePrice?.amount?.toPlainString() ?: "") }
     var quantityText by rememberSaveable { mutableStateOf(initial?.quantity?.toPlainString() ?: "") }
-    var purchaseAmountText by rememberSaveable { mutableStateOf(initial?.purchaseAmount?.toPlainString() ?: "") }
+    var currency by rememberSaveable { mutableStateOf(initial?.purchaseAmount?.currency ?: INVESTMENT_CURRENCIES.first()) }
+    var currencyDropdownExpanded by remember { mutableStateOf(false) }
+    var purchaseAmountText by rememberSaveable { mutableStateOf(initial?.purchaseAmount?.amount?.toPlainString() ?: "") }
 
     val pricePerShare = pricePerShareText.trim().toBigDecimalOrNull()
     val valuationAmount = valuationAmountText.trim().toBigDecimalOrNull()
-    val purchasePriceAmount = purchasePriceAmountText.trim().toBigDecimalOrNull()
     val quantity = quantityText.trim().toBigDecimalOrNull()
     val purchaseAmount = purchaseAmountText.trim().toBigDecimalOrNull()
     val isValid = assetName.isNotBlank() && category.isNotBlank() && investmentName.isNotBlank() &&
-        pricePerShare != null && valuationAmount != null && purchasePriceAmount != null &&
-        quantity != null && purchaseAmount != null
+        pricePerShare != null && valuationAmount != null && quantity != null && purchaseAmount != null
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1135,6 +1265,7 @@ private fun InvestmentFormDialog(
                 )
                 BenchmarkNumberField(pricePerShareText, { pricePerShareText = it }, R.string.investment_field_price_per_share, pricePerShare != null)
                 BenchmarkNumberField(valuationAmountText, { valuationAmountText = it }, R.string.investment_field_valuation_amount, valuationAmount != null)
+                BenchmarkNumberField(quantityText, { quantityText = it }, R.string.investment_field_quantity, quantity != null)
                 ExposedDropdownMenuBox(
                     expanded = currencyDropdownExpanded,
                     onExpandedChange = { currencyDropdownExpanded = !currencyDropdownExpanded },
@@ -1143,7 +1274,7 @@ private fun InvestmentFormDialog(
                         value = currency,
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text(stringResource(R.string.investment_field_purchase_price_currency)) },
+                        label = { Text(stringResource(R.string.investment_field_purchase_amount_currency)) },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = currencyDropdownExpanded) },
                         modifier = Modifier
                             .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
@@ -1164,8 +1295,6 @@ private fun InvestmentFormDialog(
                         }
                     }
                 }
-                BenchmarkNumberField(purchasePriceAmountText, { purchasePriceAmountText = it }, R.string.investment_field_purchase_price_amount, purchasePriceAmount != null)
-                BenchmarkNumberField(quantityText, { quantityText = it }, R.string.investment_field_quantity, quantity != null)
                 BenchmarkNumberField(purchaseAmountText, { purchaseAmountText = it }, R.string.investment_field_purchase_amount, purchaseAmount != null)
             }
         },
@@ -1180,9 +1309,8 @@ private fun InvestmentFormDialog(
                             investmentName = investmentName.trim(),
                             pricePerShare = pricePerShare!!,
                             valuationAmount = valuationAmount!!,
-                            purchasePrice = PurchasePrice(currency = currency, amount = purchasePriceAmount!!),
                             quantity = quantity!!,
-                            purchaseAmount = purchaseAmount!!,
+                            purchaseAmount = CurrencyAmount(currency = currency, amount = purchaseAmount!!),
                         )
                     )
                 },

@@ -1,9 +1,9 @@
 package com.jkapp.ui
 
 import com.jkapp.data.firestore.FakeFirestoreRepository
+import com.jkapp.data.model.CurrencyAmount
 import com.jkapp.data.model.DailyAssetInvestment
 import com.jkapp.data.model.InvestmentItem
-import com.jkapp.data.model.PurchasePrice
 import java.math.BigDecimal
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -49,9 +49,8 @@ class DailyAssetInvestmentViewModelTest {
         investmentName = investmentName,
         pricePerShare = BigDecimal("70000"),
         valuationAmount = valuationAmount,
-        purchasePrice = PurchasePrice(currency = "KRW", amount = BigDecimal("65000")),
         quantity = BigDecimal("10"),
-        purchaseAmount = purchaseAmount,
+        purchaseAmount = CurrencyAmount(currency = "KRW", amount = purchaseAmount),
     )
 
     @Test
@@ -340,7 +339,7 @@ class DailyAssetInvestmentViewModelTest {
     }
 
     @Test
-    fun `importInvestments는 기존 종목의 시세만 갱신하고 매수단가는 기존 값을 유지한다`() = runTest {
+    fun `importInvestments는 기존 종목의 시세와 매수금액(통화 포함)을 갱신한다`() = runTest {
         val existing = makeItem(valuationAmount = BigDecimal("700000"), purchaseAmount = BigDecimal("650000"))
         fakeRepository.setDailyAssetInvestments(
             listOf(DailyAssetInvestment(date = "2026-07-04", owner = "전지훈", investments = listOf(existing)))
@@ -349,8 +348,7 @@ class DailyAssetInvestmentViewModelTest {
 
         val imported = existing.copy(
             valuationAmount = BigDecimal("800000"),
-            purchaseAmount = BigDecimal("650000"),
-            purchasePrice = PurchasePrice(currency = "USD", amount = BigDecimal.ZERO),
+            purchaseAmount = CurrencyAmount(currency = "USD", amount = BigDecimal("700000")),
         )
         viewModel.importInvestments("2026-07-04", "전지훈", listOf(imported))
         advanceUntilIdle()
@@ -359,7 +357,7 @@ class DailyAssetInvestmentViewModelTest {
         val doc = state.investments.find { it.date == "2026-07-04" && it.owner == "전지훈" }
         val updated = doc?.investments?.single()
         assertEquals(BigDecimal("800000"), updated?.valuationAmount)
-        assertEquals(existing.purchasePrice, updated?.purchasePrice)
+        assertEquals(imported.purchaseAmount, updated?.purchaseAmount)
     }
 
     @Test

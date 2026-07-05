@@ -1,7 +1,7 @@
 package com.jkapp.ui
 
+import com.jkapp.data.model.CurrencyAmount
 import com.jkapp.data.model.InvestmentItem
-import com.jkapp.data.model.PurchasePrice
 import java.math.BigDecimal
 
 data class ParsedInvestmentRow(
@@ -14,13 +14,14 @@ private data class InvestmentColumn(val label: String, val aliases: Set<String>)
 
 // 시트에는 비중/리밸런싱/평가손익 등 파생 계산 열이 여러 개 섞여 있고 순서도 시트마다 달라질 수 있어,
 // 고정 열 위치 대신 헤더 행의 이름으로 필요한 7개 열만 찾아 사용한다(BenchmarkSheetPaste와 동일한 방식).
-// 매수단가(통화+금액)는 사용자가 직접 관리하는 필드라 붙여넣기 대상에서 제외한다.
+// 매수단가는 매수금액/보유수량으로 계산해낼 수 있어 붙여넣기 대상에서 제외한다. 매수금액은 원화·달러
+// 표기가 섞여 있을 수 있어, 1주 가격과 마찬가지로 셀에 $ 표시가 있는지로 통화를 함께 인식한다.
 private val INVESTMENT_COLUMNS = listOf(
     InvestmentColumn("계좌", setOf("계좌", "이름")),
     InvestmentColumn("카테고리", setOf("카테고리")),
     InvestmentColumn("투자 종목", setOf("투자종목")),
     InvestmentColumn("1주 가격", setOf("1주가격")),
-    InvestmentColumn("평가 금액(원화)", setOf("평가금액(원화)")),
+    InvestmentColumn("평가 금액(원화)", setOf("평가금액(원화)", "평가금액", "평가 금액")),
     InvestmentColumn("보유수량", setOf("보유수량")),
     InvestmentColumn("매수금액", setOf("매수금액")),
 ).map { column -> column.copy(aliases = column.aliases.mapTo(mutableSetOf()) { it.normalizeInvestmentHeaderCell() }) }
@@ -91,13 +92,13 @@ private fun parseInvestmentRow(line: String, columnIndexes: Map<String, Int>, ow
     if (investmentName.isBlank()) return ParsedInvestmentRow(item = null, error = "투자 종목 값이 비어 있습니다", rawLine = line)
 
     val amounts = mutableMapOf<String, BigDecimal>()
-    var pricePerShareCurrency = "KRW"
+    var purchaseAmountCurrency = "KRW"
     for (label in AMOUNT_COLUMN_LABELS) {
         val raw = cells[columnIndexes.getValue(label)]
         when (val result = parseInvestmentAmountCell(raw)) {
             is InvestmentAmountParseResult.Value -> {
                 amounts[label] = result.amount
-                if (label == "1주 가격" && result.isUsd) pricePerShareCurrency = "USD"
+                if (label == "매수금액" && result.isUsd) purchaseAmountCurrency = "USD"
             }
             InvestmentAmountParseResult.Blank -> return ParsedInvestmentRow(item = null, error = "$label 값이 비어 있습니다", rawLine = line)
             InvestmentAmountParseResult.Invalid -> return ParsedInvestmentRow(
@@ -115,11 +116,8 @@ private fun parseInvestmentRow(line: String, columnIndexes: Map<String, Int>, ow
             investmentName = investmentName,
             pricePerShare = amounts.getValue("1주 가격"),
             valuationAmount = amounts.getValue("평가 금액(원화)"),
-            // 매수단가는 붙여넣기 대상이 아니므로 1주 가격과 같은 통화의 0원/0달러로 채워 두고,
-            // 사용자가 개별 수정에서 직접 입력하도록 남겨 둔다.
-            purchasePrice = PurchasePrice(currency = pricePerShareCurrency, amount = BigDecimal.ZERO),
             quantity = amounts.getValue("보유수량"),
-            purchaseAmount = amounts.getValue("매수금액"),
+            purchaseAmount = CurrencyAmount(currency = purchaseAmountCurrency, amount = amounts.getValue("매수금액")),
         ),
         error = null,
         rawLine = line,
