@@ -77,8 +77,6 @@ import java.math.BigDecimal
 import java.text.NumberFormat
 import java.util.Locale
 
-private val ASSET_OWNERS = listOf("전지훈", "권유경", "공동")
-
 private enum class AssetTab(@StringRes val labelRes: Int) {
     DAILY_ASSET(R.string.asset_tab_daily_asset),
     INVESTMENT(R.string.asset_tab_investment),
@@ -129,41 +127,23 @@ private sealed interface AssetFormTarget {
 @Composable
 private fun DailyAssetTab(viewModel: DailyAssetViewModel) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    // 아래 파생 State들은 DailyAssetViewModel에서 데이터가 실제로 바뀔 때만 계산되어 캐시된다.
+    // 여기서 remember로 다시 계산하면 탭을 오갈 때마다 컴포지션이 새로 생성되면서 매번
+    // 재계산되므로(이슈 #37), 뷰모델의 StateFlow를 그대로 구독한다.
+    val availableDates by viewModel.availableDates.collectAsStateWithLifecycle()
+    val selectedDate by viewModel.selectedDate.collectAsStateWithLifecycle()
+    val currentDailyAsset by viewModel.currentDailyAsset.collectAsStateWithLifecycle()
+    val ownerFilterOptions by viewModel.ownerFilterOptions.collectAsStateWithLifecycle()
+    val selectedOwners by viewModel.selectedOwners.collectAsStateWithLifecycle()
+    val showHidden by viewModel.showHidden.collectAsStateWithLifecycle()
+    val groupedAssets by viewModel.groupedAssets.collectAsStateWithLifecycle()
 
-    var selectedDate by rememberSaveable { mutableStateOf<String?>(null) }
     var showDatePicker by rememberSaveable { mutableStateOf(false) }
     // AssetItem은 Parcelable/Serializable이 아니므로 rememberSaveable로 저장할 수 없다(회전 시 초기화됨).
     var formTarget by remember { mutableStateOf<AssetFormTarget?>(null) }
     var showFabMenu by remember { mutableStateOf(false) }
     var showPasteImport by rememberSaveable { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<AssetPendingDelete?>(null) }
-    var selectedOwners by rememberSaveable { mutableStateOf<Set<String>>(emptySet()) }
-    var showHidden by rememberSaveable { mutableStateOf(false) }
-
-    val success = uiState as? DailyAssetUiState.Success
-    val availableDates = remember(success) {
-        success?.dailyAssets?.map { it.date }?.sortedDescending() ?: emptyList()
-    }
-
-    LaunchedEffect(availableDates) {
-        if (selectedDate == null || selectedDate !in availableDates) {
-            selectedDate = availableDates.firstOrNull()
-        }
-    }
-
-    val currentDailyAsset = remember(success, selectedDate) {
-        success?.dailyAssets?.find { it.date == selectedDate }
-    }
-    // 필터 칩은 고정된 ASSET_OWNERS에 더해, 과거 데이터 등으로 그 외의 명의 값이 존재하면 함께 노출한다.
-    val ownerFilterOptions = remember(currentDailyAsset) {
-        ASSET_OWNERS + currentDailyAsset?.assets.orEmpty().map { it.owner }.filter { it !in ASSET_OWNERS }.distinct()
-    }
-    val groupedAssets = remember(currentDailyAsset, selectedOwners, showHidden) {
-        currentDailyAsset?.assets.orEmpty()
-            .withIndex()
-            .filter { (selectedOwners.isEmpty() || it.value.owner in selectedOwners) && (showHidden || !it.value.hidden) }
-            .groupBy({ it.value.owner }, { it })
-    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         when (val state = uiState) {
@@ -183,18 +163,16 @@ private fun DailyAssetTab(viewModel: DailyAssetViewModel) {
                     DateNavigatorBar(
                         selectedDate = selectedDate,
                         availableDates = availableDates,
-                        onSelectDate = { selectedDate = it },
+                        onSelectDate = viewModel::selectDate,
                         onPickNewDate = { showDatePicker = true },
                     )
                     OwnerFilterRow(
                         owners = ownerFilterOptions,
                         selectedOwners = selectedOwners,
-                        onToggle = { owner ->
-                            selectedOwners = if (owner in selectedOwners) selectedOwners - owner else selectedOwners + owner
-                        },
-                        onClearFilter = { selectedOwners = emptySet() },
+                        onToggle = viewModel::toggleOwnerFilter,
+                        onClearFilter = viewModel::clearOwnerFilter,
                         showHidden = showHidden,
-                        onToggleShowHidden = { showHidden = !showHidden },
+                        onToggleShowHidden = viewModel::toggleShowHidden,
                     )
                     if (groupedAssets.isEmpty()) {
                         // 명의 필터로 인해 목록이 비었는지, 아니면 해당 날짜에 자산 자체가 없는지 구분해 안내한다.
@@ -262,7 +240,7 @@ private fun DailyAssetTab(viewModel: DailyAssetViewModel) {
             initialDate = selectedDate,
             onDismiss = { showDatePicker = false },
             onConfirm = { date ->
-                selectedDate = date
+                viewModel.selectDate(date)
                 showDatePicker = false
             },
         )

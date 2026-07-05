@@ -285,6 +285,10 @@ private fun RecordDetailItem(
                 )
             }
 
+            // LazyColumn 미사용(이슈 #37 검토): 이 화면 전체가 이미 verticalScroll(Column)로
+            // 감싸여 있어 그 안에 LazyColumn을 중첩하면 높이 제약이 필요해진다. 첨부파일은
+            // 사용자가 파일 선택기로 한 건씩 추가하는 방식이라 개수가 실사용상 크지 않아
+            // 전환 실익이 낮다고 판단해 스킵한다.
             otherAttachments.forEach { attachment ->
                 val isDownloading = attachment.fileId in downloadingIds
                 AttachmentDetailRow(
