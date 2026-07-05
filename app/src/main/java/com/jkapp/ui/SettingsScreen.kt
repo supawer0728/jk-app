@@ -17,7 +17,11 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -35,6 +39,13 @@ fun SettingsScreen(
 ) {
     val darkModeSetting by viewModel.darkModeSetting.collectAsStateWithLifecycle()
     val hapticIntensity by viewModel.hapticIntensity.collectAsStateWithLifecycle()
+    // 슬라이더 위치는 로컬 상태로 즉시 반영하고, DataStore 저장은 손을 뗄 때(onValueChangeFinished)만
+    // 한다. hapticIntensity StateFlow에 바로 바인딩하면 드래그 중 프레임마다 저장이 발생하고,
+    // 저장이 비동기로 반영되는 동안 손가락과 엄지 위치가 어긋나 보인다.
+    var sliderPosition by remember { mutableFloatStateOf(hapticIntensity.toFloat()) }
+    LaunchedEffect(hapticIntensity) {
+        sliderPosition = hapticIntensity.toFloat()
+    }
 
     Scaffold(
         topBar = {
@@ -73,17 +84,18 @@ fun SettingsScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Slider(
-                    value = hapticIntensity.toFloat(),
-                    onValueChange = { viewModel.setHapticIntensity(it.toInt()) },
+                    value = sliderPosition,
+                    onValueChange = { sliderPosition = it },
+                    onValueChangeFinished = { viewModel.setHapticIntensity(sliderPosition.toInt()) },
                     valueRange = 0f..MAX_HAPTIC_INTENSITY.toFloat(),
                     steps = MAX_HAPTIC_INTENSITY - 1,
                     modifier = Modifier.weight(1f),
                 )
                 Text(
-                    text = if (hapticIntensity == 0) {
+                    text = if (sliderPosition.toInt() == 0) {
                         stringResource(R.string.haptic_intensity_off)
                     } else {
-                        stringResource(R.string.haptic_intensity_value, hapticIntensity)
+                        stringResource(R.string.haptic_intensity_value, sliderPosition.toInt())
                     },
                     modifier = Modifier.padding(start = 12.dp),
                 )
