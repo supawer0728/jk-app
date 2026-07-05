@@ -34,6 +34,7 @@ import com.jkapp.ui.LoginScreen
 import com.jkapp.ui.MainScreen
 import com.jkapp.ui.SettingsScreen
 import com.jkapp.ui.SettingsViewModel
+import com.jkapp.ui.TabOrderViewModel
 import com.jkapp.ui.theme.JkappTheme
 
 class MainActivity : ComponentActivity() {
@@ -45,6 +46,7 @@ class MainActivity : ComponentActivity() {
     private val investmentViewModel: DailyAssetInvestmentViewModel by viewModels { DailyAssetInvestmentViewModel.factory() }
     private val benchmarkViewModel: BenchmarkViewModel by viewModels { BenchmarkViewModel.factory() }
     private val settingsViewModel: SettingsViewModel by viewModels { SettingsViewModel.factory(appPreferences) }
+    private val tabOrderViewModel: TabOrderViewModel by viewModels { TabOrderViewModel.factory() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -87,6 +89,7 @@ class MainActivity : ComponentActivity() {
                                 dailyAssetViewModel = dailyAssetViewModel,
                                 investmentViewModel = investmentViewModel,
                                 benchmarkViewModel = benchmarkViewModel,
+                                tabOrderViewModel = tabOrderViewModel,
                                 onNavigateToDetail = { date ->
                                     backStack.add(DiaryDetailRoute(date))
                                 },
