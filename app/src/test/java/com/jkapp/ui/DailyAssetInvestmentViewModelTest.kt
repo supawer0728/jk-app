@@ -310,4 +310,101 @@ class DailyAssetInvestmentViewModelTest {
         val doc = state.investments.find { it.date == "2026-07-04" && it.owner == "전지훈" }
         assertEquals(setOf("카카오", "삼성전자"), doc?.investments?.map { it.investmentName }?.toSet())
     }
+
+    @Test
+    fun `importInvestments는 새 문서에 여러 종목을 한 번에 추가하고 선택된 명의를 붙여넣은 명의로 전환한다`() = runTest {
+        advanceUntilIdle()
+
+        viewModel.importInvestments("2026-07-04", "권유경", listOf(makeItem(investmentName = "카카오"), makeItem(investmentName = "삼성전자")))
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as DailyAssetInvestmentUiState.Success
+        val doc = state.investments.find { it.date == "2026-07-04" && it.owner == "권유경" }
+        assertEquals(setOf("카카오", "삼성전자"), doc?.investments?.map { it.investmentName }?.toSet())
+        assertEquals("권유경", viewModel.selectedOwner.value)
+    }
+
+    @Test
+    fun `importInvestments는 기존 종목의 시세만 갱신하고 매수단가는 기존 값을 유지한다`() = runTest {
+        val existing = makeItem(valuationAmount = BigDecimal("700000"), purchaseAmount = BigDecimal("650000"))
+        fakeRepository.setDailyAssetInvestments(
+            listOf(DailyAssetInvestment(date = "2026-07-04", owner = "전지훈", investments = listOf(existing)))
+        )
+        advanceUntilIdle()
+
+        val imported = existing.copy(
+            valuationAmount = BigDecimal("800000"),
+            purchaseAmount = BigDecimal("650000"),
+            purchasePrice = PurchasePrice(currency = "USD", amount = BigDecimal.ZERO),
+        )
+        viewModel.importInvestments("2026-07-04", "전지훈", listOf(imported))
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as DailyAssetInvestmentUiState.Success
+        val doc = state.investments.find { it.date == "2026-07-04" && it.owner == "전지훈" }
+        val updated = doc?.investments?.single()
+        assertEquals(BigDecimal("800000"), updated?.valuationAmount)
+        assertEquals(existing.purchasePrice, updated?.purchasePrice)
+    }
+
+    @Test
+    fun `importInvestments는 빈 목록이면 아무 것도 저장하지 않는다`() = runTest {
+        advanceUntilIdle()
+
+        viewModel.importInvestments("2026-07-04", "전지훈", emptyList())
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as DailyAssetInvestmentUiState.Success
+        assertEquals(emptyList<DailyAssetInvestment>(), state.investments)
+    }
+
+    @Test
+    fun `deleteInvestments는 선택한 여러 종목을 한 번에 삭제한다`() = runTest {
+        val kakao = makeItem(investmentName = "카카오")
+        val samsung = makeItem(investmentName = "삼성전자")
+        val naver = makeItem(investmentName = "네이버")
+        fakeRepository.setDailyAssetInvestments(
+            listOf(DailyAssetInvestment(date = "2026-07-04", owner = "전지훈", investments = listOf(kakao, samsung, naver)))
+        )
+        advanceUntilIdle()
+
+        viewModel.deleteInvestments("2026-07-04", "전지훈", listOf(kakao, samsung))
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as DailyAssetInvestmentUiState.Success
+        val doc = state.investments.find { it.date == "2026-07-04" && it.owner == "전지훈" }
+        assertEquals(listOf(naver), doc?.investments)
+    }
+
+    @Test
+    fun `deleteInvestments로 전체 종목을 지우면 문서 자체가 삭제된다`() = runTest {
+        val kakao = makeItem(investmentName = "카카오")
+        val samsung = makeItem(investmentName = "삼성전자")
+        fakeRepository.setDailyAssetInvestments(
+            listOf(DailyAssetInvestment(date = "2026-07-04", owner = "전지훈", investments = listOf(kakao, samsung)))
+        )
+        advanceUntilIdle()
+
+        viewModel.deleteInvestments("2026-07-04", "전지훈", listOf(kakao, samsung))
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as DailyAssetInvestmentUiState.Success
+        assertNull(state.investments.find { it.date == "2026-07-04" && it.owner == "전지훈" })
+    }
+
+    @Test
+    fun `deleteInvestments는 빈 목록이면 아무 것도 삭제하지 않는다`() = runTest {
+        val item = makeItem()
+        fakeRepository.setDailyAssetInvestments(
+            listOf(DailyAssetInvestment(date = "2026-07-04", owner = "전지훈", investments = listOf(item)))
+        )
+        advanceUntilIdle()
+
+        viewModel.deleteInvestments("2026-07-04", "전지훈", emptyList())
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as DailyAssetInvestmentUiState.Success
+        val doc = state.investments.find { it.date == "2026-07-04" && it.owner == "전지훈" }
+        assertEquals(listOf(item), doc?.investments)
+    }
 }

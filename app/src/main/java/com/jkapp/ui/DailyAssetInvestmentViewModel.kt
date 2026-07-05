@@ -1,5 +1,6 @@
 package com.jkapp.ui
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -134,6 +135,52 @@ class DailyAssetInvestmentViewModel(
         }
     }
 
+    // 여러 종목을 하나의 upsert로 한 번에 삭제한다("전체 삭제"/"선택 삭제"가 공통으로 사용하는 메서드).
+    // 결과가 비면 mutateInvestments가 문서 자체를 삭제하므로, "전체 삭제"는 현재 목록 전체를 넘기면 된다.
+    fun deleteInvestments(date: String, owner: String, targets: List<InvestmentItem>) {
+        if (targets.isEmpty()) return
+        val targetSet = targets.toSet()
+        mutateInvestments(date, owner, "투자 종목 삭제에 실패했습니다") { items -> items.filterNot { it in targetSet } }
+    }
+
+    // 구글시트 붙여넣기 텍스트를 파싱한다. owner는 붙여넣기 다이얼로그에서 선택한 명의로, 파싱된
+    // 모든 종목에 공통 적용된다. 파싱 실패 행은 원본 값을 그대로 로그에 남겨 디버깅에 활용한다.
+    fun parsePasteText(text: String, owner: String): List<ParsedInvestmentRow> {
+        val result = parseInvestmentSheetPaste(text, owner)
+        result.filter { it.error != null }.forEach { row ->
+            Log.w(TAG, "투자 종목 붙여넣기 파싱 실패: error=${row.error}, input=\"${row.rawLine}\"")
+        }
+        return result
+    }
+
+    // (계좌, 카테고리, 투자종목)이 같은 항목은 시세/보유수량/매수금액을 갱신하고, 없는 항목은 새로
+    // 추가한다. 매수단가는 붙여넣기 데이터에 없는, 사용자가 직접 관리하는 필드이므로 기존 값을
+    // 그대로 유지한다(DailyAssetViewModel.importAssets의 card/hidden 유지와 동일한 이유).
+    fun importInvestments(date: String, owner: String, items: List<InvestmentItem>) {
+        if (items.isEmpty()) return
+        mutateInvestments(date, owner, "투자 종목 저장에 실패했습니다") { existing ->
+            val merged = existing.toMutableList()
+            items.forEach { imported ->
+                val index = merged.indexOfFirst {
+                    it.assetName == imported.assetName && it.category == imported.category && it.investmentName == imported.investmentName
+                }
+                if (index >= 0) {
+                    val current = merged[index]
+                    merged[index] = current.copy(
+                        pricePerShare = imported.pricePerShare,
+                        valuationAmount = imported.valuationAmount,
+                        quantity = imported.quantity,
+                        purchaseAmount = imported.purchaseAmount,
+                    )
+                } else {
+                    merged.add(imported)
+                }
+            }
+            merged
+        }
+        selectOwner(owner)
+    }
+
     fun consumeActionError() {
         _actionError.value = null
     }
@@ -169,6 +216,8 @@ class DailyAssetInvestmentViewModel(
         (uiState.value as? DailyAssetInvestmentUiState.Success)?.investments?.find { it.date == date && it.owner == owner }
 
     companion object {
+        private const val TAG = "DailyAssetInvestmentViewModel"
+
         fun factory(): ViewModelProvider.Factory =
             viewModelFactory { initializer { DailyAssetInvestmentViewModel() } }
     }

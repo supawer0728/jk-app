@@ -1,6 +1,7 @@
 package com.jkapp.ui
 
 import androidx.annotation.StringRes
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
@@ -728,6 +729,28 @@ private fun InvestmentTab(viewModel: DailyAssetInvestmentViewModel) {
     // InvestmentItem은 Parcelable/Serializable이 아니므로 rememberSaveable로 저장할 수 없다(회전 시 초기화됨).
     var formTarget by remember { mutableStateOf<InvestmentFormTarget?>(null) }
     var pendingDelete by remember { mutableStateOf<InvestmentPendingDelete?>(null) }
+    var showFabMenu by remember { mutableStateOf(false) }
+    var showPasteImport by rememberSaveable { mutableStateOf(false) }
+    var isSelectionMode by rememberSaveable { mutableStateOf(false) }
+    var selectedItems by remember { mutableStateOf<Set<InvestmentItem>>(emptySet()) }
+    var showDeleteAllConfirm by remember { mutableStateOf(false) }
+    val listState = rememberLazyListState()
+
+    // 선택 모드에 들어가면 맨 위(첫 항목)부터 볼 수 있도록 목록을 위로 스크롤한다(BenchmarkTab과 동일한 패턴).
+    LaunchedEffect(isSelectionMode) {
+        if (isSelectionMode) listState.animateScrollToItem(0)
+    }
+
+    fun exitSelectionMode() {
+        isSelectionMode = false
+        selectedItems = emptySet()
+    }
+
+    // 명의나 날짜를 바꾸면 화면에 보이는 목록 자체가 바뀌므로, 선택 모드에서 체크해 둔 항목이
+    // 더 이상 보이는 목록과 무관해진다(엉뚱한 항목 삭제 방지). 전환 시 선택 모드를 초기화한다.
+    LaunchedEffect(selectedOwner, selectedDate) {
+        exitSelectionMode()
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         when (val state = uiState) {
@@ -766,12 +789,22 @@ private fun InvestmentTab(viewModel: DailyAssetInvestmentViewModel) {
                     } else {
                         LazyColumn(
                             modifier = Modifier.fillMaxSize(),
+                            state = listState,
                             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 80.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             items(rowMetrics, key = { it.item }) { entry ->
                                 InvestmentListItem(
                                     entry = entry,
+                                    isSelectionMode = isSelectionMode,
+                                    isSelected = entry.item in selectedItems,
+                                    onToggleSelected = {
+                                        selectedItems = if (entry.item in selectedItems) {
+                                            selectedItems - entry.item
+                                        } else {
+                                            selectedItems + entry.item
+                                        }
+                                    },
                                     onEditRequest = { formTarget = InvestmentFormTarget.Edit(entry.item) },
                                     onDeleteRequest = {
                                         val date = selectedDate
@@ -785,11 +818,68 @@ private fun InvestmentTab(viewModel: DailyAssetInvestmentViewModel) {
                     }
                 }
 
-                FloatingActionButton(
-                    onClick = { formTarget = InvestmentFormTarget.New },
-                    modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.investment_add))
+                if (isSelectionMode) {
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Button(
+                            onClick = { showDeleteAllConfirm = true },
+                            enabled = rowMetrics.isNotEmpty(),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                            modifier = Modifier.weight(1f),
+                        ) { Text(stringResource(R.string.investment_delete_all)) }
+                        Button(
+                            onClick = {
+                                val date = selectedDate
+                                if (date != null) {
+                                    viewModel.deleteInvestments(date, selectedOwner, selectedItems.toList())
+                                }
+                                exitSelectionMode()
+                            },
+                            enabled = selectedItems.isNotEmpty(),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                            modifier = Modifier.weight(1f),
+                        ) { Text(stringResource(R.string.investment_delete_selected)) }
+                        OutlinedButton(
+                            onClick = { exitSelectionMode() },
+                            modifier = Modifier.weight(1f),
+                        ) { Text(stringResource(R.string.cancel)) }
+                    }
+                } else {
+                    Box(modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Box {
+                                FloatingActionButton(onClick = { showFabMenu = true }) {
+                                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.investment_add))
+                                }
+                                DropdownMenu(expanded = showFabMenu, onDismissRequest = { showFabMenu = false }) {
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.asset_add_individual)) },
+                                        onClick = {
+                                            showFabMenu = false
+                                            formTarget = InvestmentFormTarget.New
+                                        },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.asset_add_paste)) },
+                                        onClick = {
+                                            showFabMenu = false
+                                            showPasteImport = true
+                                        },
+                                    )
+                                }
+                            }
+                            if (rowMetrics.isNotEmpty()) {
+                                FloatingActionButton(onClick = { isSelectionMode = true }) {
+                                    Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.investment_bulk_delete))
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -818,6 +908,20 @@ private fun InvestmentTab(viewModel: DailyAssetInvestmentViewModel) {
                     InvestmentFormTarget.New -> viewModel.addInvestment(dateForForm, selectedOwner, item)
                 }
                 formTarget = null
+            },
+        )
+    }
+
+    if (showPasteImport) {
+        // 투자 종목이 하나도 없어 선택된 날짜가 없을 때는 오늘 날짜로 첫 문서를 생성한다.
+        val dateForImport = selectedDate ?: DiaryViewModel.todayDate()
+        InvestmentPasteImportDialog(
+            initialOwner = selectedOwner,
+            onDismiss = { showPasteImport = false },
+            onParse = viewModel::parsePasteText,
+            onImport = { owner, items ->
+                viewModel.importInvestments(dateForImport, owner, items)
+                showPasteImport = false
             },
         )
     }
@@ -854,6 +958,31 @@ private fun InvestmentTab(viewModel: DailyAssetInvestmentViewModel) {
             }
         )
     }
+
+    if (showDeleteAllConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteAllConfirm = false },
+            title = { Text(stringResource(R.string.investment_delete_all_confirm_title)) },
+            text = { Text(stringResource(R.string.investment_delete_all_confirm_message)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    val date = selectedDate
+                    if (date != null) {
+                        viewModel.deleteInvestments(date, selectedOwner, rowMetrics.map { it.item })
+                    }
+                    showDeleteAllConfirm = false
+                    exitSelectionMode()
+                }) {
+                    Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteAllConfirm = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -872,16 +1001,26 @@ private fun InvestmentOwnerTabRow(owners: List<String>, selectedOwner: String, o
 @Composable
 private fun InvestmentListItem(
     entry: InvestmentItemMetrics,
+    isSelectionMode: Boolean,
+    isSelected: Boolean,
+    onToggleSelected: () -> Unit,
     onEditRequest: () -> Unit,
     onDeleteRequest: () -> Unit,
 ) {
     val item = entry.item
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .let { if (isSelectionMode) it.clickable(onClick = onToggleSelected) else it },
+    ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            if (isSelectionMode) {
+                Checkbox(checked = isSelected, onCheckedChange = { onToggleSelected() })
+            }
             Column(modifier = Modifier.weight(1f)) {
                 Text(item.investmentName, style = MaterialTheme.typography.bodyLarge)
                 Text(
@@ -901,11 +1040,13 @@ private fun InvestmentListItem(
                     color = signColor(entry.profit),
                 )
             }
-            IconButton(onClick = onEditRequest) {
-                Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.edit))
-            }
-            IconButton(onClick = onDeleteRequest) {
-                Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.delete))
+            if (!isSelectionMode) {
+                IconButton(onClick = onEditRequest) {
+                    Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.edit))
+                }
+                IconButton(onClick = onDeleteRequest) {
+                    Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.delete))
+                }
             }
         }
     }
@@ -1031,6 +1172,68 @@ private fun InvestmentFormDialog(
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
         }
     )
+}
+
+// 구글시트 붙여넣기와 개별 입력이 명의를 다루는 방식이 다르다: 개별 입력은 현재 화면에 표시 중인
+// 명의 탭(selectedOwner)에 저장되지만, 붙여넣기 시트에는 명의 열이 없어 다이얼로그 자체에서
+// 명의를 선택하게 한다(요구사항: "구글시트 붙여넣기할 때 어떤 명의의 투자종목인지 선택할 수 있다").
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun InvestmentPasteImportDialog(
+    initialOwner: String,
+    onDismiss: () -> Unit,
+    onParse: (text: String, owner: String) -> List<ParsedInvestmentRow>,
+    onImport: (owner: String, items: List<InvestmentItem>) -> Unit,
+) {
+    var owner by rememberSaveable { mutableStateOf(initialOwner) }
+    var ownerDropdownExpanded by remember { mutableStateOf(false) }
+
+    PasteImportDialog(
+        title = stringResource(R.string.investment_paste_import_title),
+        description = stringResource(R.string.investment_paste_import_description),
+        extraOptions = {
+            ExposedDropdownMenuBox(
+                expanded = ownerDropdownExpanded,
+                onExpandedChange = { ownerDropdownExpanded = !ownerDropdownExpanded },
+            ) {
+                OutlinedTextField(
+                    value = owner,
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text(stringResource(R.string.asset_field_owner)) },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = ownerDropdownExpanded) },
+                    modifier = Modifier
+                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                        .fillMaxWidth(),
+                )
+                ExposedDropdownMenu(
+                    expanded = ownerDropdownExpanded,
+                    onDismissRequest = { ownerDropdownExpanded = false },
+                ) {
+                    INVESTMENT_OWNERS.forEach { candidate ->
+                        DropdownMenuItem(
+                            text = { Text(candidate) },
+                            onClick = {
+                                owner = candidate
+                                ownerDropdownExpanded = false
+                            },
+                        )
+                    }
+                }
+            }
+        },
+        onDismiss = onDismiss,
+        onParse = { text -> onParse(text, owner) },
+        itemOf = { it.item },
+        errorOf = { it.error },
+        rawLineOf = { it.rawLine },
+        onImport = { items -> onImport(owner, items) },
+    ) { item ->
+        Text(
+            text = "${item.assetName} · ${item.investmentName} · ${item.valuationAmount.toDisplayAmount()}",
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
 }
 
 private sealed interface BenchmarkFormTarget {
