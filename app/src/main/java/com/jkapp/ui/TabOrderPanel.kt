@@ -114,10 +114,12 @@ private fun ReorderableTabIcon(
 
     val infiniteTransition = rememberInfiniteTransition(label = "tabJiggle")
     val jiggleAngle by infiniteTransition.animateFloat(
-        initialValue = -3f,
-        targetValue = 3f,
+        initialValue = -6f,
+        targetValue = 6f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 160, easing = LinearEasing),
+            // tab.ordinal로 지연을 살짝 다르게 줘서 모든 아이콘이 완전히 같은 박자로 움직이지 않도록 한다.
+            // 재배열 중 바뀌는 index 대신 안정적인 tab.ordinal을 키로 써서 드래그 중 애니메이션이 재시작되지 않는다.
+            animation = tween(durationMillis = 160, delayMillis = (tab.ordinal % 3) * 50, easing = LinearEasing),
             repeatMode = RepeatMode.Reverse,
         ),
         label = "tabJiggleAngle",

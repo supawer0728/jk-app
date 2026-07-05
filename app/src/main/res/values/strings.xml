@@ -9,6 +9,9 @@
     <string name="tab_calendar">캘린더</string>
     <string name="tab_todo_placeholder">TODO 탭은 준비 중입니다</string>
     <string name="tab_calendar_placeholder">캘린더 탭은 준비 중입니다</string>
+    <string name="tab_dm1">DM1</string>
+    <string name="tab_dm2">DM2</string>
+    <string name="tab_dm3">DM3</string>
     <string name="profile">프로필</string>
     <string name="sign_out">로그아웃</string>
     <string name="settings">설정</string> <!-- 프로필 드롭다운 메뉴 라벨 -->

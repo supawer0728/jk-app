@@ -256,6 +256,7 @@ fun MainScreen(
                 )
                 MainTab.TODO -> TodoTabScreen()
                 MainTab.CALENDAR -> CalendarTabScreen()
+                MainTab.DM1, MainTab.DM2, MainTab.DM3 -> DummyTabScreen(selectedTab.labelRes)
             }
         }
     }

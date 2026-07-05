@@ -46,7 +46,10 @@ class TabOrderViewModelTest {
         val merged = TabOrderViewModel.mergeTabOrder(saved, MainTab.entries)
 
         assertEquals(
-            listOf(MainTab.DIARY, MainTab.HOME, MainTab.ASSET, MainTab.TODO, MainTab.CALENDAR),
+            listOf(
+                MainTab.DIARY, MainTab.HOME, MainTab.ASSET, MainTab.TODO, MainTab.CALENDAR,
+                MainTab.DM1, MainTab.DM2, MainTab.DM3,
+            ),
             merged
         )
     }
@@ -58,7 +61,10 @@ class TabOrderViewModelTest {
         val merged = TabOrderViewModel.mergeTabOrder(saved, MainTab.entries)
 
         assertEquals(
-            listOf(MainTab.ASSET, MainTab.HOME, MainTab.DIARY, MainTab.TODO, MainTab.CALENDAR),
+            listOf(
+                MainTab.ASSET, MainTab.HOME, MainTab.DIARY, MainTab.TODO, MainTab.CALENDAR,
+                MainTab.DM1, MainTab.DM2, MainTab.DM3,
+            ),
             merged
         )
     }
@@ -71,7 +77,10 @@ class TabOrderViewModelTest {
         viewModel.moveTab(0, 2)
 
         assertEquals(
-            listOf(MainTab.ASSET, MainTab.DIARY, MainTab.HOME, MainTab.TODO, MainTab.CALENDAR),
+            listOf(
+                MainTab.ASSET, MainTab.DIARY, MainTab.HOME, MainTab.TODO, MainTab.CALENDAR,
+                MainTab.DM1, MainTab.DM2, MainTab.DM3,
+            ),
             viewModel.tabOrder.value
         )
     }
