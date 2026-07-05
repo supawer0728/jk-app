@@ -24,14 +24,17 @@ class SettingsViewModelTest {
     private val testDispatcher = StandardTestDispatcher()
     private lateinit var appPreferences: AppPreferences
     private lateinit var darkModeSettingFlow: MutableStateFlow<DarkModeSetting>
+    private lateinit var hapticIntensityFlow: MutableStateFlow<Int>
     private lateinit var viewModel: SettingsViewModel
 
     @Before
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
         darkModeSettingFlow = MutableStateFlow(DarkModeSetting.SYSTEM)
+        hapticIntensityFlow = MutableStateFlow(5)
         appPreferences = mockk(relaxed = true)
         every { appPreferences.darkModeSetting } returns darkModeSettingFlow
+        every { appPreferences.hapticIntensity } returns hapticIntensityFlow
         viewModel = SettingsViewModel(appPreferences)
     }
 
@@ -63,5 +66,30 @@ class SettingsViewModelTest {
         advanceUntilIdle()
 
         coVerify { appPreferences.setDarkModeSetting(DarkModeSetting.ON) }
+    }
+
+    @Test
+    fun `초기값은 AppPreferences에 저장된 햅틱 강도를 따른다`() = runTest {
+        advanceUntilIdle()
+
+        assertEquals(5, viewModel.hapticIntensity.value)
+    }
+
+    @Test
+    fun `hapticIntensity Flow가 갱신되면 상태도 갱신된다`() = runTest {
+        advanceUntilIdle()
+
+        hapticIntensityFlow.value = 0
+        advanceUntilIdle()
+
+        assertEquals(0, viewModel.hapticIntensity.value)
+    }
+
+    @Test
+    fun `setHapticIntensity 호출 시 AppPreferences에 저장한다`() = runTest {
+        viewModel.setHapticIntensity(8)
+        advanceUntilIdle()
+
+        coVerify { appPreferences.setHapticIntensity(8) }
     }
 }
