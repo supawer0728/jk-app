@@ -2,6 +2,7 @@ package com.jkapp.ui
 
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.StartOffset
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -117,10 +118,13 @@ private fun ReorderableTabIcon(
         initialValue = -6f,
         targetValue = 6f,
         animationSpec = infiniteRepeatable(
-            // tab.ordinal로 지연을 살짝 다르게 줘서 모든 아이콘이 완전히 같은 박자로 움직이지 않도록 한다.
-            // 재배열 중 바뀌는 index 대신 안정적인 tab.ordinal을 키로 써서 드래그 중 애니메이션이 재시작되지 않는다.
-            animation = tween(durationMillis = 160, delayMillis = (tab.ordinal % 3) * 50, easing = LinearEasing),
+            animation = tween(durationMillis = 160, easing = LinearEasing),
             repeatMode = RepeatMode.Reverse,
+            // tab.ordinal로 최초 시작 시점만 살짝 어긋나게 해 모든 아이콘이 완전히 같은 박자로
+            // 움직이지 않도록 한다. tween(delayMillis)를 쓰면 반복마다 지연이 재적용돼 흔들림이
+            // 주기적으로 멈춘 것처럼 보이므로, 최초 1회만 지연시키는 initialStartOffset을 사용한다.
+            // 재배열 중 바뀌는 index 대신 안정적인 tab.ordinal을 키로 써서 드래그 중 애니메이션이 재시작되지 않는다.
+            initialStartOffset = StartOffset((tab.ordinal % 3) * 50),
         ),
         label = "tabJiggleAngle",
     )

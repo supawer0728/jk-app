@@ -280,7 +280,7 @@ private fun TabBarHandle(modifier: Modifier = Modifier) {
             modifier = Modifier
                 .size(width = TAB_BAR_HANDLE_WIDTH, height = TAB_BAR_HANDLE_HEIGHT)
                 .background(
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                     shape = RoundedCornerShape(2.dp),
                 )
         )
