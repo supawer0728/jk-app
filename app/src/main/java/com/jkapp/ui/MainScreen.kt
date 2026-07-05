@@ -58,6 +58,7 @@ fun MainScreen(
     viewModel: AuthViewModel,
     diaryViewModel: DiaryViewModel,
     dailyAssetViewModel: DailyAssetViewModel,
+    investmentViewModel: DailyAssetInvestmentViewModel,
     benchmarkViewModel: BenchmarkViewModel,
     onNavigateToDetail: (String) -> Unit,
     onNavigateToAdd: () -> Unit,
@@ -138,7 +139,11 @@ fun MainScreen(
         Box(modifier = Modifier.padding(innerPadding)) {
             when (selectedTab) {
                 MainTab.HOME -> HomeTabScreen()
-                MainTab.ASSET -> AssetScreen(viewModel = dailyAssetViewModel, benchmarkViewModel = benchmarkViewModel)
+                MainTab.ASSET -> AssetScreen(
+                    viewModel = dailyAssetViewModel,
+                    investmentViewModel = investmentViewModel,
+                    benchmarkViewModel = benchmarkViewModel,
+                )
                 MainTab.DIARY -> DiaryScreen(
                     viewModel = diaryViewModel,
                     onNavigateToDetail = onNavigateToDetail,

@@ -4,6 +4,7 @@ import com.jkapp.data.model.Benchmark
 import com.jkapp.data.model.CatRecord
 import com.jkapp.data.model.CatRecordType
 import com.jkapp.data.model.DailyAsset
+import com.jkapp.data.model.DailyAssetInvestment
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 
@@ -12,6 +13,7 @@ class FakeFirestoreRepository : FirestoreRepository {
     private val _recordTypes = MutableStateFlow<List<CatRecordType>>(emptyList())
     private val _records = MutableStateFlow<List<CatRecord>>(emptyList())
     private val _dailyAssets = MutableStateFlow<List<DailyAsset>>(emptyList())
+    private val _dailyAssetInvestments = MutableStateFlow<List<DailyAssetInvestment>>(emptyList())
     private val _benchmarks = MutableStateFlow<List<Benchmark>>(emptyList())
 
     var addRecordError: Throwable? = null
@@ -22,6 +24,8 @@ class FakeFirestoreRepository : FirestoreRepository {
     var deleteRecordTypeError: Throwable? = null
     var upsertDailyAssetError: Throwable? = null
     var deleteDailyAssetError: Throwable? = null
+    var upsertDailyAssetInvestmentError: Throwable? = null
+    var deleteDailyAssetInvestmentError: Throwable? = null
     var upsertBenchmarkError: Throwable? = null
     var deleteBenchmarkError: Throwable? = null
     var deleteAllBenchmarksError: Throwable? = null
@@ -32,10 +36,12 @@ class FakeFirestoreRepository : FirestoreRepository {
     // 테스트에서 실제 Firestore 네트워크 왕복(suspension)을 흉내내기 위한 훅.
     // 동시 호출 시 뮤텍스로 직렬화되는지 검증하는 데 사용한다.
     var onUpsertDailyAsset: (suspend () -> Unit)? = null
+    var onUpsertDailyAssetInvestment: (suspend () -> Unit)? = null
 
     fun setRecordTypes(types: List<CatRecordType>) { _recordTypes.value = types }
     fun setRecords(records: List<CatRecord>) { _records.value = records }
     fun setDailyAssets(dailyAssets: List<DailyAsset>) { _dailyAssets.value = dailyAssets }
+    fun setDailyAssetInvestments(investments: List<DailyAssetInvestment>) { _dailyAssetInvestments.value = investments }
     fun setBenchmarks(benchmarks: List<Benchmark>) { _benchmarks.value = benchmarks }
 
     override fun getRecordTypes(): Flow<List<CatRecordType>> = _recordTypes
@@ -98,6 +104,24 @@ class FakeFirestoreRepository : FirestoreRepository {
     override suspend fun deleteDailyAsset(date: String) {
         deleteDailyAssetError?.let { throw it }
         _dailyAssets.value = _dailyAssets.value.filter { it.date != date }
+    }
+
+    override fun getDailyAssetInvestments(): Flow<List<DailyAssetInvestment>> = _dailyAssetInvestments
+
+    override suspend fun upsertDailyAssetInvestment(investment: DailyAssetInvestment) {
+        upsertDailyAssetInvestmentError?.let { throw it }
+        onUpsertDailyAssetInvestment?.invoke()
+        val existingIndex = _dailyAssetInvestments.value.indexOfFirst { it.date == investment.date && it.owner == investment.owner }
+        _dailyAssetInvestments.value = if (existingIndex >= 0) {
+            _dailyAssetInvestments.value.mapIndexed { index, existing -> if (index == existingIndex) investment else existing }
+        } else {
+            _dailyAssetInvestments.value + investment
+        }
+    }
+
+    override suspend fun deleteDailyAssetInvestment(date: String, owner: String) {
+        deleteDailyAssetInvestmentError?.let { throw it }
+        _dailyAssetInvestments.value = _dailyAssetInvestments.value.filter { !(it.date == date && it.owner == owner) }
     }
 
     override fun getBenchmarks(): Flow<List<Benchmark>> = _benchmarks
