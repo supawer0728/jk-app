@@ -146,9 +146,17 @@ class DailyAssetInvestmentViewModel(
     // 구글시트 붙여넣기 텍스트를 파싱한다. owner는 붙여넣기 다이얼로그에서 선택한 명의로, 파싱된
     // 모든 종목에 공통 적용된다. 파싱 실패 행은 원본 값을 그대로 로그에 남겨 디버깅에 활용한다.
     fun parsePasteText(text: String, owner: String): List<ParsedInvestmentRow> {
+        // 붙여넣기는 서식 없는 텍스트로만 전달되어 화면에서 원본 시트와 비교하기 어려우므로,
+        // 원본 텍스트와 각 행의 파싱 결과(성공/실패 모두)를 로그로 남겨 어떤 값이 어떻게
+        // 인식됐는지 logcat에서 확인할 수 있게 한다.
+        Log.d(TAG, "투자 종목 붙여넣기 원본 텍스트(owner=$owner):\n$text")
         val result = parseInvestmentSheetPaste(text, owner)
-        result.filter { it.error != null }.forEach { row ->
-            Log.w(TAG, "투자 종목 붙여넣기 파싱 실패: error=${row.error}, input=\"${row.rawLine}\"")
+        result.forEach { row ->
+            if (row.error != null) {
+                Log.w(TAG, "투자 종목 붙여넣기 파싱 실패: error=${row.error}, input=\"${row.rawLine}\"")
+            } else {
+                Log.d(TAG, "투자 종목 붙여넣기 파싱 성공: ${row.item}")
+            }
         }
         return result
     }
