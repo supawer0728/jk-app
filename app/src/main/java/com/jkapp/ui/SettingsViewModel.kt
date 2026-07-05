@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.jkapp.data.AppPreferences
+import com.jkapp.data.DEFAULT_HAPTIC_INTENSITY
 import com.jkapp.data.DarkModeSetting
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -26,6 +27,19 @@ class SettingsViewModel(
     fun setDarkModeSetting(setting: DarkModeSetting) {
         viewModelScope.launch {
             appPreferences.setDarkModeSetting(setting)
+        }
+    }
+
+    val hapticIntensity: StateFlow<Int> = appPreferences.hapticIntensity
+        .stateIn(
+            viewModelScope,
+            SharingStarted.Eagerly,
+            DEFAULT_HAPTIC_INTENSITY
+        )
+
+    fun setHapticIntensity(intensity: Int) {
+        viewModelScope.launch {
+            appPreferences.setHapticIntensity(intensity)
         }
     }
 

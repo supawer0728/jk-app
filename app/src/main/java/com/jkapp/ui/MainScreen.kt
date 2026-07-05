@@ -55,6 +55,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.SubcomposeAsyncImage
 import com.jkapp.auth.AuthViewModel
+import com.jkapp.haptic.LocalHapticController
 import com.jkapp.R
 import java.math.BigDecimal
 
@@ -93,6 +94,7 @@ fun MainScreen(
     var panelExpanded by remember { mutableStateOf(false) }
     var showExitConfirm by remember { mutableStateOf(false) }
     val activity = LocalActivity.current
+    val haptic = LocalHapticController.current
 
     BackHandler {
         when {
@@ -217,9 +219,13 @@ fun MainScreen(
                         TabOrderPanel(
                             tabs = tabOrder,
                             isEditMode = isEditMode,
-                            onToggleEditMode = { tabOrderViewModel.toggleEditMode() },
+                            onToggleEditMode = {
+                                haptic?.tick()
+                                tabOrderViewModel.toggleEditMode()
+                            },
                             onMove = { from, to -> tabOrderViewModel.moveTab(from, to) },
                             onSelectTab = { tab ->
+                                haptic?.tick()
                                 selectedTab = tab
                                 panelExpanded = false
                             },
@@ -229,7 +235,10 @@ fun MainScreen(
                             tabOrder.take(BOTTOM_BAR_VISIBLE_TAB_COUNT).forEach { tab ->
                                 NavigationBarItem(
                                     selected = selectedTab == tab,
-                                    onClick = { selectedTab = tab },
+                                    onClick = {
+                                        haptic?.tick()
+                                        selectedTab = tab
+                                    },
                                     icon = { Icon(tab.icon, contentDescription = null) },
                                     label = { Text(stringResource(tab.labelRes)) }
                                 )

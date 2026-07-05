@@ -32,11 +32,14 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.jkapp.R
+import com.jkapp.haptic.LocalHapticController
+import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
 private val TAB_ITEM_SIZE = 64.dp
@@ -53,6 +56,17 @@ fun TabOrderPanel(
 ) {
     var draggingTabName by remember { mutableStateOf<String?>(null) }
     val rows = (tabs.size + TAB_GRID_COLUMNS - 1) / TAB_GRID_COLUMNS
+    val haptic = LocalHapticController.current
+
+    // 편집 모드에 머무르는 동안 재배열 가능 상태임을 계속 알리기 위해 1초마다 짧은 햅틱을 울린다.
+    // isEditMode가 false가 되면 LaunchedEffect가 취소되어 자동으로 멈춘다.
+    LaunchedEffect(isEditMode) {
+        if (!isEditMode) return@LaunchedEffect
+        while (true) {
+            delay(1_000)
+            haptic?.tick()
+        }
+    }
 
     Column(
         // 편집 모드일 때 화면(패널) 어디를 탭해도 위치 수정을 확정하고 편집 모드를 종료한다.
@@ -110,9 +124,17 @@ private fun ReorderableTabIcon(
     val currentIndex by rememberUpdatedState(index)
     val currentTabCount by rememberUpdatedState(tabCount)
     val currentOnMove by rememberUpdatedState(onMove)
+    val haptic = LocalHapticController.current
     var offsetX by remember { mutableFloatStateOf(0f) }
     var offsetY by remember { mutableFloatStateOf(0f) }
 
+    // 편집(재배열) 모드 진입 애니메이션: 아이콘이 "정상 각도(0도) -> 좌측으로 기울임(-6도) ->
+    // 정상 각도 -> 우측으로 기울임(+6도)"를 -6f~6f 사이에서 왕복(RepeatMode.Reverse)하며
+    // 무한 반복(infiniteRepeatable)해 좌우로 까딱거리는 "흔들흔들"한 느낌을 만든다.
+    // 이 반복은 isEditMode가 true인 동안 멈추지 않고 계속되며(아래 rotationZ 조건에서
+    // isEditMode를 그대로 참조), 사용자가 화면을 탭해 편집 모드를 종료(isEditMode=false)하는
+    // 순간에만 회전이 0도로 되돌아가 흔들림이 멈춘다. 애니메이션 값(jiggleAngle) 자체는
+    // isEditMode와 무관하게 항상 갱신되고 있고, rotationZ에 적용할지 여부만 isEditMode로 판단한다.
     val infiniteTransition = rememberInfiniteTransition(label = "tabJiggle")
     val jiggleAngle by infiniteTransition.animateFloat(
         initialValue = -6f,
@@ -163,6 +185,7 @@ private fun ReorderableTabIcon(
                         val newIndex = (currentIndex + rowShift * columns + colShift)
                             .coerceIn(0, currentTabCount - 1)
                         if (newIndex != currentIndex) {
+                            haptic?.tick()
                             currentOnMove(currentIndex, newIndex)
                             // deltaIndex가 음수일 때 %, /는 0을 향해 잘려서 대각선 드래그에서 보정이
                             // 어긋난다(예: -3 % 4 == -3). floor 기반 mod/div로 정확히 소비한 행/열만큼만 보정한다.
