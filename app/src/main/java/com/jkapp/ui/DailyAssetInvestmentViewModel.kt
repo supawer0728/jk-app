@@ -1,0 +1,175 @@
+package com.jkapp.ui
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
+import com.jkapp.data.firestore.FirestoreRepository
+import com.jkapp.data.firestore.FirestoreRepositoryImpl
+import com.jkapp.data.model.DailyAssetInvestment
+import com.jkapp.data.model.InvestmentItem
+import com.jkapp.data.model.InvestmentItemMetrics
+import com.jkapp.data.model.withProfitMetrics
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+
+// 투자종목 등록/수정 폼과 명의 탭이 함께 참조하는 고정 명의 목록 (DailyAsset의 ASSET_OWNERS와 달리 "공동"은 없다).
+internal val INVESTMENT_OWNERS = listOf("전지훈", "권유경")
+
+class DailyAssetInvestmentViewModel(
+    private val repository: FirestoreRepository = FirestoreRepositoryImpl(),
+) : ViewModel() {
+
+    private val _uiState = MutableStateFlow<DailyAssetInvestmentUiState>(DailyAssetInvestmentUiState.Loading)
+    val uiState: StateFlow<DailyAssetInvestmentUiState> = _uiState.asStateFlow()
+
+    // 저장/삭제 실패는 _uiState를 덮어쓰지 않는다(BenchmarkViewModel과 동일한 이유 — 이슈 #37 이전
+    // DailyAssetViewModel처럼 uiState를 Error로 덮으면 Firestore 리스너가 재발행하기 전까지 목록이
+    // 사라진 채 고착된다).
+    private val _actionError = MutableStateFlow<String?>(null)
+    val actionError: StateFlow<String?> = _actionError.asStateFlow()
+
+    private val _selectedOwner = MutableStateFlow(INVESTMENT_OWNERS.first())
+    val selectedOwner: StateFlow<String> = _selectedOwner.asStateFlow()
+
+    fun selectOwner(owner: String) {
+        _selectedOwner.value = owner
+    }
+
+    private val _selectedDate = MutableStateFlow<String?>(null)
+    val selectedDate: StateFlow<String?> = _selectedDate.asStateFlow()
+
+    fun selectDate(date: String) {
+        _selectedDate.value = date
+    }
+
+    // 문서가 {date}_{owner} 단위로 분리되어 있으므로, 명의별로 데이터가 존재하는 날짜가 다를 수 있다.
+    // 선택된 명의를 기준으로 필터링해, 날짜 네비게이터가 그 명의의 날짜만 보여주도록 한다.
+    val availableDates: StateFlow<List<String>> = combine(uiState, selectedOwner) { state, owner ->
+        (state as? DailyAssetInvestmentUiState.Success)?.investments
+            ?.filter { it.owner == owner }
+            ?.map { it.date }
+            ?.sortedDescending()
+            ?: emptyList()
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    // selectedDate가 null이거나(초기 상태) 명의 전환으로 더 이상 유효하지 않게 되면(이슈 #37과 동일한
+    // 패턴) 해당 명의의 가장 최신 날짜로 보정한다. 아직 데이터가 없는 새 날짜를 고른 경우는 그대로 둔다.
+    val currentInvestment: StateFlow<DailyAssetInvestment?> = combine(
+        uiState, selectedDate, selectedOwner,
+    ) { state, date, owner ->
+        if (state !is DailyAssetInvestmentUiState.Success) return@combine null
+        val resolvedDate = date ?: state.investments.filter { it.owner == owner }.map { it.date }.maxOrNull()
+        resolvedDate?.let { d -> state.investments.find { it.date == d && it.owner == owner } }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    // 종목별 수익금(평가금액 - 매수금액)은 데이터가 실제로 바뀔 때만 계산되어 캐시된다. 컴포저블의
+    // remember에 두면 탭을 오갈 때마다 컴포지션이 새로 생성되면서 매번 재계산되므로(이슈 #37과 동일한
+    // 문제), 벤치마크 탭(rowMetrics)과 같은 방식으로 뷰모델 StateFlow로 옮긴다.
+    val investmentRowMetrics: StateFlow<List<InvestmentItemMetrics>> = currentInvestment
+        .map { it?.investments.orEmpty().withProfitMetrics() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    private var dataJob: Job? = null
+
+    // add/update/delete 요청을 직렬화해, 서로 다른 요청이 같은 stale 스냅샷을 읽고
+    // 상대방의 변경을 덮어쓰는 lost-update를 방지한다.
+    private val investmentMutationMutex = Mutex()
+
+    init {
+        dataJob = viewModelScope.launch {
+            repository.getDailyAssetInvestments()
+                .map { DailyAssetInvestmentUiState.Success(it) as DailyAssetInvestmentUiState }
+                .catch { e ->
+                    emit(DailyAssetInvestmentUiState.Error("투자 종목 목록을 불러오는 중 오류가 발생했습니다: ${e.localizedMessage ?: "알 수 없는 오류"}"))
+                }
+                .collect { state -> _uiState.value = state }
+        }
+        // 사용자가 고른 날짜가 현재 명의의 목록에 없어졌으면(명의 전환, 데이터 삭제 등) 가장 최신
+        // 날짜로 대체한다. availableDates가 바뀔 때만 반응해야, 아직 데이터가 없는 새 날짜를 고르는
+        // 동작이 곧바로 최신 날짜로 되돌려지지 않는다.
+        viewModelScope.launch {
+            availableDates.collect { dates ->
+                if (_selectedDate.value == null || _selectedDate.value !in dates) {
+                    _selectedDate.value = dates.firstOrNull()
+                }
+            }
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        dataJob?.cancel()
+    }
+
+    fun addInvestment(date: String, owner: String, item: InvestmentItem) {
+        mutateInvestments(date, owner, "투자 종목 저장에 실패했습니다") { it + item }
+    }
+
+    // target과 완전히 일치하는 항목을 찾아 교체한다(리스트 index 대신 항목 내용으로 식별).
+    fun updateInvestment(date: String, owner: String, target: InvestmentItem, item: InvestmentItem) {
+        mutateInvestments(date, owner, "투자 종목 저장에 실패했습니다") { items ->
+            val index = items.indexOf(target)
+            check(index >= 0) { "수정하려는 투자 종목을 찾을 수 없습니다(다른 곳에서 이미 변경되었을 수 있습니다)" }
+            items.mapIndexed { i, existing -> if (i == index) item else existing }
+        }
+    }
+
+    // target과 완전히 일치하는 항목을 찾아 삭제한다(리스트 index 대신 항목 내용으로 식별).
+    fun deleteInvestment(date: String, owner: String, target: InvestmentItem) {
+        mutateInvestments(date, owner, "투자 종목 삭제에 실패했습니다") { items ->
+            check(target in items) { "삭제하려는 투자 종목을 찾을 수 없습니다(이미 삭제되었을 수 있습니다)" }
+            items - target
+        }
+    }
+
+    fun consumeActionError() {
+        _actionError.value = null
+    }
+
+    // date+owner 문서에 대한 투자 종목 목록 변경을 뮤텍스로 직렬화해 read-modify-write 사이에
+    // 다른 변경이 끼어들지 않게 한다. 결과가 비면 문서 자체를 삭제하고, 그렇지 않으면 upsert한다.
+    private fun mutateInvestments(
+        date: String,
+        owner: String,
+        errorMessage: String,
+        transform: (List<InvestmentItem>) -> List<InvestmentItem>,
+    ) {
+        viewModelScope.launch {
+            investmentMutationMutex.withLock {
+                runCatching {
+                    val current = findInvestment(date, owner)
+                    val updated = transform(current?.investments.orEmpty())
+                    if (updated.isEmpty()) {
+                        repository.deleteDailyAssetInvestment(date, owner)
+                    } else {
+                        repository.upsertDailyAssetInvestment(
+                            DailyAssetInvestment(date = date, owner = owner, investments = updated)
+                        )
+                    }
+                }.onFailure { e ->
+                    _actionError.value = "$errorMessage: ${e.localizedMessage ?: "알 수 없는 오류"}"
+                }
+            }
+        }
+    }
+
+    private fun findInvestment(date: String, owner: String): DailyAssetInvestment? =
+        (uiState.value as? DailyAssetInvestmentUiState.Success)?.investments?.find { it.date == date && it.owner == owner }
+
+    companion object {
+        fun factory(): ViewModelProvider.Factory =
+            viewModelFactory { initializer { DailyAssetInvestmentViewModel() } }
+    }
+}

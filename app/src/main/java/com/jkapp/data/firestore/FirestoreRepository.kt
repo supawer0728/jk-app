@@ -4,6 +4,7 @@ import com.jkapp.data.model.Benchmark
 import com.jkapp.data.model.CatRecord
 import com.jkapp.data.model.CatRecordType
 import com.jkapp.data.model.DailyAsset
+import com.jkapp.data.model.DailyAssetInvestment
 import kotlinx.coroutines.flow.Flow
 
 interface FirestoreRepository {
@@ -19,6 +20,10 @@ interface FirestoreRepository {
     fun getDailyAssets(): Flow<List<DailyAsset>>
     suspend fun upsertDailyAsset(asset: DailyAsset)
     suspend fun deleteDailyAsset(date: String)
+
+    fun getDailyAssetInvestments(): Flow<List<DailyAssetInvestment>>
+    suspend fun upsertDailyAssetInvestment(investment: DailyAssetInvestment)
+    suspend fun deleteDailyAssetInvestment(date: String, owner: String)
 
     fun getBenchmarks(): Flow<List<Benchmark>>
     suspend fun upsertBenchmark(benchmark: Benchmark)

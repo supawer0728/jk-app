@@ -73,6 +73,9 @@ import com.jkapp.data.model.AssetItem
 import com.jkapp.data.model.Benchmark
 import com.jkapp.data.model.BenchmarkRowMetrics
 import com.jkapp.data.model.DEFAULT_HIDDEN_ASSET_NAMES
+import com.jkapp.data.model.InvestmentItem
+import com.jkapp.data.model.InvestmentItemMetrics
+import com.jkapp.data.model.PurchasePrice
 import java.math.BigDecimal
 import java.text.NumberFormat
 import java.util.Locale
@@ -84,7 +87,11 @@ private enum class AssetTab(@StringRes val labelRes: Int) {
 }
 
 @Composable
-fun AssetScreen(viewModel: DailyAssetViewModel, benchmarkViewModel: BenchmarkViewModel) {
+fun AssetScreen(
+    viewModel: DailyAssetViewModel,
+    investmentViewModel: DailyAssetInvestmentViewModel,
+    benchmarkViewModel: BenchmarkViewModel,
+) {
     var selectedTab by rememberSaveable { mutableStateOf(AssetTab.DAILY_ASSET) }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -100,17 +107,10 @@ fun AssetScreen(viewModel: DailyAssetViewModel, benchmarkViewModel: BenchmarkVie
         Box(modifier = Modifier.fillMaxSize()) {
             when (selectedTab) {
                 AssetTab.DAILY_ASSET -> DailyAssetTab(viewModel = viewModel)
-                AssetTab.INVESTMENT -> PlaceholderTabContent(stringResource(R.string.asset_tab_investment_placeholder))
+                AssetTab.INVESTMENT -> InvestmentTab(viewModel = investmentViewModel)
                 AssetTab.BENCHMARK -> BenchmarkTab(viewModel = benchmarkViewModel)
             }
         }
-    }
-}
-
-@Composable
-private fun PlaceholderTabContent(message: String) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(message)
     }
 }
 
@@ -699,6 +699,336 @@ private fun <T, R> PasteImportDialog(
             } else {
                 TextButton(onClick = { parsed = null }) { Text(stringResource(R.string.asset_paste_import_back)) }
             }
+        }
+    )
+}
+
+private data class InvestmentPendingDelete(val date: String, val owner: String, val target: InvestmentItem)
+
+private sealed interface InvestmentFormTarget {
+    data object New : InvestmentFormTarget
+    data class Edit(val target: InvestmentItem) : InvestmentFormTarget
+}
+
+private val INVESTMENT_CURRENCIES = listOf("KRW", "USD")
+
+@Composable
+private fun InvestmentTab(viewModel: DailyAssetInvestmentViewModel) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val actionError by viewModel.actionError.collectAsStateWithLifecycle()
+    // 아래 파생 State들은 DailyAssetInvestmentViewModel에서 데이터가 실제로 바뀔 때만 계산되어
+    // 캐시된다. 여기서 remember로 다시 계산하면 탭을 오갈 때마다 컴포지션이 새로 생성되면서 매번
+    // 재계산되므로(이슈 #37), 뷰모델의 StateFlow를 그대로 구독한다.
+    val availableDates by viewModel.availableDates.collectAsStateWithLifecycle()
+    val selectedDate by viewModel.selectedDate.collectAsStateWithLifecycle()
+    val selectedOwner by viewModel.selectedOwner.collectAsStateWithLifecycle()
+    val rowMetrics by viewModel.investmentRowMetrics.collectAsStateWithLifecycle()
+
+    var showDatePicker by rememberSaveable { mutableStateOf(false) }
+    // InvestmentItem은 Parcelable/Serializable이 아니므로 rememberSaveable로 저장할 수 없다(회전 시 초기화됨).
+    var formTarget by remember { mutableStateOf<InvestmentFormTarget?>(null) }
+    var pendingDelete by remember { mutableStateOf<InvestmentPendingDelete?>(null) }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        when (val state = uiState) {
+            is DailyAssetInvestmentUiState.Loading -> {
+                LoadingIndicator(modifier = Modifier.align(Alignment.Center))
+            }
+            is DailyAssetInvestmentUiState.Error -> {
+                Text(
+                    text = state.message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.align(Alignment.Center).padding(16.dp)
+                )
+            }
+            is DailyAssetInvestmentUiState.Success -> {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    DateNavigatorBar(
+                        selectedDate = selectedDate,
+                        availableDates = availableDates,
+                        onSelectDate = viewModel::selectDate,
+                        onPickNewDate = { showDatePicker = true },
+                    )
+                    InvestmentOwnerTabRow(
+                        owners = INVESTMENT_OWNERS,
+                        selectedOwner = selectedOwner,
+                        onSelect = viewModel::selectOwner,
+                    )
+                    if (rowMetrics.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text(
+                                text = stringResource(R.string.investment_empty),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 80.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            items(rowMetrics, key = { it.item }) { entry ->
+                                InvestmentListItem(
+                                    entry = entry,
+                                    onEditRequest = { formTarget = InvestmentFormTarget.Edit(entry.item) },
+                                    onDeleteRequest = {
+                                        val date = selectedDate
+                                        if (date != null) {
+                                            pendingDelete = InvestmentPendingDelete(date = date, owner = selectedOwner, target = entry.item)
+                                        }
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+
+                FloatingActionButton(
+                    onClick = { formTarget = InvestmentFormTarget.New },
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.investment_add))
+                }
+            }
+        }
+    }
+
+    if (showDatePicker) {
+        IsoDatePickerDialog(
+            initialDate = selectedDate,
+            onDismiss = { showDatePicker = false },
+            onConfirm = { date ->
+                viewModel.selectDate(date)
+                showDatePicker = false
+            },
+        )
+    }
+
+    formTarget?.let { target ->
+        // 투자 종목이 하나도 없어 선택된 날짜가 없을 때는 오늘 날짜로 첫 문서를 생성한다.
+        val dateForForm = selectedDate ?: DiaryViewModel.todayDate()
+        InvestmentFormDialog(
+            initial = (target as? InvestmentFormTarget.Edit)?.target,
+            onDismiss = { formTarget = null },
+            onSave = { item ->
+                when (target) {
+                    is InvestmentFormTarget.Edit -> viewModel.updateInvestment(dateForForm, selectedOwner, target.target, item)
+                    InvestmentFormTarget.New -> viewModel.addInvestment(dateForForm, selectedOwner, item)
+                }
+                formTarget = null
+            },
+        )
+    }
+
+    actionError?.let { message ->
+        AlertDialog(
+            onDismissRequest = { viewModel.consumeActionError() },
+            text = { Text(message) },
+            confirmButton = {
+                TextButton(onClick = { viewModel.consumeActionError() }) {
+                    Text(stringResource(android.R.string.ok))
+                }
+            },
+        )
+    }
+
+    pendingDelete?.let { pending ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text(stringResource(R.string.investment_delete_confirm_title)) },
+            text = { Text(stringResource(R.string.investment_delete_confirm_message, pending.target.investmentName)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deleteInvestment(pending.date, pending.owner, pending.target)
+                    pendingDelete = null
+                }) {
+                    Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun InvestmentOwnerTabRow(owners: List<String>, selectedOwner: String, onSelect: (String) -> Unit) {
+    SecondaryTabRow(selectedTabIndex = owners.indexOf(selectedOwner).coerceAtLeast(0)) {
+        owners.forEach { owner ->
+            Tab(
+                selected = owner == selectedOwner,
+                onClick = { onSelect(owner) },
+                text = { Text(owner) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun InvestmentListItem(
+    entry: InvestmentItemMetrics,
+    onEditRequest: () -> Unit,
+    onDeleteRequest: () -> Unit,
+) {
+    val item = entry.item
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(item.investmentName, style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    text = "${item.assetName} · ${item.category}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = "${item.quantity.toPlainString()}주 · 1주 ${item.pricePerShare.toDisplayAmount()} · 매수단가 ${item.purchasePrice.toDisplayString()}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(text = item.valuationAmount.toDisplayAmount(), style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    text = "${stringResource(R.string.investment_field_profit)} ${entry.profit.toDisplayAmount()}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = signColor(entry.profit),
+                )
+            }
+            IconButton(onClick = onEditRequest) {
+                Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.edit))
+            }
+            IconButton(onClick = onDeleteRequest) {
+                Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.delete))
+            }
+        }
+    }
+}
+
+private fun PurchasePrice.toDisplayString(): String = when (currency) {
+    "KRW" -> amount.toDisplayAmount()
+    else -> "${NumberFormat.getNumberInstance(Locale.US).format(amount)} $currency"
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun InvestmentFormDialog(
+    initial: InvestmentItem?,
+    onDismiss: () -> Unit,
+    onSave: (InvestmentItem) -> Unit,
+) {
+    var assetName by rememberSaveable { mutableStateOf(initial?.assetName ?: "") }
+    var category by rememberSaveable { mutableStateOf(initial?.category ?: "") }
+    var investmentName by rememberSaveable { mutableStateOf(initial?.investmentName ?: "") }
+    var pricePerShareText by rememberSaveable { mutableStateOf(initial?.pricePerShare?.toPlainString() ?: "") }
+    var valuationAmountText by rememberSaveable { mutableStateOf(initial?.valuationAmount?.toPlainString() ?: "") }
+    var currency by rememberSaveable { mutableStateOf(initial?.purchasePrice?.currency ?: INVESTMENT_CURRENCIES.first()) }
+    var currencyDropdownExpanded by remember { mutableStateOf(false) }
+    var purchasePriceAmountText by rememberSaveable { mutableStateOf(initial?.purchasePrice?.amount?.toPlainString() ?: "") }
+    var quantityText by rememberSaveable { mutableStateOf(initial?.quantity?.toPlainString() ?: "") }
+    var purchaseAmountText by rememberSaveable { mutableStateOf(initial?.purchaseAmount?.toPlainString() ?: "") }
+
+    val pricePerShare = pricePerShareText.trim().toBigDecimalOrNull()
+    val valuationAmount = valuationAmountText.trim().toBigDecimalOrNull()
+    val purchasePriceAmount = purchasePriceAmountText.trim().toBigDecimalOrNull()
+    val quantity = quantityText.trim().toBigDecimalOrNull()
+    val purchaseAmount = purchaseAmountText.trim().toBigDecimalOrNull()
+    val isValid = assetName.isNotBlank() && category.isNotBlank() && investmentName.isNotBlank() &&
+        pricePerShare != null && valuationAmount != null && purchasePriceAmount != null &&
+        quantity != null && purchaseAmount != null
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(if (initial != null) R.string.investment_edit_title else R.string.investment_add_title)) },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedTextField(
+                    value = assetName,
+                    onValueChange = { assetName = it },
+                    label = { Text(stringResource(R.string.investment_field_asset_name)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = category,
+                    onValueChange = { category = it },
+                    label = { Text(stringResource(R.string.investment_field_category)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = investmentName,
+                    onValueChange = { investmentName = it },
+                    label = { Text(stringResource(R.string.investment_field_investment_name)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                BenchmarkNumberField(pricePerShareText, { pricePerShareText = it }, R.string.investment_field_price_per_share, pricePerShare != null)
+                BenchmarkNumberField(valuationAmountText, { valuationAmountText = it }, R.string.investment_field_valuation_amount, valuationAmount != null)
+                ExposedDropdownMenuBox(
+                    expanded = currencyDropdownExpanded,
+                    onExpandedChange = { currencyDropdownExpanded = !currencyDropdownExpanded },
+                ) {
+                    OutlinedTextField(
+                        value = currency,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text(stringResource(R.string.investment_field_purchase_price_currency)) },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = currencyDropdownExpanded) },
+                        modifier = Modifier
+                            .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                            .fillMaxWidth(),
+                    )
+                    ExposedDropdownMenu(
+                        expanded = currencyDropdownExpanded,
+                        onDismissRequest = { currencyDropdownExpanded = false },
+                    ) {
+                        INVESTMENT_CURRENCIES.forEach { candidate ->
+                            DropdownMenuItem(
+                                text = { Text(candidate) },
+                                onClick = {
+                                    currency = candidate
+                                    currencyDropdownExpanded = false
+                                },
+                            )
+                        }
+                    }
+                }
+                BenchmarkNumberField(purchasePriceAmountText, { purchasePriceAmountText = it }, R.string.investment_field_purchase_price_amount, purchasePriceAmount != null)
+                BenchmarkNumberField(quantityText, { quantityText = it }, R.string.investment_field_quantity, quantity != null)
+                BenchmarkNumberField(purchaseAmountText, { purchaseAmountText = it }, R.string.investment_field_purchase_amount, purchaseAmount != null)
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    onSave(
+                        InvestmentItem(
+                            assetName = assetName.trim(),
+                            category = category.trim(),
+                            investmentName = investmentName.trim(),
+                            pricePerShare = pricePerShare!!,
+                            valuationAmount = valuationAmount!!,
+                            purchasePrice = PurchasePrice(currency = currency, amount = purchasePriceAmount!!),
+                            quantity = quantity!!,
+                            purchaseAmount = purchaseAmount!!,
+                        )
+                    )
+                },
+                enabled = isValid,
+            ) { Text(stringResource(R.string.save)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
         }
     )
 }
