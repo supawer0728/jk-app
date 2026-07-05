@@ -74,6 +74,9 @@ class TabOrderViewModel(
         val order = _tabOrder.value
         viewModelScope.launch {
             runCatching { repository.saveTabOrder(currentUid, order.map { it.name }) }
+                .onFailure { e ->
+                    Log.w(TAG, "탭 순서를 저장하는 중 오류가 발생했습니다: ${e.localizedMessage ?: "알 수 없는 오류"}")
+                }
         }
     }
 

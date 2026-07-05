@@ -48,7 +48,6 @@ class TabOrderViewModelTest {
         assertEquals(
             listOf(
                 MainTab.DIARY, MainTab.HOME, MainTab.ASSET, MainTab.TODO, MainTab.CALENDAR,
-                MainTab.DM1, MainTab.DM2, MainTab.DM3,
             ),
             merged
         )
@@ -63,7 +62,6 @@ class TabOrderViewModelTest {
         assertEquals(
             listOf(
                 MainTab.ASSET, MainTab.HOME, MainTab.DIARY, MainTab.TODO, MainTab.CALENDAR,
-                MainTab.DM1, MainTab.DM2, MainTab.DM3,
             ),
             merged
         )
@@ -79,7 +77,6 @@ class TabOrderViewModelTest {
         assertEquals(
             listOf(
                 MainTab.ASSET, MainTab.DIARY, MainTab.HOME, MainTab.TODO, MainTab.CALENDAR,
-                MainTab.DM1, MainTab.DM2, MainTab.DM3,
             ),
             viewModel.tabOrder.value
         )

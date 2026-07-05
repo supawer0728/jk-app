@@ -60,7 +60,6 @@ import com.jkapp.R
 import java.math.BigDecimal
 
 private const val TAB_PANEL_SWIPE_THRESHOLD_PX = 60f
-private const val BOTTOM_BAR_VISIBLE_TAB_COUNT = 5
 private val TAB_BAR_COLOR_LIGHT = Color(0xFFDBD6EB)
 private val TAB_BAR_COLOR_DARK = Color(0xFF30264F)
 
@@ -186,7 +185,11 @@ fun MainScreen(
                 }
                 var swipeAccumulator by remember { mutableFloatStateOf(0f) }
                 TabBarHandle(
-                    modifier = Modifier.pointerInput(panelExpanded) {
+                    // swipeAccumulator는 onDragStart/End/Cancel에서 매번 리셋되므로 panelExpanded를
+                    // key로 둘 필요가 없다. panelExpanded를 key로 쓰면 임계값을 넘어 그 값이 바뀌는
+                    // 순간 이 pointerInput 자신이 재시작되어(코루틴이 취소되고 awaitFirstDown부터
+                    // 다시 대기), 손가락을 떼지 않고 이어서 반대 방향으로 스와이프해도 인식되지 않는다.
+                    modifier = Modifier.pointerInput(Unit) {
                         detectVerticalDragGestures(
                             onDragStart = { swipeAccumulator = 0f },
                             onDragEnd = { swipeAccumulator = 0f },
@@ -232,7 +235,7 @@ fun MainScreen(
                         )
                     } else {
                         NavigationBar(containerColor = tabBarColor) {
-                            tabOrder.take(BOTTOM_BAR_VISIBLE_TAB_COUNT).forEach { tab ->
+                            tabOrder.take(MAIN_TAB_ROW_SIZE).forEach { tab ->
                                 NavigationBarItem(
                                     selected = selectedTab == tab,
                                     onClick = {
@@ -265,7 +268,6 @@ fun MainScreen(
                 )
                 MainTab.TODO -> TodoTabScreen()
                 MainTab.CALENDAR -> CalendarTabScreen()
-                MainTab.DM1, MainTab.DM2, MainTab.DM3 -> DummyTabScreen(selectedTab.labelRes)
             }
         }
     }

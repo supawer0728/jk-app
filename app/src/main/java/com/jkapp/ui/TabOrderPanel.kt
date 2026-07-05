@@ -46,7 +46,13 @@ import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
 private val TAB_ITEM_SIZE = 64.dp
-private const val TAB_GRID_COLUMNS = 5
+
+// 드래그 오프셋으로 계산된 행/열 이동량을 실제 그리드 내 새 인덱스로 변환한다.
+// 격자 경계를 벗어나면 가장 가까운 유효 인덱스(0 또는 마지막 인덱스)로 고정된다. 마지막 줄이
+// 꽉 차지 않은 경우(예: tabCount가 columns의 배수가 아님) 존재하지 않는 칸을 가리키는 이동은
+// 마지막 인덱스로 스냅되며, 이는 의도된 동작이다.
+internal fun computeNewIndex(currentIndex: Int, rowShift: Int, colShift: Int, columns: Int, tabCount: Int): Int =
+    (currentIndex + rowShift * columns + colShift).coerceIn(0, tabCount - 1)
 
 @Composable
 fun TabOrderPanel(
@@ -58,7 +64,7 @@ fun TabOrderPanel(
     modifier: Modifier = Modifier,
 ) {
     var draggingTabName by remember { mutableStateOf<String?>(null) }
-    val rows = (tabs.size + TAB_GRID_COLUMNS - 1) / TAB_GRID_COLUMNS
+    val rows = (tabs.size + MAIN_TAB_ROW_SIZE - 1) / MAIN_TAB_ROW_SIZE
     val haptic = LocalHapticController.current
 
     // 편집 모드에 머무르는 동안 재배열 가능 상태임을 계속 알리기 위해 1초마다 짧은 햅틱을 울린다.
@@ -84,7 +90,7 @@ fun TabOrderPanel(
             }
     ) {
         LazyVerticalGrid(
-            columns = GridCells.Fixed(TAB_GRID_COLUMNS),
+            columns = GridCells.Fixed(MAIN_TAB_ROW_SIZE),
             modifier = Modifier
                 .fillMaxWidth()
                 .height(TAB_ITEM_SIZE * rows),
@@ -99,7 +105,7 @@ fun TabOrderPanel(
                     tab = tab,
                     index = index,
                     tabCount = tabs.size,
-                    columns = TAB_GRID_COLUMNS,
+                    columns = MAIN_TAB_ROW_SIZE,
                     isEditMode = isEditMode,
                     onMove = onMove,
                     onEnterEditMode = onToggleEditMode,
@@ -190,8 +196,7 @@ private fun ReorderableTabIcon(
                     val colShift = (offsetX / itemWidthPx).roundToInt()
                     val rowShift = (offsetY / itemHeightPx).roundToInt()
                     if (colShift != 0 || rowShift != 0) {
-                        val newIndex = (currentIndex + rowShift * columns + colShift)
-                            .coerceIn(0, currentTabCount - 1)
+                        val newIndex = computeNewIndex(currentIndex, rowShift, colShift, columns, currentTabCount)
                         if (newIndex != currentIndex) {
                             haptic?.tick()
                             currentOnMove(currentIndex, newIndex)
