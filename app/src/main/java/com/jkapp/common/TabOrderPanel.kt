@@ -54,6 +54,20 @@ private val TAB_ITEM_SIZE = 64.dp
 internal fun computeNewIndex(currentIndex: Int, rowShift: Int, colShift: Int, columns: Int, tabCount: Int): Int =
     (currentIndex + rowShift * columns + colShift).coerceIn(0, tabCount - 1)
 
+// 인덱스 이동이 일어난 뒤, 소비된 행/열 이동량만큼 누적 드래그 오프셋을 되돌린다.
+// 이전에는 deltaIndex(newIndex - currentIndex)를 columns로 floorDiv/floorMod해서 행/열 이동량을
+// 역산했는데, floorMod는 항상 [0, columns) 범위의 값을 돌려주므로 colShift가 음수인 경우(왼쪽 드래그)
+// 양수로 잘못 해석되어 오프셋이 반대 방향(더 음수)으로 보정되는 버그가 있었다. colShift/rowShift는
+// 이미 알고 있는 값이므로 deltaIndex로 역산할 필요 없이 그대로 사용한다.
+internal fun computeOffsetAfterMove(
+    offsetX: Float,
+    offsetY: Float,
+    rowShift: Int,
+    colShift: Int,
+    itemWidthPx: Float,
+    itemHeightPx: Float,
+): Pair<Float, Float> = (offsetX - colShift * itemWidthPx) to (offsetY - rowShift * itemHeightPx)
+
 @Composable
 fun TabOrderPanel(
     tabs: List<MainTab>,
@@ -200,11 +214,11 @@ private fun ReorderableTabIcon(
                         if (newIndex != currentIndex) {
                             haptic?.tick()
                             currentOnMove(currentIndex, newIndex)
-                            // deltaIndex가 음수일 때 %, /는 0을 향해 잘려서 대각선 드래그에서 보정이
-                            // 어긋난다(예: -3 % 4 == -3). floor 기반 mod/div로 정확히 소비한 행/열만큼만 보정한다.
-                            val deltaIndex = newIndex - currentIndex
-                            offsetX -= deltaIndex.mod(columns) * itemWidthPx
-                            offsetY -= deltaIndex.floorDiv(columns) * itemHeightPx
+                            val (adjustedX, adjustedY) = computeOffsetAfterMove(
+                                offsetX, offsetY, rowShift, colShift, itemWidthPx, itemHeightPx,
+                            )
+                            offsetX = adjustedX
+                            offsetY = adjustedY
                         }
                     }
                     // 격자 경계에서 이동이 막혀도 손가락을 계속 끌면 오프셋이 무한히 쌓이지 않도록 제한한다.
