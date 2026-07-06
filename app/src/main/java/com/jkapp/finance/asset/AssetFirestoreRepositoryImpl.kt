@@ -1,51 +1,35 @@
 package com.jkapp.finance.asset
 
 import android.util.Log
-import com.google.firebase.firestore.FirebaseFirestore
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
-import kotlinx.coroutines.channels.awaitClose
+import com.jkapp.common.AppFirestore
+import com.jkapp.common.await
+import com.jkapp.common.snapshotFlow
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.callbackFlow
-import kotlinx.coroutines.suspendCancellableCoroutine
 
 class AssetFirestoreRepositoryImpl : AssetFirestoreRepository {
 
-    private val db = FirebaseFirestore.getInstance()
+    private val db = AppFirestore.instance
     private val dailyAssetsRef = db.collection(COLLECTION_DAILY_ASSETS)
 
-    override fun getDailyAssets(): Flow<List<DailyAsset>> = callbackFlow {
-        val listener = dailyAssetsRef.addSnapshotListener { snapshot, error ->
-            if (error != null) {
-                close(error)
-                return@addSnapshotListener
-            }
-            val dailyAssets = snapshot?.documents?.map { doc ->
-                @Suppress("UNCHECKED_CAST")
-                val assets = (doc.get(FIELD_ASSETS) as? List<Map<String, Any?>>)
-                    ?.mapNotNull { it.toAssetItem() } ?: emptyList()
-                DailyAsset(
-                    firestoreId = doc.id,
-                    date = doc.getString(FIELD_DATE) ?: doc.id,
-                    assets = assets,
-                )
-            }?.sortedByDescending { it.date } ?: emptyList()
-
-            trySend(dailyAssets)
-        }
-        awaitClose { listener.remove() }
+    override fun getDailyAssets(): Flow<List<DailyAsset>> = dailyAssetsRef.snapshotFlow { snapshot ->
+        snapshot?.documents?.map { doc ->
+            @Suppress("UNCHECKED_CAST")
+            val assets = (doc.get(FIELD_ASSETS) as? List<Map<String, Any?>>)
+                ?.mapNotNull { it.toAssetItem() } ?: emptyList()
+            DailyAsset(
+                firestoreId = doc.id,
+                date = doc.getString(FIELD_DATE) ?: doc.id,
+                assets = assets,
+            )
+        }?.sortedByDescending { it.date } ?: emptyList()
     }
 
-    override suspend fun upsertDailyAsset(asset: DailyAsset): Unit = suspendCancellableCoroutine { cont ->
-        dailyAssetsRef.document(asset.date).set(asset.toMap())
-            .addOnSuccessListener { cont.resume(Unit) }
-            .addOnFailureListener { cont.resumeWithException(it) }
+    override suspend fun upsertDailyAsset(asset: DailyAsset) {
+        dailyAssetsRef.document(asset.date).set(asset.toMap()).await()
     }
 
-    override suspend fun deleteDailyAsset(date: String): Unit = suspendCancellableCoroutine { cont ->
-        dailyAssetsRef.document(date).delete()
-            .addOnSuccessListener { cont.resume(Unit) }
-            .addOnFailureListener { cont.resumeWithException(it) }
+    override suspend fun deleteDailyAsset(date: String) {
+        dailyAssetsRef.document(date).delete().await()
     }
 
     private fun DailyAsset.toMap() = mapOf(

@@ -1,6 +1,6 @@
 package com.jkapp.finance.benchmark
 
-import com.jkapp.diary.DiaryViewModel
+import com.jkapp.common.todayDate
 import java.math.BigDecimal
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -222,7 +222,7 @@ class BenchmarkViewModelTest {
 
     @Test
     fun `latestCurrentAmount는 미래 날짜를 제외하고 오늘 이전 최신 값을 사용한다`() = runTest {
-        val today = DiaryViewModel.todayDate()
+        val today = todayDate()
         val tomorrow = LocalDate.parse(today, DateTimeFormatter.ISO_LOCAL_DATE).plusDays(1)
             .format(DateTimeFormatter.ISO_LOCAL_DATE)
         fakeRepository.setBenchmarks(

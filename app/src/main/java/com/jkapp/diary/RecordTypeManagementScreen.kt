@@ -1,4 +1,4 @@
-package com.jkapp.common
+package com.jkapp.diary
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
@@ -60,9 +60,6 @@ import androidx.compose.ui.unit.dp
 import androidx.core.graphics.toColorInt
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jkapp.R
-import com.jkapp.diary.CatRecordType
-import com.jkapp.diary.DiaryUiState
-import com.jkapp.diary.DiaryViewModel
 import java.util.UUID
 
 private val PALETTE_COLORS = listOf(

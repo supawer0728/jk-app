@@ -6,7 +6,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import com.jkapp.diary.DiaryViewModel
+import com.jkapp.common.latestNotFuture
 import java.math.BigDecimal
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -34,7 +34,7 @@ class BenchmarkViewModel(
     val latestCurrentAmount: StateFlow<BigDecimal?> = uiState
         .map { state ->
             (state as? BenchmarkUiState.Success)?.benchmarks
-                ?.let { DiaryViewModel.latestNotFuture(it) { benchmark -> benchmark.date } }
+                ?.let { latestNotFuture(it) { benchmark -> benchmark.date } }
                 ?.currentAmount
         }
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)

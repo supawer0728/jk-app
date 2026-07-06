@@ -1,6 +1,6 @@
 package com.jkapp.finance.asset
 
-import com.jkapp.diary.DiaryViewModel
+import com.jkapp.common.todayDate
 import java.math.BigDecimal
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -346,7 +346,7 @@ class DailyAssetViewModelTest {
 
     @Test
     fun `netWorth는 미래 날짜 자산을 제외하고 오늘 이전 최신 자산을 사용한다`() = runTest {
-        val today = DiaryViewModel.todayDate()
+        val today = todayDate()
         val tomorrow = LocalDate.parse(today, DateTimeFormatter.ISO_LOCAL_DATE).plusDays(1)
             .format(DateTimeFormatter.ISO_LOCAL_DATE)
         fakeRepository.setDailyAssets(

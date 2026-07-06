@@ -2,78 +2,53 @@ package com.jkapp.finance.benchmark
 
 import android.util.Log
 import com.google.firebase.firestore.DocumentSnapshot
-import com.google.firebase.firestore.FirebaseFirestore
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
-import kotlinx.coroutines.channels.awaitClose
+import com.jkapp.common.AppFirestore
+import com.jkapp.common.await
+import com.jkapp.common.snapshotFlow
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.callbackFlow
-import kotlinx.coroutines.suspendCancellableCoroutine
 
 class BenchmarkFirestoreRepositoryImpl : BenchmarkFirestoreRepository {
 
-    private val db = FirebaseFirestore.getInstance()
+    private val db = AppFirestore.instance
     private val benchmarksRef = db.collection(COLLECTION_BENCHMARKS)
 
-    override fun getBenchmarks(): Flow<List<Benchmark>> = callbackFlow {
-        val listener = benchmarksRef.addSnapshotListener { snapshot, error ->
-            if (error != null) {
-                close(error)
-                return@addSnapshotListener
-            }
-            val benchmarks = snapshot?.documents
-                ?.mapNotNull { it.toBenchmark() }
-                ?.sortedByDescending { it.date } ?: emptyList()
-
-            trySend(benchmarks)
-        }
-        awaitClose { listener.remove() }
+    override fun getBenchmarks(): Flow<List<Benchmark>> = benchmarksRef.snapshotFlow { snapshot ->
+        snapshot?.documents
+            ?.mapNotNull { it.toBenchmark() }
+            ?.sortedByDescending { it.date } ?: emptyList()
     }
 
-    override suspend fun upsertBenchmark(benchmark: Benchmark): Unit = suspendCancellableCoroutine { cont ->
-        benchmarksRef.document(benchmark.date).set(benchmark.toMap())
-            .addOnSuccessListener { cont.resume(Unit) }
-            .addOnFailureListener { cont.resumeWithException(it) }
+    override suspend fun upsertBenchmark(benchmark: Benchmark) {
+        benchmarksRef.document(benchmark.date).set(benchmark.toMap()).await()
     }
 
     // 여러 날짜를 개별 set()으로 순차 호출하는 대신 하나의 배치로 묶어 한 번에 커밋한다.
     // Firestore 배치는 원자적이라 일부만 저장되는 상태 없이 전체 성공/실패로 귀결된다.
-    override suspend fun upsertBenchmarks(benchmarks: List<Benchmark>): Unit = suspendCancellableCoroutine { cont ->
+    override suspend fun upsertBenchmarks(benchmarks: List<Benchmark>) {
         val batch = db.batch()
         benchmarks.forEach { benchmark -> batch.set(benchmarksRef.document(benchmark.date), benchmark.toMap()) }
-        batch.commit()
-            .addOnSuccessListener { cont.resume(Unit) }
-            .addOnFailureListener { cont.resumeWithException(it) }
+        batch.commit().await()
     }
 
-    override suspend fun deleteBenchmark(date: String): Unit = suspendCancellableCoroutine { cont ->
-        benchmarksRef.document(date).delete()
-            .addOnSuccessListener { cont.resume(Unit) }
-            .addOnFailureListener { cont.resumeWithException(it) }
+    override suspend fun deleteBenchmark(date: String) {
+        benchmarksRef.document(date).delete().await()
     }
 
     // 여러 날짜를 개별 delete()로 순차 호출하는 대신 하나의 배치로 묶어 한 번에 커밋한다.
     // Firestore 배치는 원자적이라 일부만 삭제되는 상태 없이 전체 성공/실패로 귀결된다.
-    override suspend fun deleteBenchmarks(dates: List<String>): Unit = suspendCancellableCoroutine { cont ->
+    override suspend fun deleteBenchmarks(dates: List<String>) {
         val batch = db.batch()
         dates.forEach { date -> batch.delete(benchmarksRef.document(date)) }
-        batch.commit()
-            .addOnSuccessListener { cont.resume(Unit) }
-            .addOnFailureListener { cont.resumeWithException(it) }
+        batch.commit().await()
     }
 
     // getBenchmarks()의 필터링된 목록이 아니라 컬렉션을 직접 조회해 삭제 대상을 정하므로,
     // 역직렬화에 실패한 손상된 문서도 함께 삭제된다.
-    override suspend fun deleteAllBenchmarks(): Unit = suspendCancellableCoroutine { cont ->
-        benchmarksRef.get()
-            .addOnSuccessListener { snapshot ->
-                val batch = db.batch()
-                snapshot.documents.forEach { doc -> batch.delete(doc.reference) }
-                batch.commit()
-                    .addOnSuccessListener { cont.resume(Unit) }
-                    .addOnFailureListener { cont.resumeWithException(it) }
-            }
-            .addOnFailureListener { cont.resumeWithException(it) }
+    override suspend fun deleteAllBenchmarks() {
+        val snapshot = benchmarksRef.get().await()
+        val batch = db.batch()
+        snapshot.documents.forEach { doc -> batch.delete(doc.reference) }
+        batch.commit().await()
     }
 
     private fun Benchmark.toMap() = mapOf(

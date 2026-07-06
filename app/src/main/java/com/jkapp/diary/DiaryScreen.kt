@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jkapp.R
 import com.jkapp.common.LoadingIndicator
+import com.jkapp.common.computeDayOfWeek
 import com.jkapp.common.toComposeColorOrNull
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
@@ -255,7 +256,7 @@ private fun DiaryListItem(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "${date} (${DiaryViewModel.computeDayOfWeek(date)})",
+                    text = "${date} (${computeDayOfWeek(date)})",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

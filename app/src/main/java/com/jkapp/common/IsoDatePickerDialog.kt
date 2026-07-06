@@ -16,7 +16,7 @@ import java.time.format.DateTimeFormatter
 
 // DatePickerState.selectedDateMillis는 UTC 자정 기준 epoch millis를 반환하므로
 // 초기값 변환과 확인 버튼 변환 모두 ZoneOffset.UTC로 통일한다.
-// DiaryViewModel.todayDate()는 시스템 시간대를 사용하므로 UTC±12h 경계 조건에서
+// todayDate()는 시스템 시간대를 사용하므로 UTC±12h 경계 조건에서
 // 하루 차이가 날 수 있다. 이는 의도적인 tradeoff다.
 private fun isoDateToUtcEpochMillis(isoDate: String?): Long =
     runCatching {

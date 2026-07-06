@@ -66,6 +66,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.jkapp.R
 import com.jkapp.common.LoadingIndicator
+import com.jkapp.common.computeDayOfWeek
 import com.jkapp.common.formatFileSize
 import com.jkapp.common.toComposeColorOrNull
 import com.jkapp.drive.Attachment
@@ -128,7 +129,7 @@ fun DiaryDetailScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("$currentDate (${DiaryViewModel.computeDayOfWeek(currentDate)})") },
+                title = { Text("$currentDate (${computeDayOfWeek(currentDate)})") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(

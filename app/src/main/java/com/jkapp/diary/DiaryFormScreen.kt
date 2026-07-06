@@ -62,6 +62,7 @@ import com.jkapp.R
 import com.jkapp.common.IsoDatePickerDialog
 import com.jkapp.common.LoadingIndicator
 import com.jkapp.common.formatFileSize
+import com.jkapp.common.todayDate
 import com.jkapp.common.toComposeColorOrNull
 import com.jkapp.drive.Attachment
 
@@ -82,7 +83,7 @@ fun DiaryFormScreen(
     val pendingAttachments by viewModel.pendingAttachments.collectAsStateWithLifecycle()
     val isUploadingAttachment by viewModel.isUploadingAttachment.collectAsStateWithLifecycle()
 
-    var recordDate by rememberSaveable { mutableStateOf(existingRecord?.date ?: DiaryViewModel.todayDate()) }
+    var recordDate by rememberSaveable { mutableStateOf(existingRecord?.date ?: todayDate()) }
     var selectedTypeId by rememberSaveable { mutableStateOf(existingRecord?.recordType ?: "") }
     var recordText by rememberSaveable { mutableStateOf(existingRecord?.record ?: "") }
     var typeDropdownExpanded by remember { mutableStateOf(false) }

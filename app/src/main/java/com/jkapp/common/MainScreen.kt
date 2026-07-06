@@ -59,10 +59,10 @@ import com.jkapp.auth.AuthViewModel
 import com.jkapp.calendar.CalendarTabScreen
 import com.jkapp.diary.DiaryScreen
 import com.jkapp.diary.DiaryViewModel
-import com.jkapp.finance.asset.AssetScreen
+import com.jkapp.finance.FinanceScreen
 import com.jkapp.finance.asset.DailyAssetViewModel
-import com.jkapp.finance.asset.toDisplayAmount
 import com.jkapp.finance.benchmark.BenchmarkViewModel
+import com.jkapp.finance.toDisplayAmount
 import com.jkapp.finance.investment.DailyAssetInvestmentViewModel
 import com.jkapp.haptic.LocalHapticController
 import com.jkapp.todo.TodoTabScreen
@@ -264,7 +264,7 @@ fun MainScreen(
         Box(modifier = Modifier.padding(innerPadding)) {
             when (selectedTab) {
                 MainTab.HOME -> HomeTabScreen()
-                MainTab.ASSET -> AssetScreen(
+                MainTab.ASSET -> FinanceScreen(
                     viewModel = dailyAssetViewModel,
                     investmentViewModel = investmentViewModel,
                     benchmarkViewModel = benchmarkViewModel,

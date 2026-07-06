@@ -19,12 +19,12 @@ import com.jkapp.common.AppPreferences
 import com.jkapp.common.DarkModeSetting
 import com.jkapp.common.LoginScreen
 import com.jkapp.common.MainScreen
-import com.jkapp.common.RecordTypeManagementScreen
 import com.jkapp.common.TabOrderViewModel
 import com.jkapp.common.theme.JkappTheme
 import com.jkapp.diary.DiaryDetailScreen
 import com.jkapp.diary.DiaryFormScreen
 import com.jkapp.diary.DiaryViewModel
+import com.jkapp.diary.RecordTypeManagementScreen
 import com.jkapp.drive.DriveRepositoryImpl
 import com.jkapp.finance.asset.DailyAssetViewModel
 import com.jkapp.finance.benchmark.BenchmarkViewModel

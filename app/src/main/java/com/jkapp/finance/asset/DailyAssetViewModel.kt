@@ -6,7 +6,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import com.jkapp.diary.DiaryViewModel
+import com.jkapp.common.latestNotFuture
 import java.math.BigDecimal
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,7 +37,7 @@ class DailyAssetViewModel(
     val netWorth: StateFlow<BigDecimal?> = uiState
         .map { state ->
             (state as? DailyAssetUiState.Success)?.dailyAssets
-                ?.let { DiaryViewModel.latestNotFuture(it) { asset -> asset.date } }
+                ?.let { latestNotFuture(it) { asset -> asset.date } }
                 ?.assets
                 ?.filterNot { it.hidden }
                 ?.takeIf { it.isNotEmpty() }
@@ -45,7 +45,7 @@ class DailyAssetViewModel(
         }
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
-    // 아래 파생 State들은 원래 AssetScreen.kt의 DailyAssetTab 컴포저블 remember 안에 있었다.
+    // 아래 파생 State들은 원래 FinanceScreen.kt의 DailyAssetTab 컴포저블 remember 안에 있었다.
     // MainScreen의 탭 전환이 when(selectedTab) 단순 분기라 다른 탭에 갔다가 돌아오면 컴포지션이
     // 통째로 새로 생성되어 remember가 초기화되고 매번 재계산됐다(이슈 #37). 벤치마크 탭(rowMetrics)과
     // 동일하게 뷰모델 StateFlow로 옮겨, 데이터가 실제로 바뀔 때만 재계산되도록 한다.
@@ -54,7 +54,7 @@ class DailyAssetViewModel(
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     // _selectedDate/_selectedOwners/_showHidden는 SavedStateHandle 없는 평범한 MutableStateFlow라
-    // process death 후 복원 시 기본값으로 초기화된다(기존에는 AssetScreen.kt의 rememberSaveable로
+    // process death 후 복원 시 기본값으로 초기화된다(기존에는 FinanceScreen.kt의 rememberSaveable로
     // 유지됐음). DiaryViewModel의 _selectedTypeIds/_selectedYearMonth도 이 프로젝트에서 이미 같은
     // 패턴이라 이 PR 스코프에서는 현행을 유지하고, SavedStateHandle 도입은 별도 이슈로 다룬다.
     private val _selectedDate = MutableStateFlow<String?>(null)

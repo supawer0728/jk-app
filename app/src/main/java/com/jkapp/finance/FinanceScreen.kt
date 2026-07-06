@@ -1,4 +1,4 @@
-package com.jkapp.finance.asset
+package com.jkapp.finance
 
 import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
@@ -74,7 +74,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jkapp.R
 import com.jkapp.common.IsoDatePickerDialog
 import com.jkapp.common.LoadingIndicator
-import com.jkapp.diary.DiaryViewModel
+import com.jkapp.common.todayDate
+import com.jkapp.finance.asset.ASSET_OWNERS
+import com.jkapp.finance.asset.AssetItem
+import com.jkapp.finance.asset.DEFAULT_HIDDEN_ASSET_NAMES
+import com.jkapp.finance.asset.DailyAssetUiState
+import com.jkapp.finance.asset.DailyAssetViewModel
+import com.jkapp.finance.asset.ParsedAssetRow
 import com.jkapp.finance.benchmark.Benchmark
 import com.jkapp.finance.benchmark.BenchmarkRowMetrics
 import com.jkapp.finance.benchmark.BenchmarkUiState
@@ -100,7 +106,7 @@ private enum class AssetTab(@StringRes val labelRes: Int) {
 }
 
 @Composable
-fun AssetScreen(
+fun FinanceScreen(
     viewModel: DailyAssetViewModel,
     investmentViewModel: DailyAssetInvestmentViewModel,
     benchmarkViewModel: BenchmarkViewModel,
@@ -261,7 +267,7 @@ private fun DailyAssetTab(viewModel: DailyAssetViewModel) {
 
     formTarget?.let { target ->
         // 자산이 하나도 없어 선택된 날짜가 없을 때는 오늘 날짜로 첫 문서를 생성한다.
-        val dateForForm = selectedDate ?: DiaryViewModel.todayDate()
+        val dateForForm = selectedDate ?: todayDate()
         AssetFormDialog(
             initial = (target as? AssetFormTarget.Edit)?.target,
             onDismiss = { formTarget = null },
@@ -277,7 +283,7 @@ private fun DailyAssetTab(viewModel: DailyAssetViewModel) {
 
     if (showPasteImport) {
         // 자산이 하나도 없어 선택된 날짜가 없을 때는 오늘 날짜로 첫 문서를 생성한다.
-        val dateForImport = selectedDate ?: DiaryViewModel.todayDate()
+        val dateForImport = selectedDate ?: todayDate()
         AssetPasteImportDialog(
             onDismiss = { showPasteImport = false },
             onParse = viewModel::parsePasteText,
@@ -1028,7 +1034,7 @@ private fun InvestmentTab(viewModel: DailyAssetInvestmentViewModel, benchmarkVie
         // 신규 입력은 기본 날짜를 오늘로 하고 사용자가 DatePicker로 바꿀 수 있다. 수정은 항목이
         // 이미 속한 날짜(현재 화면에 표시 중인 날짜)를 그대로 쓰고 바꿀 수 없다(문서 이동 미지원).
         val editTarget = target as? InvestmentFormTarget.Edit
-        val initialDate = if (editTarget != null) selectedDate ?: DiaryViewModel.todayDate() else DiaryViewModel.todayDate()
+        val initialDate = if (editTarget != null) selectedDate ?: todayDate() else todayDate()
         InvestmentFormDialog(
             initial = editTarget?.target,
             initialDate = initialDate,
@@ -1046,7 +1052,7 @@ private fun InvestmentTab(viewModel: DailyAssetInvestmentViewModel, benchmarkVie
     if (showPasteImport) {
         InvestmentPasteImportDialog(
             initialOwner = selectedOwner,
-            initialDate = DiaryViewModel.todayDate(),
+            initialDate = todayDate(),
             onDismiss = { showPasteImport = false },
             onParse = viewModel::parsePasteText,
             onImport = { date, owner, items ->
@@ -1827,7 +1833,7 @@ private fun BenchmarkFormDialog(
     onDismiss: () -> Unit,
     onSave: (Benchmark) -> Unit,
 ) {
-    var date by rememberSaveable { mutableStateOf(initial?.date ?: DiaryViewModel.todayDate()) }
+    var date by rememberSaveable { mutableStateOf(initial?.date ?: todayDate()) }
     var showDatePicker by rememberSaveable { mutableStateOf(false) }
     var additionalInvestmentText by rememberSaveable { mutableStateOf(initial?.additionalInvestment?.toPlainString() ?: "") }
     var currentAmountText by rememberSaveable { mutableStateOf(initial?.currentAmount?.toPlainString() ?: "") }
