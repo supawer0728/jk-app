@@ -54,6 +54,30 @@ private val TAB_ITEM_SIZE = 64.dp
 internal fun computeNewIndex(currentIndex: Int, rowShift: Int, colShift: Int, columns: Int, tabCount: Int): Int =
     (currentIndex + rowShift * columns + colShift).coerceIn(0, tabCount - 1)
 
+// 인덱스 이동이 일어난 뒤, 소비된 행/열 이동량만큼 누적 드래그 오프셋을 되돌린다.
+// 여기 전달되는 rowShift/colShift는 반드시 computeActualShift로 구한 "실제 소비된" 이동량이어야
+// 한다. 드래그가 요청한 rowShift/colShift를 그대로 쓰면, computeNewIndex의 coerceIn 클램핑으로
+// 실제 이동량이 요청과 달라지는 경우(예: 마지막 줄이 꽉 차지 않아 열이 크게 바뀌는 경우) 오프셋이
+// 잘못 보정된다.
+internal fun computeOffsetAfterMove(
+    offsetX: Float,
+    offsetY: Float,
+    rowShift: Int,
+    colShift: Int,
+    itemWidthPx: Float,
+    itemHeightPx: Float,
+): Pair<Float, Float> = (offsetX - colShift * itemWidthPx) to (offsetY - rowShift * itemHeightPx)
+
+// computeNewIndex가 반환한 실제 newIndex를 기준으로 실제 소비된 행/열 이동량을 계산한다.
+// currentIndex/newIndex는 항상 0 이상이므로 정수 나눗셈(/, %)만으로 안전하게 행/열을 구할 수 있고,
+// 두 인덱스 각각의 행/열을 구한 뒤 차이를 내는 방식이라 deltaIndex를 직접 floorDiv/floorMod하는
+// 것과 달리 colShift가 음수인 경우에도 부호가 뒤집히지 않는다.
+internal fun computeActualShift(currentIndex: Int, newIndex: Int, columns: Int): Pair<Int, Int> {
+    val rowShift = newIndex / columns - currentIndex / columns
+    val colShift = newIndex % columns - currentIndex % columns
+    return rowShift to colShift
+}
+
 @Composable
 fun TabOrderPanel(
     tabs: List<MainTab>,
@@ -200,11 +224,12 @@ private fun ReorderableTabIcon(
                         if (newIndex != currentIndex) {
                             haptic?.tick()
                             currentOnMove(currentIndex, newIndex)
-                            // deltaIndex가 음수일 때 %, /는 0을 향해 잘려서 대각선 드래그에서 보정이
-                            // 어긋난다(예: -3 % 4 == -3). floor 기반 mod/div로 정확히 소비한 행/열만큼만 보정한다.
-                            val deltaIndex = newIndex - currentIndex
-                            offsetX -= deltaIndex.mod(columns) * itemWidthPx
-                            offsetY -= deltaIndex.floorDiv(columns) * itemHeightPx
+                            val (actualRowShift, actualColShift) = computeActualShift(currentIndex, newIndex, columns)
+                            val (adjustedX, adjustedY) = computeOffsetAfterMove(
+                                offsetX, offsetY, actualRowShift, actualColShift, itemWidthPx, itemHeightPx,
+                            )
+                            offsetX = adjustedX
+                            offsetY = adjustedY
                         }
                     }
                     // 격자 경계에서 이동이 막혀도 손가락을 계속 끌면 오프셋이 무한히 쌓이지 않도록 제한한다.
