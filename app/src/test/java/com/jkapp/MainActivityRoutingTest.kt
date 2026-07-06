@@ -2,26 +2,11 @@ package com.jkapp
 
 import com.jkapp.nav.HomeRoute
 import com.jkapp.nav.LoginRoute
+import com.jkapp.nav.SplashRoute
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class MainActivityRoutingTest {
-
-    @Test
-    fun `시간이 흐르지 않았으면 전체 지속 시간만큼 대기한다`() {
-        assertEquals(1_500L, remainingSplashDelayMs(splashStartTime = 0L, now = 0L, durationMs = 1_500L))
-    }
-
-    @Test
-    fun `일부 시간이 흘렀으면 남은 시간만 대기한다`() {
-        assertEquals(1_000L, remainingSplashDelayMs(splashStartTime = 0L, now = 500L, durationMs = 1_500L))
-    }
-
-    @Test
-    fun `화면 회전으로 재시작되어도 이미 지난 시간은 다시 대기하지 않는다`() {
-        // 회전 전 500ms가 지난 뒤 재생성되어 splashStartTime은 그대로 보존되고, now만 진행된 상황을 가정한다.
-        assertEquals(0L, remainingSplashDelayMs(splashStartTime = 0L, now = 2_000L, durationMs = 1_500L))
-    }
 
     @Test
     fun `로그인 상태면 HomeRoute로 이동한다`() {
@@ -31,5 +16,51 @@ class MainActivityRoutingTest {
     @Test
     fun `로그인하지 않았으면 LoginRoute로 이동한다`() {
         assertEquals(LoginRoute, resolveAuthRoute(isLoggedIn = false))
+    }
+
+    @Test
+    fun `최소 노출 시간이 지나지 않았으면 인증 준비 여부와 무관하게 SplashRoute다`() {
+        assertEquals(
+            SplashRoute,
+            resolveInitialRoute(minSplashDurationElapsed = false, isAuthReady = true, isLoggedIn = true),
+        )
+    }
+
+    @Test
+    fun `인증 준비가 끝나지 않았으면 최소 노출 시간이 지났어도 SplashRoute다`() {
+        assertEquals(
+            SplashRoute,
+            resolveInitialRoute(minSplashDurationElapsed = true, isAuthReady = false, isLoggedIn = true),
+        )
+    }
+
+    @Test
+    fun `최소 노출 시간과 인증 준비가 모두 끝나면 로그인 상태에 따른 라우트로 계산된다`() {
+        assertEquals(
+            HomeRoute,
+            resolveInitialRoute(minSplashDurationElapsed = true, isAuthReady = true, isLoggedIn = true),
+        )
+        assertEquals(
+            LoginRoute,
+            resolveInitialRoute(minSplashDurationElapsed = true, isAuthReady = true, isLoggedIn = false),
+        )
+    }
+
+    @Test
+    fun `navigateIfChanged은 타겟이 마지막 항목과 같으면 스택을 바꾸지 않는다`() {
+        val backStack = mutableListOf<Any>(SplashRoute, HomeRoute)
+
+        navigateIfChanged(backStack, HomeRoute)
+
+        assertEquals(listOf(SplashRoute, HomeRoute), backStack)
+    }
+
+    @Test
+    fun `navigateIfChanged은 타겟이 마지막 항목과 다르면 스택을 target 하나로 교체한다`() {
+        val backStack = mutableListOf<Any>(SplashRoute)
+
+        navigateIfChanged(backStack, HomeRoute)
+
+        assertEquals(listOf(HomeRoute), backStack)
     }
 }
