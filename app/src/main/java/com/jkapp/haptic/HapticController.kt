@@ -6,7 +6,7 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import androidx.compose.runtime.staticCompositionLocalOf
-import com.jkapp.data.MAX_HAPTIC_INTENSITY
+import com.jkapp.common.MAX_HAPTIC_INTENSITY
 
 class HapticController(context: Context) {
 

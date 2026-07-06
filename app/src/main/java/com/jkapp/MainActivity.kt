@@ -15,9 +15,20 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.ui.NavDisplay
 import com.jkapp.auth.AuthViewModel
-import com.jkapp.data.AppPreferences
-import com.jkapp.data.DarkModeSetting
-import com.jkapp.data.drive.DriveRepositoryImpl
+import com.jkapp.common.AppPreferences
+import com.jkapp.common.DarkModeSetting
+import com.jkapp.common.LoginScreen
+import com.jkapp.common.MainScreen
+import com.jkapp.common.RecordTypeManagementScreen
+import com.jkapp.common.TabOrderViewModel
+import com.jkapp.common.theme.JkappTheme
+import com.jkapp.diary.DiaryDetailScreen
+import com.jkapp.diary.DiaryFormScreen
+import com.jkapp.diary.DiaryViewModel
+import com.jkapp.drive.DriveRepositoryImpl
+import com.jkapp.finance.asset.DailyAssetViewModel
+import com.jkapp.finance.benchmark.BenchmarkViewModel
+import com.jkapp.finance.investment.DailyAssetInvestmentViewModel
 import com.jkapp.haptic.HapticController
 import com.jkapp.haptic.LocalHapticController
 import com.jkapp.nav.DiaryDetailRoute
@@ -26,19 +37,8 @@ import com.jkapp.nav.HomeRoute
 import com.jkapp.nav.LoginRoute
 import com.jkapp.nav.RecordTypeManagementRoute
 import com.jkapp.nav.SettingsRoute
-import com.jkapp.ui.DiaryDetailScreen
-import com.jkapp.ui.RecordTypeManagementScreen
-import com.jkapp.ui.DiaryFormScreen
-import com.jkapp.ui.BenchmarkViewModel
-import com.jkapp.ui.DailyAssetInvestmentViewModel
-import com.jkapp.ui.DailyAssetViewModel
-import com.jkapp.ui.DiaryViewModel
-import com.jkapp.ui.LoginScreen
-import com.jkapp.ui.MainScreen
-import com.jkapp.ui.SettingsScreen
-import com.jkapp.ui.SettingsViewModel
-import com.jkapp.ui.TabOrderViewModel
-import com.jkapp.ui.theme.JkappTheme
+import com.jkapp.settings.SettingsScreen
+import com.jkapp.settings.SettingsViewModel
 
 class MainActivity : ComponentActivity() {
 
