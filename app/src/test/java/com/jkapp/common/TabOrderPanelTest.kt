@@ -80,17 +80,34 @@ class TabOrderPanelTest {
     }
 
     @Test
-    fun `마지막 줄이 꽉 차지 않아 인덱스가 클램프되어도 오프셋은 무한히 누적되지 않는다`() {
-        // 8개 탭, 5열: index 3에서 아래로 드래그하면 존재하지 않는 8 대신 마지막 인덱스(7)로 클램프된다.
-        // 이때 rowShift(1)만큼 오프셋을 보정해도, 이후 최종 coerceIn(-1.5*item, 1.5*item)에 의해
-        // 오프셋이 아이템 크기의 1.5배를 넘어 무한히 쌓이지는 않는다.
+    fun `마지막 줄이 꽉 차지 않아 인덱스가 클램프되면 실제 소비된 이동량만큼만 오프셋이 보정된다`() {
+        // 8개 탭, 5열: index 3(0행,3열)에서 아래로 드래그하면 요청한 index 8 대신 마지막 인덱스(7,
+        // 1행,2열)로 클램프된다. 실제로는 행 +1뿐 아니라 열도 -1만큼 이동했으므로, 요청값인
+        // colShift=0을 그대로 쓰면 X 오프셋이 전혀 보정되지 않는 회귀가 발생한다.
         val newIndex = computeNewIndex(currentIndex = 3, rowShift = 1, colShift = 0, columns = 5, tabCount = 8)
         assertEquals(7, newIndex)
 
-        val (_, y) = computeOffsetAfterMove(
-            offsetX = 0f, offsetY = 64f, rowShift = 1, colShift = 0, itemWidthPx = 64f, itemHeightPx = 64f,
+        val (actualRowShift, actualColShift) = computeActualShift(currentIndex = 3, newIndex = newIndex, columns = 5)
+        assertEquals(1, actualRowShift)
+        assertEquals(-1, actualColShift)
+
+        val (x, y) = computeOffsetAfterMove(
+            offsetX = 0f, offsetY = 64f, rowShift = actualRowShift, colShift = actualColShift,
+            itemWidthPx = 64f, itemHeightPx = 64f,
         )
+        assertEquals(64f, x, 0.01f)
+        assertEquals(0f, y, 0.01f)
+
+        val coercedX = x.coerceIn(-64f * 1.5f, 64f * 1.5f)
         val coercedY = y.coerceIn(-64f * 1.5f, 64f * 1.5f)
+        assertEquals(64f, coercedX, 0.01f)
         assertEquals(0f, coercedY, 0.01f)
+    }
+
+    @Test
+    fun `computeActualShift는 클램핑 없이 정상 이동한 경우 요청한 이동량과 동일하다`() {
+        val (rowShift, colShift) = computeActualShift(currentIndex = 6, newIndex = 5, columns = 5)
+        assertEquals(0, rowShift)
+        assertEquals(-1, colShift)
     }
 }
