@@ -599,6 +599,12 @@ class DiaryViewModel(
             return records.filter { it.recordType.trim().lowercase() in normalizedSelected }
         }
 
+        fun sortedDistinctDates(records: List<CatRecord>, selectedTypeIds: Set<String>): List<String> =
+            filterRecords(records, selectedTypeIds)
+                .map { it.date }
+                .distinct()
+                .sorted()
+
         fun validateNewRecordType(type: CatRecordType, existingIds: List<String>): String? {
             if (type.id in SYSTEM_TYPE_IDS) return "시스템 필수 유형 ID는 사용할 수 없습니다."
             if (type.id in existingIds) return "이미 존재하는 기록유형 ID입니다: ${type.id}"
