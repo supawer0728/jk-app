@@ -10,6 +10,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -17,6 +18,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+
+private const val AUTH_READY_TIMEOUT_MS = 5_000L
 
 class AuthViewModel(
     app: Application,
@@ -45,11 +48,19 @@ class AuthViewModel(
 
     init {
         auth.addAuthStateListener(authStateListener)
+        // authStateListener가 끝내 발화하지 않는 극단적 상황(Firebase 초기화 실패 등)에서도
+        // 스플래시에 영구히 머무르지 않도록 타임아웃 후 강제로 준비 완료 처리한다.
+        viewModelScope.launch {
+            delay(AUTH_READY_TIMEOUT_MS)
+            if (!_isAuthReady.value) {
+                _isAuthReady.value = true
+            }
+        }
     }
 
     override fun onCleared() {
-        super.onCleared()
         auth.removeAuthStateListener(authStateListener)
+        super.onCleared()
     }
 
     fun firebaseAuthWithGoogle(idToken: String, onResult: (Boolean) -> Unit) {

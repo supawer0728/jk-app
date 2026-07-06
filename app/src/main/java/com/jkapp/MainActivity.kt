@@ -48,6 +48,19 @@ import com.jkapp.settings.SettingsViewModel
 
 internal fun resolveAuthRoute(isLoggedIn: Boolean): Any = if (isLoggedIn) HomeRoute else LoginRoute
 
+internal fun resolveInitialRoute(
+    minSplashDurationElapsed: Boolean,
+    isAuthReady: Boolean,
+    isLoggedIn: Boolean,
+): Any = if (minSplashDurationElapsed && isAuthReady) resolveAuthRoute(isLoggedIn) else SplashRoute
+
+internal fun navigateIfChanged(backStack: MutableList<Any>, target: Any) {
+    if (backStack.lastOrNull() != target) {
+        backStack.clear()
+        backStack.add(target)
+    }
+}
+
 class MainActivity : ComponentActivity() {
 
     private val appPreferences by lazy { AppPreferences(this) }
@@ -84,21 +97,17 @@ class MainActivity : ComponentActivity() {
 
                     val backStack = remember {
                         mutableStateListOf<Any>(
-                            if (minSplashDurationElapsed && authViewModel.isAuthReady.value) {
-                                resolveAuthRoute(authViewModel.user.value != null)
-                            } else {
-                                SplashRoute
-                            }
+                            resolveInitialRoute(
+                                minSplashDurationElapsed = minSplashDurationElapsed,
+                                isAuthReady = authViewModel.isAuthReady.value,
+                                isLoggedIn = authViewModel.user.value != null,
+                            )
                         )
                     }
 
                     LaunchedEffect(user, isAuthReady, minSplashDurationElapsed) {
                         if (isAuthReady && minSplashDurationElapsed) {
-                            val target = resolveAuthRoute(user != null)
-                            if (backStack.lastOrNull() != target) {
-                                backStack.clear()
-                                backStack.add(target)
-                            }
+                            navigateIfChanged(backStack, resolveAuthRoute(user != null))
                         }
                     }
 

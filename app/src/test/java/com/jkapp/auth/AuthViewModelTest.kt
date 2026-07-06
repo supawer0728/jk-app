@@ -108,6 +108,37 @@ class AuthViewModelTest {
     }
 
     @Test
+    fun `authStateListener가 타임아웃 내에 발화하지 않으면 isAuthReady가 강제로 true가 된다`() = runTest {
+        assertFalse(viewModel.isAuthReady.value)
+
+        advanceUntilIdle()
+
+        assertTrue(viewModel.isAuthReady.value)
+    }
+
+    @Test
+    fun `authStateListener가 타임아웃 전에 발화하면 강제 완료 없이 그 상태를 유지한다`() = runTest {
+        val mockUser = mockk<FirebaseUser>()
+        every { mockAuth.currentUser } returns mockUser
+
+        authStateListenerSlot.captured.onAuthStateChanged(mockAuth)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.isAuthReady.value)
+        assertEquals(mockUser, viewModel.user.value)
+    }
+
+    @Test
+    fun `ViewModel이 clear되면 authStateListener가 해제된다`() {
+        val onClearedMethod = AuthViewModel::class.java.getDeclaredMethod("onCleared")
+        onClearedMethod.isAccessible = true
+
+        onClearedMethod.invoke(viewModel)
+
+        verify { mockAuth.removeAuthStateListener(authStateListenerSlot.captured) }
+    }
+
+    @Test
     fun `firebaseAuthWithGoogle 성공 시 user가 authResult의 user로 업데이트된다`() = runTest {
         val mockUser = mockk<FirebaseUser>()
         givenSignInSucceeds(mockUser)
