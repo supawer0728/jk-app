@@ -3,6 +3,9 @@ package com.jkapp.nav
 import kotlinx.serialization.Serializable
 
 @Serializable
+data object SplashRoute
+
+@Serializable
 data object LoginRoute
 
 @Serializable

@@ -10,7 +10,11 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.ui.NavDisplay
@@ -19,6 +23,7 @@ import com.jkapp.common.AppPreferences
 import com.jkapp.common.DarkModeSetting
 import com.jkapp.common.LoginScreen
 import com.jkapp.common.MainScreen
+import com.jkapp.common.SplashScreen
 import com.jkapp.common.TabOrderViewModel
 import com.jkapp.common.theme.JkappTheme
 import com.jkapp.diary.DiaryDetailScreen
@@ -37,8 +42,23 @@ import com.jkapp.nav.HomeRoute
 import com.jkapp.nav.LoginRoute
 import com.jkapp.nav.RecordTypeManagementRoute
 import com.jkapp.nav.SettingsRoute
+import com.jkapp.nav.SplashRoute
 import com.jkapp.settings.SettingsScreen
 import com.jkapp.settings.SettingsViewModel
+import kotlinx.coroutines.delay
+
+private const val SPLASH_DURATION_MS = 1_500L
+
+// 화면 회전 등으로 Activity가 재생성되어도 splashStartTime은 rememberSaveable로 보존되므로,
+// 이미 흘러간 시간만큼을 제외한 나머지 시간만 대기한다. 그렇지 않으면 회전을 반복할 때마다
+// 스플래시 타이머가 매번 처음부터 다시 시작되어 노출 시간이 계속 늘어난다.
+internal fun remainingSplashDelayMs(
+    splashStartTime: Long,
+    now: Long,
+    durationMs: Long = SPLASH_DURATION_MS,
+): Long = (durationMs - (now - splashStartTime)).coerceAtLeast(0L)
+
+internal fun resolveAuthRoute(isLoggedIn: Boolean): Any = if (isLoggedIn) HomeRoute else LoginRoute
 
 class MainActivity : ComponentActivity() {
 
@@ -53,6 +73,7 @@ class MainActivity : ComponentActivity() {
     private val tabOrderViewModel: TabOrderViewModel by viewModels { TabOrderViewModel.factory() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
@@ -71,17 +92,26 @@ class MainActivity : ComponentActivity() {
                 CompositionLocalProvider(LocalHapticController provides hapticController) {
                     val user by authViewModel.user.collectAsStateWithLifecycle()
 
+                    var splashFinished by rememberSaveable { mutableStateOf(false) }
+                    val splashStartTime = rememberSaveable { System.currentTimeMillis() }
                     val backStack = remember {
                         mutableStateListOf<Any>(
-                            if (authViewModel.user.value != null) HomeRoute else LoginRoute
+                            if (splashFinished) resolveAuthRoute(authViewModel.user.value != null) else SplashRoute
                         )
                     }
 
-                    LaunchedEffect(user) {
-                        val target: Any = if (user != null) HomeRoute else LoginRoute
-                        if (backStack.lastOrNull() != target) {
-                            backStack.clear()
-                            backStack.add(target)
+                    LaunchedEffect(Unit) {
+                        delay(remainingSplashDelayMs(splashStartTime, System.currentTimeMillis()))
+                        splashFinished = true
+                    }
+
+                    LaunchedEffect(user, splashFinished) {
+                        if (splashFinished) {
+                            val target = resolveAuthRoute(user != null)
+                            if (backStack.lastOrNull() != target) {
+                                backStack.clear()
+                                backStack.add(target)
+                            }
                         }
                     }
 
@@ -89,6 +119,9 @@ class MainActivity : ComponentActivity() {
                         backStack = backStack,
                         onBack = { if (backStack.size > 1) backStack.removeLastOrNull() },
                         entryProvider = entryProvider {
+                            entry<SplashRoute> {
+                                SplashScreen()
+                            }
                             entry<LoginRoute> {
                                 LoginScreen(viewModel = authViewModel)
                             }
