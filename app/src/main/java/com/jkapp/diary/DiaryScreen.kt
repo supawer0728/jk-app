@@ -90,21 +90,24 @@ fun DiaryScreen(
             is DiaryUiState.Success -> {
                 val availableMonths = state.availableMonths
                 if (availableMonths.isNotEmpty()) {
-                    val initialIndex = remember(availableMonths) {
-                        availableMonths.indexOf(selectedYearMonth).coerceAtLeast(0)
+                    // 드롭다운(availableMonths)은 최신 달이 먼저 오도록 내림차순을 유지하되,
+                    // pager는 오른쪽 스와이프=이전 달/왼쪽 스와이프=다음 달이 되도록 오름차순으로 순회한다.
+                    val pagerMonths = remember(availableMonths) { availableMonths.sorted() }
+                    val initialIndex = remember(pagerMonths) {
+                        pagerMonths.indexOf(selectedYearMonth).coerceAtLeast(0)
                     }
-                    val pagerState = rememberPagerState(initialPage = initialIndex) { availableMonths.size }
+                    val pagerState = rememberPagerState(initialPage = initialIndex) { pagerMonths.size }
 
                     // 버튼/드롭다운으로 월 변경 시 pager 슬라이드
                     LaunchedEffect(selectedYearMonth) {
-                        val idx = availableMonths.indexOf(selectedYearMonth)
+                        val idx = pagerMonths.indexOf(selectedYearMonth)
                         if (idx >= 0 && idx != pagerState.currentPage) {
                             pagerState.animateScrollToPage(idx)
                         }
                     }
                     // 스와이프로 페이지 정착 시 ViewModel 동기화
                     LaunchedEffect(pagerState.settledPage) {
-                        val month = availableMonths.getOrNull(pagerState.settledPage) ?: return@LaunchedEffect
+                        val month = pagerMonths.getOrNull(pagerState.settledPage) ?: return@LaunchedEffect
                         if (month != selectedYearMonth) {
                             viewModel.selectYearMonth(month)
                         }
@@ -123,9 +126,9 @@ fun DiaryScreen(
                         HorizontalPager(
                             state = pagerState,
                             modifier = Modifier.fillMaxSize(),
-                            key = { availableMonths.getOrNull(it) ?: it },
+                            key = { pagerMonths.getOrNull(it) ?: it },
                         ) { page ->
-                            val pageMonth = availableMonths[page]
+                            val pageMonth = pagerMonths[page]
                             val groupedDates = recordsByMonth[pageMonth] ?: emptyList()
                             LazyColumn(
                                 modifier = Modifier.fillMaxSize(),

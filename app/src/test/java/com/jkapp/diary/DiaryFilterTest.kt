@@ -103,6 +103,42 @@ class DiaryFilterTest {
 
     // endregion
 
+    // region sortedDistinctDates
+
+    private fun dateRecord(date: String, type: String = "DAILY_NOTE") = CatRecord(
+        firestoreId = null,
+        date = date,
+        recordType = type,
+        record = "내용"
+    )
+
+    @Test
+    fun `sortedDistinctDates sorts ascending so right swipe reaches earlier dates first`() {
+        val records = listOf(dateRecord("2025-03-01"), dateRecord("2025-01-15"), dateRecord("2025-02-10"))
+        val result = DiaryViewModel.sortedDistinctDates(records, emptySet())
+        assertEquals(listOf("2025-01-15", "2025-02-10", "2025-03-01"), result)
+    }
+
+    @Test
+    fun `sortedDistinctDates removes duplicate dates`() {
+        val records = listOf(dateRecord("2025-01-01"), dateRecord("2025-01-01"), dateRecord("2025-01-02"))
+        val result = DiaryViewModel.sortedDistinctDates(records, emptySet())
+        assertEquals(listOf("2025-01-01", "2025-01-02"), result)
+    }
+
+    @Test
+    fun `sortedDistinctDates applies type filter before sorting`() {
+        val records = listOf(
+            dateRecord(date = "2025-01-03", type = "DAILY_NOTE"),
+            dateRecord(date = "2025-01-01", type = "HOSPITAL_VISIT"),
+            dateRecord(date = "2025-01-02", type = "DAILY_NOTE"),
+        )
+        val result = DiaryViewModel.sortedDistinctDates(records, setOf("DAILY_NOTE"))
+        assertEquals(listOf("2025-01-02", "2025-01-03"), result)
+    }
+
+    // endregion
+
     // region SYSTEM_TYPE_IDS
 
     @Test

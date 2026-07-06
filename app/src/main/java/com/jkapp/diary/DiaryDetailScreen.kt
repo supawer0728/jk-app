@@ -106,10 +106,7 @@ fun DiaryDetailScreen(
 
     val filteredDates = remember(success?.records, selectedTypeIds) {
         val records = success?.records ?: return@remember emptyList()
-        DiaryViewModel.filterRecords(records, selectedTypeIds)
-            .map { it.date }
-            .distinct()
-            .sortedByDescending { it }
+        DiaryViewModel.sortedDistinctDates(records, selectedTypeIds)
     }
 
     if (filteredDates.isEmpty()) {
