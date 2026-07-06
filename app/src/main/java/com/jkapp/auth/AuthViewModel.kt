@@ -33,6 +33,25 @@ class AuthViewModel(
     private val _user = MutableStateFlow<FirebaseUser?>(auth.currentUser)
     val user: StateFlow<FirebaseUser?> = _user.asStateFlow()
 
+    // auth.currentUser는 세션 복원 전에 잠깐 null을 반환할 수 있어, 인증 확인이
+    // 실제로 끝났는지는 addAuthStateListener의 첫 호출 시점으로 판단한다.
+    private val _isAuthReady = MutableStateFlow(false)
+    val isAuthReady: StateFlow<Boolean> = _isAuthReady.asStateFlow()
+
+    private val authStateListener = FirebaseAuth.AuthStateListener { firebaseAuth ->
+        _user.value = firebaseAuth.currentUser
+        _isAuthReady.value = true
+    }
+
+    init {
+        auth.addAuthStateListener(authStateListener)
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        auth.removeAuthStateListener(authStateListener)
+    }
+
     fun firebaseAuthWithGoogle(idToken: String, onResult: (Boolean) -> Unit) {
         val credential = GoogleAuthProvider.getCredential(idToken, null)
         viewModelScope.launch {

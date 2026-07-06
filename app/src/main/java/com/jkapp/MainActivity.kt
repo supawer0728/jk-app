@@ -45,18 +45,6 @@ import com.jkapp.nav.SettingsRoute
 import com.jkapp.nav.SplashRoute
 import com.jkapp.settings.SettingsScreen
 import com.jkapp.settings.SettingsViewModel
-import kotlinx.coroutines.delay
-
-private const val SPLASH_DURATION_MS = 1_500L
-
-// 화면 회전 등으로 Activity가 재생성되어도 splashStartTime은 rememberSaveable로 보존되므로,
-// 이미 흘러간 시간만큼을 제외한 나머지 시간만 대기한다. 그렇지 않으면 회전을 반복할 때마다
-// 스플래시 타이머가 매번 처음부터 다시 시작되어 노출 시간이 계속 늘어난다.
-internal fun remainingSplashDelayMs(
-    splashStartTime: Long,
-    now: Long,
-    durationMs: Long = SPLASH_DURATION_MS,
-): Long = (durationMs - (now - splashStartTime)).coerceAtLeast(0L)
 
 internal fun resolveAuthRoute(isLoggedIn: Boolean): Any = if (isLoggedIn) HomeRoute else LoginRoute
 
@@ -91,22 +79,21 @@ class MainActivity : ComponentActivity() {
             JkappTheme(darkTheme = darkTheme) {
                 CompositionLocalProvider(LocalHapticController provides hapticController) {
                     val user by authViewModel.user.collectAsStateWithLifecycle()
+                    val isAuthReady by authViewModel.isAuthReady.collectAsStateWithLifecycle()
+                    var minSplashDurationElapsed by rememberSaveable { mutableStateOf(false) }
 
-                    var splashFinished by rememberSaveable { mutableStateOf(false) }
-                    val splashStartTime = rememberSaveable { System.currentTimeMillis() }
                     val backStack = remember {
                         mutableStateListOf<Any>(
-                            if (splashFinished) resolveAuthRoute(authViewModel.user.value != null) else SplashRoute
+                            if (minSplashDurationElapsed && authViewModel.isAuthReady.value) {
+                                resolveAuthRoute(authViewModel.user.value != null)
+                            } else {
+                                SplashRoute
+                            }
                         )
                     }
 
-                    LaunchedEffect(Unit) {
-                        delay(remainingSplashDelayMs(splashStartTime, System.currentTimeMillis()))
-                        splashFinished = true
-                    }
-
-                    LaunchedEffect(user, splashFinished) {
-                        if (splashFinished) {
+                    LaunchedEffect(user, isAuthReady, minSplashDurationElapsed) {
+                        if (isAuthReady && minSplashDurationElapsed) {
                             val target = resolveAuthRoute(user != null)
                             if (backStack.lastOrNull() != target) {
                                 backStack.clear()
@@ -120,7 +107,7 @@ class MainActivity : ComponentActivity() {
                         onBack = { if (backStack.size > 1) backStack.removeLastOrNull() },
                         entryProvider = entryProvider {
                             entry<SplashRoute> {
-                                SplashScreen()
+                                SplashScreen(onMinDurationElapsed = { minSplashDurationElapsed = true })
                             }
                             entry<LoginRoute> {
                                 LoginScreen(viewModel = authViewModel)

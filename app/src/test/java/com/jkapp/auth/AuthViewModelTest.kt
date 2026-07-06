@@ -9,10 +9,13 @@ import com.google.android.gms.tasks.Task
 import com.google.firebase.auth.AuthResult
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
+import io.mockk.Runs
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
+import io.mockk.just
 import io.mockk.mockk
+import io.mockk.slot
 import io.mockk.verify
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -23,6 +26,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -35,6 +39,7 @@ class AuthViewModelTest {
     private lateinit var mockAuth: FirebaseAuth
     private lateinit var mockCredentialManager: CredentialManager
     private lateinit var viewModel: AuthViewModel
+    private val authStateListenerSlot = slot<FirebaseAuth.AuthStateListener>()
 
     @Before
     fun setUp() {
@@ -42,6 +47,7 @@ class AuthViewModelTest {
         mockAuth = mockk(relaxed = true)
         mockCredentialManager = mockk(relaxed = true)
         every { mockAuth.currentUser } returns null
+        every { mockAuth.addAuthStateListener(capture(authStateListenerSlot)) } just Runs
         viewModel = AuthViewModel(
             app = mockk<Application>(relaxed = true),
             auth = mockAuth,
@@ -75,6 +81,30 @@ class AuthViewModelTest {
             task
         }
         every { mockAuth.signInWithCredential(any()) } returns task
+    }
+
+    @Test
+    fun `초기 isAuthReady는 false이다`() {
+        assertFalse(viewModel.isAuthReady.value)
+    }
+
+    @Test
+    fun `authStateListener가 발화하면 isAuthReady가 true가 되고 user가 갱신된다`() {
+        val mockUser = mockk<FirebaseUser>()
+        every { mockAuth.currentUser } returns mockUser
+
+        authStateListenerSlot.captured.onAuthStateChanged(mockAuth)
+
+        assertTrue(viewModel.isAuthReady.value)
+        assertEquals(mockUser, viewModel.user.value)
+    }
+
+    @Test
+    fun `authStateListener가 로그아웃 상태로 발화해도 isAuthReady는 true가 된다`() {
+        authStateListenerSlot.captured.onAuthStateChanged(mockAuth)
+
+        assertTrue(viewModel.isAuthReady.value)
+        assertNull(viewModel.user.value)
     }
 
     @Test
