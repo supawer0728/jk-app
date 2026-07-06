@@ -7,25 +7,29 @@
 
 ## 프로젝트 개요
 
-가족(본인 + 배우자) 공용 생활 편의 앱. **구글 드라이브를 데이터베이스로 사용**한다 —
-별도의 서버/DB 없이 공유된 구글 드라이브 폴더의 JSON 파일이 영구 저장소다.
+가족(본인 + 배우자) 공용 생활 편의 앱. **Firebase Auth + Cloud Firestore**가 데이터 계층의 중심이다.
+Google Drive는 별도 DB가 아니라, 다이어리 기록에 첨부되는 파일(사진 등)을 저장하는 용도로만 쓰인다.
 
 ### 기능 목록
 
 | 기능 | 설명 |
 |------|------|
-| 자산 관리 | 가계 자산(예금, 투자, 부채 등) 입력·조회·수정 |
-| 육묘 기록 | 씨앗 파종부터 정식까지의 모종 성장 일지 기록·조회 |
+| 자산 관리 (asset) | 가계 자산(예금, 카드, 계좌 등) 입력·조회·수정 |
+| 투자 종목 (investment) | 명의별 투자 종목 입력·조회·평가금액/수익률 관리 |
+| 벤치마크 (benchmark) | 투자자산 대비 KOSPI/S&P500/나스닥 수익률 비교 |
+| 다이어리 (diary) | 반려동물 건강·생활 기록(사진 첨부 포함) 기록·조회, 기록 유형 관리 |
+| 할일 (todo) | 오늘의 할일 관리 (자리표시자, 구현 예정) |
+| 캘린더 (calendar) | 일정 관리 (자리표시자, 구현 예정) |
+| 설정 (settings) | 다크모드, 햅틱 강도, 하단 탭 순서 등 앱 환경 설정 |
 
 ### 사용자 / 데이터 공유 구조
 
 - 사용자: 본인과 배우자 2인.
-- 각자의 기기에서 각자의 구글 계정으로 로그인해 **동일한 구글 드라이브 공유 폴더**에 접근한다.
-  멀티유저 서버 계정 시스템은 없고, "구글 계정 = ㅎ용자" 구조다.
-- 공유 폴더 내 도메인별 JSON 파일을 앱이 읽고 쓴다. 두 사람 모두 해당 폴더의 편집 권한을 갖는다.
-- 앱은 적절한 주기(실행 시 fetch + 저장 시 upload)로 JSON을 동기화한다.
-
-> 상태: 그린필드. 소스 코드가 생기면 이 문서를 갱신한다.
+- 각자의 기기에서 **Firebase Authentication**(Google 로그인)으로 인증한다.
+- 인증된 사용자는 **Cloud Firestore**의 공유 컬렉션을 통해 동일한 데이터를 실시간으로 읽고 쓴다
+  (도메인별 컬렉션은 아래 "Firestore 컬렉션 구조" 참고). 별도의 서버는 두지 않는다.
+- 다이어리 기록에 첨부하는 파일(사진 등)은 Google Drive API로 업로드하고, Firestore 문서에
+  Drive `fileId` 등 메타데이터만 저장한다.
 
 ## 개발자 컨텍스트
 
@@ -57,8 +61,10 @@ AI가 코드를 작성할 때는 아래 두 문서를 따른다.
 ## 기술 스택 (확정)
 
 - 언어/UI: **Kotlin + Jetpack Compose** (안드로이드 네이티브)
-- 데이터 접근: **Google Drive API v3 + OAuth** — 공유 폴더 내 JSON 파일을 직접 읽고/쓴다.
-  읽기 전용이 아니며, 앱에서 데이터 생성·수정·삭제까지 모두 수행한다.
+- 인증: **Firebase Authentication** (Google 로그인)
+- 데이터 접근: **Cloud Firestore** — 도메인별 컬렉션을 실시간 리스너(`addSnapshotListener`)로
+  구독하고, 읽기·쓰기·삭제를 모두 Firestore SDK로 직접 수행한다.
+- 파일 저장: **Google Drive API v3 + OAuth** — 다이어리 첨부파일(사진 등) 업로드/다운로드 전용.
 - 빌드: Gradle (Kotlin DSL `build.gradle.kts`)
 
 ## IDE: Android Studio
@@ -110,43 +116,61 @@ adb logcat *:E                     # 오류 로그만
 
 ## 아키텍처 핵심
 
-데이터 계층이 이 앱의 본질이다. 일반 앱이 Room/REST를 쓰는 자리에 **Google Drive JSON 파일이 들어간다.**
-BE의 Repository 패턴과 동일한 개념을 적용한다.
+**feature-based 패키지 구조**를 쓴다. 레이어(ui/data)가 아니라 도메인(feature)이 최상위
+경계이며, 각 feature 패키지가 자신의 UI(Compose)·ViewModel·Firestore Repository를 함께 갖는다.
 
 ```
-UI (Compose) → ViewModel → Repository (인터페이스)
-                                ↓
-                    DriveDataSource (구현체)
-                                ↓
-                    Google Drive API v3
-                                ↓
-                    공유 드라이브 폴더 (파일 = 테이블)
-                    ├── assets.json        (자산 관리)
-                    └── seedlings.json     (육묘 기록)
+com.jkapp
+├── diary/          기록(사진 첨부 포함) — ui + DiaryFirestoreRepository
+├── finance/
+│   ├── asset/       자산 관리 — ui + AssetFirestoreRepository
+│   ├── investment/  투자 종목 — ui + InvestmentFirestoreRepository
+│   └── benchmark/   벤치마크 — ui + BenchmarkFirestoreRepository
+├── settings/       설정 화면/ViewModel
+├── todo/           오늘의 할일 (자리표시자, 구현 예정)
+├── calendar/       캘린더 (자리표시자, 구현 예정)
+├── common/         MainScreen/HomeTabScreen/TabOrder*, AppPreferences, theme 등 여러 feature가 공유하는 것
+├── auth/           Firebase Auth — 공유 인프라, 특정 feature에 속하지 않음
+├── drive/          Google Drive(첨부파일 저장) — 공유 인프라
+├── haptic/         햅틱 피드백 컨트롤러
+└── nav/            네비게이션 라우트 정의
 ```
 
-- **OAuth 흐름**: 앱 첫 실행 시 구글 계정 선택 → 사용자 동의 → 토큰 발급. 본인·배우자 각자의
-  기기에서 각자 계정으로 수행하면 되므로 앱 내 계정 전환 기능은 불필요.
-- **필수 OAuth 스코프**: `https://www.googleapis.com/auth/drive.file`
-  (앱이 생성한 파일만 읽기+쓰기. 전체 드라이브 접근 불필요.)
-- **JSON ↔ 도메인 모델 변환**: JSON을 앱 도메인 객체로 역직렬화하는 로직을 `DriveDataSource`
-  한 곳에 집중. JSON 스키마가 바뀌면 이 파일과 스키마 정의만 수정하면 된다.
-- **동기화 전략**: 앱 실행 시 최신 JSON을 fetch → 로컬 캐시(메모리)에 보관 → 저장 시 전체 JSON을
-  upload(덮어쓰기). 두 사람이 동시에 편집할 가능성이 낮으므로 낙관적 동시성으로 충분하다.
-  충돌 감지가 필요하다면 Drive의 `modifiedTime`을 활용한다.
+각 feature는 god interface 없이 자신의 도메인만 다루는 `XxxFirestoreRepository` 인터페이스를
+갖는다(예: `DiaryFirestoreRepository`, `AssetFirestoreRepository`). ViewModel은 기본 파라미터로
+자신의 Repository 구현체를 생성한다(별도 DI 컨테이너 없음).
 
-## JSON 스키마 (설계 필요)
+```
+UI (Compose) → ViewModel → XxxFirestoreRepository (인터페이스)
+                                ↓
+                    XxxFirestoreRepositoryImpl (구현체)
+                                ↓
+                    Cloud Firestore (컬렉션 = 테이블, 실시간 리스너)
+```
 
-앱의 데이터 모델은 각 JSON 파일의 스키마에 직접 묶인다. **코드 작성 전에 각 도메인의 필드명,
-타입, 필수 여부를 확정하고 여기에 기록할 것.** 필드 이름을 추측해서 하드코딩하지 않는다.
+- **인증 흐름**: Firebase Auth(Google 로그인)로 사용자를 식별한다. 본인·배우자 각자의 기기에서
+  각자 계정으로 로그인하면 되므로 앱 내 계정 전환 기능은 불필요하다.
+- **실시간 동기화**: 각 Repository는 `addSnapshotListener`로 컬렉션을 구독하는 `Flow`를 노출한다.
+  로컬 캐시나 수동 새로고침 없이 Firestore가 변경을 실시간으로 밀어준다.
+- **첨부파일**: 다이어리 기록의 사진 등은 Google Drive에 업로드하고, Firestore 문서에는
+  `Attachment`(fileId/name/mimeType/size) 메타데이터만 저장한다.
+- **새 feature 추가 시**: `com.jkapp.<feature>/` 패키지를 새로 만들고 그 안에 화면/ViewModel/
+  Repository를 함께 둔다. 여러 feature가 공유하는 것만 `common/`에 둔다.
 
-### assets.json — 자산 관리
+## Firestore 컬렉션 구조
 
-기존 구글 시트의 자산 데이터를 참고해 스키마를 설계한다. 확정 전까지 코드 작성 보류.
+각 feature의 `XxxFirestoreRepositoryImpl`이 다루는 컬렉션이다. 필드명은 각 Impl의
+`companion object` 상수와 `data class`(도메인 모델) 정의가 원본이므로, 스키마를 바꿀 때는
+그 두 곳만 함께 수정하면 된다.
 
-### seedlings.json — 육묘 기록
-
-기존 구글 시트의 육묘 기록 데이터를 참고해 스키마를 설계한다. 확정 전까지 코드 작성 보류.
+| 컬렉션 | 담당 | 도메인 모델 |
+|--------|------|-------------|
+| `cat-record-types` | `diary.DiaryFirestoreRepository` | `CatRecordType` |
+| `cat-records` | `diary.DiaryFirestoreRepository` | `CatRecord` (attachments: `drive.Attachment` 목록) |
+| `daily-assets` | `finance.asset.AssetFirestoreRepository` | `DailyAsset` (assets: `AssetItem` 목록) |
+| `daily-asset-investments` | `finance.investment.InvestmentFirestoreRepository` | `DailyAssetInvestment` (investments: `InvestmentItem` 목록) |
+| `benchmarks` | `finance.benchmark.BenchmarkFirestoreRepository` | `Benchmark` |
+| `tab-orders` | `common.TabOrderRepository` | 사용자별 하단 탭 순서(`List<String>`) |
 
 ## graphify
 
