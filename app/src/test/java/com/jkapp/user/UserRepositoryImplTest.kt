@@ -1,17 +1,22 @@
 package com.jkapp.user
 
+import com.google.android.gms.tasks.OnSuccessListener
+import com.google.android.gms.tasks.Task
 import com.google.firebase.firestore.CollectionReference
 import com.google.firebase.firestore.DocumentReference
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.EventListener
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.firestore.SetOptions
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -31,6 +36,24 @@ class UserRepositoryImplTest {
         val db = mockk<FirebaseFirestore>()
         every { db.collection("users") } returns collectionRef
         return UserRepositoryImpl(db)
+    }
+
+    private fun repositoryGettingDocument(docRef: DocumentReference): UserRepositoryImpl {
+        val collectionRef = mockk<CollectionReference>()
+        every { collectionRef.document("uid-1") } returns docRef
+        val db = mockk<FirebaseFirestore>()
+        every { db.collection("users") } returns collectionRef
+        return UserRepositoryImpl(db)
+    }
+
+    private fun <T> taskReturning(value: T): Task<T> {
+        val task = mockk<Task<T>>()
+        every { task.addOnSuccessListener(any()) } answers {
+            firstArg<OnSuccessListener<T>>().onSuccess(value)
+            task
+        }
+        every { task.addOnFailureListener(any()) } returns task
+        return task
     }
 
     private fun snapshotWithPreference(preferenceMap: Map<String, Any>?): DocumentSnapshot {
@@ -87,5 +110,50 @@ class UserRepositoryImplTest {
             UserPreference(language = "ko", timeZone = "UTC"),
             repository.observePreference("uid-1").first(),
         )
+    }
+
+    @Test
+    fun `pushToken 필드가 없으면 null을 반환한다`() = runTest {
+        val docRef = mockk<DocumentReference>()
+        val snapshot = mockk<DocumentSnapshot>()
+        every { snapshot.get("pushToken") } returns null
+        every { docRef.get() } returns taskReturning(snapshot)
+        val repository = repositoryGettingDocument(docRef)
+
+        assertNull(repository.getPushToken("uid-1"))
+    }
+
+    @Test
+    fun `pushToken 필드를 PushToken으로 매핑한다`() = runTest {
+        val docRef = mockk<DocumentReference>()
+        val snapshot = mockk<DocumentSnapshot>()
+        every { snapshot.get("pushToken") } returns mapOf(
+            "token" to "token-a",
+            "updatedAt" to 100L,
+            "platform" to "android",
+        )
+        every { docRef.get() } returns taskReturning(snapshot)
+        val repository = repositoryGettingDocument(docRef)
+
+        assertEquals(
+            PushToken(token = "token-a", updatedAt = 100L, platform = "android"),
+            repository.getPushToken("uid-1"),
+        )
+    }
+
+    @Test
+    fun `updatePushToken은 pushToken 필드를 merge로 저장한다`() = runTest {
+        val docRef = mockk<DocumentReference>()
+        every { docRef.set(any(), any<SetOptions>()) } returns taskReturning(null)
+        val repository = repositoryGettingDocument(docRef)
+
+        repository.updatePushToken("uid-1", PushToken(token = "token-a", updatedAt = 100L))
+
+        verify {
+            docRef.set(
+                mapOf("pushToken" to mapOf("token" to "token-a", "updatedAt" to 100L, "platform" to "android")),
+                SetOptions.merge(),
+            )
+        }
     }
 }

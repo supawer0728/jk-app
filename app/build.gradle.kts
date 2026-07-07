@@ -91,6 +91,8 @@ dependencies {
     implementation(libs.play.auth)
     implementation(libs.firebase.auth.ktx)
     implementation(libs.firebase.firestore.ktx)
+    implementation(libs.firebase.messaging.ktx)
+    implementation(libs.androidx.lifecycle.process)
     implementation(libs.google.identity.googleid)
     implementation(libs.google.api.services.drive)
     implementation(libs.google.api.client.android)
