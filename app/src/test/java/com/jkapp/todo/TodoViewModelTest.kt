@@ -184,8 +184,11 @@ class TodoViewModelTest {
     }
 
     @Test
-    fun `toggleCompleted는 완료된 비반복 항목을 다시 미완료로 되돌리고 알림을 재예약한다`() = runTest {
-        val item = makeItem("할 일", isCompleted = true, firestoreId = "id-1")
+    fun `toggleCompleted는 완료된 비반복 항목을 다시 미완료로 되돌리고 마감일시·리마인더가 있으면 알림을 재예약한다`() = runTest {
+        val item = makeItem(
+            "할 일", isCompleted = true, firestoreId = "id-1",
+            dueAt = Instant.parse("2024-01-01T00:00:00Z"), reminderOffsetMinutes = 10,
+        )
         fakeRepository.setItems(listOf(item))
         fakeAuth.setLoggedIn(true)
         advanceUntilIdle()
@@ -200,13 +203,30 @@ class TodoViewModelTest {
         assertEquals(1, fakeScheduler.cancelled.size)
     }
 
+    @Test
+    fun `toggleCompleted는 마감일시나 리마인더 오프셋이 없으면 알림을 재예약하지 않는다`() = runTest {
+        val item = makeItem("할 일", isCompleted = true, firestoreId = "id-1")
+        fakeRepository.setItems(listOf(item))
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+
+        viewModel.toggleCompleted(item)
+        advanceUntilIdle()
+
+        assertTrue(fakeScheduler.scheduled.isEmpty())
+        assertEquals(1, fakeScheduler.cancelled.size)
+    }
+
     // --- toggleCompleted (반복) ---
 
     @Test
     fun `toggleCompleted는 반복 항목을 다음 회차로 전진시키고 이전 알림을 취소한 뒤 재예약한다`() = runTest {
         val rule = RecurrenceRule(frequency = RecurrenceFrequency.DAILY)
         val dueAt = Instant.parse("2024-01-01T00:00:00Z")
-        val item = makeItem("반복 할 일", isCompleted = false, firestoreId = "id-1", recurrence = rule, dueAt = dueAt)
+        val item = makeItem(
+            "반복 할 일", isCompleted = false, firestoreId = "id-1", recurrence = rule,
+            dueAt = dueAt, reminderOffsetMinutes = 10,
+        )
         fakeRepository.setItems(listOf(item))
         fakeAuth.setLoggedIn(true)
         advanceUntilIdle()
@@ -263,6 +283,190 @@ class TodoViewModelTest {
         assertTrue(error.message.contains("할 일 상태 변경에 실패했습니다"))
     }
 
+    // --- addTodoItem ---
+
+    @Test
+    fun `addTodoItem은 저장 성공 시 saveCompleted를 true로 만들고 마감일시·리마인더가 있으면 알림을 예약한다`() = runTest {
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+
+        val newItem = makeItem(
+            "새 할 일", isCompleted = false,
+            dueAt = Instant.parse("2024-01-01T00:00:00Z"), reminderOffsetMinutes = 10,
+        )
+        viewModel.addTodoItem(newItem)
+        advanceUntilIdle()
+
+        assertEquals(newItem, fakeRepository.lastAddedItem)
+        assertTrue(viewModel.saveCompleted.value)
+        assertEquals(1, fakeScheduler.scheduled.size)
+    }
+
+    @Test
+    fun `addTodoItem은 완료된 항목이면 알림을 예약하지 않는다`() = runTest {
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+
+        viewModel.addTodoItem(
+            makeItem(
+                "완료된 할 일", isCompleted = true,
+                dueAt = Instant.parse("2024-01-01T00:00:00Z"), reminderOffsetMinutes = 10,
+            )
+        )
+        advanceUntilIdle()
+
+        assertTrue(fakeScheduler.scheduled.isEmpty())
+    }
+
+    @Test
+    fun `addTodoItem은 마감일시나 리마인더 오프셋이 없으면 알림을 예약하지 않는다`() = runTest {
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+
+        viewModel.addTodoItem(makeItem("새 할 일", isCompleted = false))
+        advanceUntilIdle()
+
+        assertTrue(fakeScheduler.scheduled.isEmpty())
+    }
+
+    @Test
+    fun `addTodoItem 저장 실패 시 uiState가 Error가 되고 saveCompleted는 false로 유지된다`() = runTest {
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+
+        fakeRepository.addTodoItemError = RuntimeException("추가 실패")
+        viewModel.addTodoItem(makeItem("새 할 일"))
+        advanceUntilIdle()
+
+        val error = viewModel.uiState.value as TodoUiState.Error
+        assertTrue(error.message.contains("할 일 저장에 실패했습니다"))
+        assertTrue(!viewModel.saveCompleted.value)
+    }
+
+    // --- updateTodoItem ---
+
+    @Test
+    fun `updateTodoItem은 저장 성공 시 이전 알림을 취소하고 saveCompleted를 true로 만든다`() = runTest {
+        val item = makeItem(
+            "할 일", firestoreId = "id-1",
+            dueAt = Instant.parse("2024-01-01T00:00:00Z"), reminderOffsetMinutes = 10,
+        )
+        fakeRepository.setItems(listOf(item))
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+
+        val updated = item.copy(title = "수정된 할 일")
+        viewModel.updateTodoItem(updated)
+        advanceUntilIdle()
+
+        assertEquals(updated, fakeRepository.lastUpdatedItem)
+        assertEquals(1, fakeScheduler.cancelled.size)
+        assertEquals(1, fakeScheduler.scheduled.size)
+        assertTrue(viewModel.saveCompleted.value)
+    }
+
+    @Test
+    fun `consumeSaveCompleted 호출 시 saveCompleted가 false로 초기화된다`() = runTest {
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+
+        viewModel.addTodoItem(makeItem("새 할 일"))
+        advanceUntilIdle()
+        assertTrue(viewModel.saveCompleted.value)
+
+        viewModel.consumeSaveCompleted()
+        assertTrue(!viewModel.saveCompleted.value)
+    }
+
+    // --- deleteTodoItem ---
+
+    @Test
+    fun `deleteTodoItem은 항목을 삭제하고 알림을 취소한다`() = runTest {
+        val item = makeItem("할 일", firestoreId = "id-1")
+        fakeRepository.setItems(listOf(item))
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+
+        viewModel.deleteTodoItem(item)
+        advanceUntilIdle()
+
+        assertEquals("id-1", fakeRepository.lastDeletedItemId)
+        assertEquals(1, fakeScheduler.cancelled.size)
+    }
+
+    // --- category CRUD ---
+
+    @Test
+    fun `addCategory는 저장소에 카테고리를 추가한다`() = runTest {
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+
+        val category = makeCategory("업무")
+        viewModel.addCategory(category)
+        advanceUntilIdle()
+
+        assertEquals(category, fakeRepository.lastAddedCategory)
+    }
+
+    @Test
+    fun `addCategory 저장 실패 시 uiState가 Error가 된다`() = runTest {
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+
+        fakeRepository.addCategoryError = RuntimeException("카테고리 추가 실패")
+        viewModel.addCategory(makeCategory("업무"))
+        advanceUntilIdle()
+
+        val error = viewModel.uiState.value as TodoUiState.Error
+        assertTrue(error.message.contains("카테고리 저장에 실패했습니다"))
+    }
+
+    @Test
+    fun `updateCategory는 저장소의 카테고리를 수정한다`() = runTest {
+        val category = makeCategory("업무", docId = "cat-1")
+        fakeRepository.setCategories(listOf(category))
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+
+        val updated = category.copy(name = "회사 업무")
+        viewModel.updateCategory(updated)
+        advanceUntilIdle()
+
+        assertEquals(updated, fakeRepository.lastUpdatedCategory)
+    }
+
+    @Test
+    fun `deleteCategory는 해당 카테고리를 참조하는 항목들의 categoryId만 재배정 대상으로 넘긴다`() = runTest {
+        val category = makeCategory("업무", docId = "cat-1")
+        val affected = makeItem("업무 할 일", categoryId = "cat-1", firestoreId = "id-1")
+        val unaffected = makeItem("가사 할 일", categoryId = "cat-2", firestoreId = "id-2")
+        fakeRepository.setCategories(listOf(category))
+        fakeRepository.setItems(listOf(affected, unaffected))
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+
+        viewModel.deleteCategory("cat-1")
+        advanceUntilIdle()
+
+        assertEquals("cat-1", fakeRepository.lastDeletedCategoryDocId)
+        assertEquals(listOf("id-1"), fakeRepository.lastDeleteCategoryAffectedIds)
+    }
+
+    @Test
+    fun `deleteCategory 삭제 실패 시 uiState가 Error가 된다`() = runTest {
+        val category = makeCategory("업무", docId = "cat-1")
+        fakeRepository.setCategories(listOf(category))
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+
+        fakeRepository.deleteCategoryError = RuntimeException("삭제 실패")
+        viewModel.deleteCategory("cat-1")
+        advanceUntilIdle()
+
+        val error = viewModel.uiState.value as TodoUiState.Error
+        assertTrue(error.message.contains("카테고리 삭제에 실패했습니다"))
+    }
+
     // --- helpers ---
 
     private fun makeItem(
@@ -273,6 +477,7 @@ class TodoViewModelTest {
         firestoreId: String? = null,
         recurrence: RecurrenceRule? = null,
         dueAt: Instant? = null,
+        reminderOffsetMinutes: Int? = null,
     ) = TodoItem(
         firestoreId = firestoreId,
         title = title,
@@ -281,6 +486,7 @@ class TodoViewModelTest {
         tags = tags,
         recurrence = recurrence,
         dueAt = dueAt,
+        reminderOffsetMinutes = reminderOffsetMinutes,
     )
 
     private fun makeCategory(name: String, docId: String = "") = TodoCategory(
