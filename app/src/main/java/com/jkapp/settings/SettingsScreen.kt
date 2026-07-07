@@ -39,6 +39,7 @@ fun SettingsScreen(
 ) {
     val darkModeSetting by viewModel.darkModeSetting.collectAsStateWithLifecycle()
     val hapticIntensity by viewModel.hapticIntensity.collectAsStateWithLifecycle()
+    val preference by viewModel.preference.collectAsStateWithLifecycle()
     // 슬라이더 위치는 로컬 상태로 즉시 반영하고, DataStore 저장은 손을 뗄 때(onValueChangeFinished)만
     // 한다. hapticIntensity StateFlow에 바로 바인딩하면 드래그 중 프레임마다 저장이 발생하고,
     // 저장이 비동기로 반영되는 동안 손가락과 엄지 위치가 어긋나 보인다.
@@ -66,7 +67,7 @@ fun SettingsScreen(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
             )
             DarkModeOption.entries.forEach { option ->
-                DarkModeOptionRow(
+                SettingsOptionRow(
                     label = stringResource(option.labelRes),
                     selected = darkModeSetting == option.setting,
                     onClick = { viewModel.setDarkModeSetting(option.setting) }
@@ -100,6 +101,30 @@ fun SettingsScreen(
                     modifier = Modifier.padding(start = 12.dp),
                 )
             }
+            Text(
+                text = stringResource(R.string.language),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+            )
+            LanguageOption.entries.forEach { option ->
+                SettingsOptionRow(
+                    label = stringResource(option.labelRes),
+                    selected = preference.language == option.code,
+                    onClick = { viewModel.setLanguage(option.code) }
+                )
+            }
+            Text(
+                text = stringResource(R.string.time_zone),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+            )
+            TimeZoneOption.entries.forEach { option ->
+                SettingsOptionRow(
+                    label = stringResource(option.labelRes),
+                    selected = preference.timeZone == option.zoneId,
+                    onClick = { viewModel.setTimeZone(option.zoneId) }
+                )
+            }
         }
     }
 }
@@ -110,8 +135,18 @@ private enum class DarkModeOption(val setting: DarkModeSetting, val labelRes: In
     OFF(DarkModeSetting.OFF, R.string.dark_mode_off),
 }
 
+// language는 "ko" 저장만 하고 실제 로케일 전환 로직은 구현하지 않는다(향후 다국어 지원용 필드, 이슈 #57).
+private enum class LanguageOption(val code: String, val labelRes: Int) {
+    KOREAN("ko", R.string.language_ko),
+}
+
+private enum class TimeZoneOption(val zoneId: String, val labelRes: Int) {
+    ASIA_SEOUL("Asia/Seoul", R.string.time_zone_asia_seoul),
+    UTC("UTC", R.string.time_zone_utc),
+}
+
 @Composable
-private fun DarkModeOptionRow(
+private fun SettingsOptionRow(
     label: String,
     selected: Boolean,
     onClick: () -> Unit,
