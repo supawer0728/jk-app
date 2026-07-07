@@ -14,3 +14,10 @@ local.properties
 .kotlin
 /doc/import-json-to-firestore/
 /graphify-out/
+
+# Firebase Cloud Functions
+functions/node_modules/
+functions/lib/
+firebase-debug.log
+firebase-debug.*.log
+.firebase/
