@@ -9,6 +9,8 @@ import com.google.android.gms.tasks.Task
 import com.google.firebase.auth.AuthResult
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
+import com.jkapp.user.FakeLoginHistoryRepository
+import com.jkapp.user.FakeUserRepository
 import io.mockk.Runs
 import io.mockk.coEvery
 import io.mockk.coVerify
@@ -38,6 +40,8 @@ class AuthViewModelTest {
     private val testDispatcher = StandardTestDispatcher()
     private lateinit var mockAuth: FirebaseAuth
     private lateinit var mockCredentialManager: CredentialManager
+    private lateinit var fakeUserRepository: FakeUserRepository
+    private lateinit var fakeLoginHistoryRepository: FakeLoginHistoryRepository
     private lateinit var viewModel: AuthViewModel
     private val authStateListenerSlot = slot<FirebaseAuth.AuthStateListener>()
 
@@ -46,12 +50,16 @@ class AuthViewModelTest {
         Dispatchers.setMain(testDispatcher)
         mockAuth = mockk(relaxed = true)
         mockCredentialManager = mockk(relaxed = true)
+        fakeUserRepository = FakeUserRepository()
+        fakeLoginHistoryRepository = FakeLoginHistoryRepository()
         every { mockAuth.currentUser } returns null
         every { mockAuth.addAuthStateListener(capture(authStateListenerSlot)) } just Runs
         viewModel = AuthViewModel(
             app = mockk<Application>(relaxed = true),
             auth = mockAuth,
             credentialManager = mockCredentialManager,
+            userRepository = fakeUserRepository,
+            loginHistoryRepository = fakeLoginHistoryRepository,
         )
     }
 
@@ -62,6 +70,9 @@ class AuthViewModelTest {
 
     /** 성공 시나리오: success 리스너만 발화, failure 리스너는 발화하지 않음 */
     private fun givenSignInSucceeds(mockUser: FirebaseUser) {
+        every { mockUser.uid } returns "test-uid"
+        every { mockUser.email } returns "test@example.com"
+        every { mockUser.displayName } returns "Test User"
         val mockAuthResult = mockk<AuthResult> { every { user } returns mockUser }
         val task = mockk<Task<AuthResult>>()
         every { task.addOnSuccessListener(any()) } answers {
@@ -173,6 +184,63 @@ class AuthViewModelTest {
 
         assertNull(viewModel.user.value)
         assertTrue(callbackResult == false)
+    }
+
+    @Test
+    fun `firebaseAuthWithGoogle 성공 시 userRepository_upsertUserProfile과 loginHistoryRepository_recordLogin이 호출되고 user_onResult가 갱신된다`() = runTest {
+        val mockUser = mockk<FirebaseUser>()
+        givenSignInSucceeds(mockUser)
+
+        var callbackResult: Boolean? = null
+        viewModel.firebaseAuthWithGoogle("test-id-token") { callbackResult = it }
+        advanceUntilIdle()
+
+        assertEquals("test-uid", fakeUserRepository.lastUpsertedUid)
+        assertEquals("test@example.com", fakeUserRepository.lastUpsertedEmail)
+        assertEquals("Test User", fakeUserRepository.lastUpsertedDisplayName)
+        assertEquals("test-uid", fakeLoginHistoryRepository.lastUid)
+        assertEquals(mockUser, viewModel.user.value)
+        assertTrue(callbackResult == true)
+    }
+
+    // Firebase는 signInWithCredential 성공 시 authStateListener를 비동기로 발화시켜 _user를 먼저 갱신할 수 있다.
+    // 이후 프로필 upsert/로그인 기록이 실패하면 그 세션을 실제로 롤백해야 로그인 실패와 user 상태가 일치한다.
+    private fun givenAuthStateListenerAlreadyFired(mockUser: FirebaseUser) {
+        every { mockAuth.currentUser } returns mockUser
+        authStateListenerSlot.captured.onAuthStateChanged(mockAuth)
+    }
+
+    @Test
+    fun `userRepository_upsertUserProfile이 실패하면 signOut으로 세션이 롤백되고 user는 null을 유지한다`() = runTest {
+        val mockUser = mockk<FirebaseUser>()
+        givenSignInSucceeds(mockUser)
+        givenAuthStateListenerAlreadyFired(mockUser)
+        fakeUserRepository.upsertUserProfileError = RuntimeException("firestore error")
+
+        var callbackResult: Boolean? = null
+        viewModel.firebaseAuthWithGoogle("test-id-token") { callbackResult = it }
+        advanceUntilIdle()
+
+        assertNull(viewModel.user.value)
+        assertTrue(callbackResult == false)
+        assertEquals(0, fakeLoginHistoryRepository.recordCallCount)
+        verify { mockAuth.signOut() }
+    }
+
+    @Test
+    fun `loginHistoryRepository_recordLogin이 실패하면 signOut으로 세션이 롤백되고 user는 null을 유지한다`() = runTest {
+        val mockUser = mockk<FirebaseUser>()
+        givenSignInSucceeds(mockUser)
+        givenAuthStateListenerAlreadyFired(mockUser)
+        fakeLoginHistoryRepository.recordLoginError = RuntimeException("firestore error")
+
+        var callbackResult: Boolean? = null
+        viewModel.firebaseAuthWithGoogle("test-id-token") { callbackResult = it }
+        advanceUntilIdle()
+
+        assertNull(viewModel.user.value)
+        assertTrue(callbackResult == false)
+        verify { mockAuth.signOut() }
     }
 
     @Test
