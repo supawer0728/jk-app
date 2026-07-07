@@ -1,7 +1,10 @@
 package com.jkapp.todo
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import com.jkapp.auth.AuthRepository
 import com.jkapp.auth.FirebaseAuthRepository
 import java.time.Instant
@@ -40,6 +43,13 @@ class TodoViewModel(
 
     private val _sortOption = MutableStateFlow(TodoSortOption.DUE_DATE)
     val sortOption: StateFlow<TodoSortOption> = _sortOption.asStateFlow()
+
+    private val _saveCompleted = MutableStateFlow(false)
+    val saveCompleted: StateFlow<Boolean> = _saveCompleted.asStateFlow()
+
+    fun consumeSaveCompleted() {
+        _saveCompleted.value = false
+    }
 
     // 필터+정렬 결과를 캐시해 탭 전환으로 컴포지션이 재생성되어도 재계산하지 않는다.
     // (DiaryViewModel.recordsByMonth와 동일한 목적, 이슈 #37 참고)
@@ -130,7 +140,7 @@ class TodoViewModel(
             runCatching { repository.updateTodoItem(updated) }
                 .onSuccess {
                     reminderScheduler.cancel(item)
-                    if (!updated.isCompleted) reminderScheduler.schedule(updated)
+                    if (shouldScheduleReminder(updated)) reminderScheduler.schedule(updated)
                 }
                 .onFailure { e ->
                     _uiState.value = TodoUiState.Error("할 일 상태 변경에 실패했습니다: ${e.localizedMessage ?: "알 수 없는 오류"}")
@@ -138,7 +148,84 @@ class TodoViewModel(
         }
     }
 
+    fun addTodoItem(item: TodoItem) {
+        viewModelScope.launch {
+            runCatching { repository.addTodoItem(item) }
+                .onSuccess { id ->
+                    val added = item.copy(firestoreId = id)
+                    if (shouldScheduleReminder(added)) reminderScheduler.schedule(added)
+                    _saveCompleted.value = true
+                }
+                .onFailure { e ->
+                    _uiState.value = TodoUiState.Error("할 일 저장에 실패했습니다: ${e.localizedMessage ?: "알 수 없는 오류"}")
+                }
+        }
+    }
+
+    fun updateTodoItem(item: TodoItem) {
+        viewModelScope.launch {
+            runCatching { repository.updateTodoItem(item) }
+                .onSuccess {
+                    reminderScheduler.cancel(item)
+                    if (shouldScheduleReminder(item)) reminderScheduler.schedule(item)
+                    _saveCompleted.value = true
+                }
+                .onFailure { e ->
+                    _uiState.value = TodoUiState.Error("할 일 수정에 실패했습니다: ${e.localizedMessage ?: "알 수 없는 오류"}")
+                }
+        }
+    }
+
+    fun deleteTodoItem(item: TodoItem) {
+        val firestoreId = item.firestoreId ?: return
+        viewModelScope.launch {
+            runCatching { repository.deleteTodoItem(firestoreId) }
+                .onSuccess { reminderScheduler.cancel(item) }
+                .onFailure { e ->
+                    _uiState.value = TodoUiState.Error("할 일 삭제에 실패했습니다: ${e.localizedMessage ?: "알 수 없는 오류"}")
+                }
+        }
+    }
+
+    fun addCategory(category: TodoCategory) {
+        viewModelScope.launch {
+            runCatching { repository.addCategory(category) }
+                .onFailure { e ->
+                    _uiState.value = TodoUiState.Error("카테고리 저장에 실패했습니다: ${e.localizedMessage ?: "알 수 없는 오류"}")
+                }
+        }
+    }
+
+    fun updateCategory(category: TodoCategory) {
+        viewModelScope.launch {
+            runCatching { repository.updateCategory(category) }
+                .onFailure { e ->
+                    _uiState.value = TodoUiState.Error("카테고리 수정에 실패했습니다: ${e.localizedMessage ?: "알 수 없는 오류"}")
+                }
+        }
+    }
+
+    // 시스템 카테고리 개념이 없으므로(이슈 #54) 모든 카테고리를 제한 없이 삭제할 수 있다.
+    // 삭제 시 해당 카테고리를 참조하던 항목들의 categoryId를 null로 재배정한다.
+    fun deleteCategory(docId: String) {
+        val state = uiState.value as? TodoUiState.Success ?: return
+        val affectedItemIds = state.items.filter { it.categoryId == docId }.mapNotNull { it.firestoreId }
+        viewModelScope.launch {
+            runCatching { repository.deleteCategoryAndUnassignItems(docId, affectedItemIds) }
+                .onFailure { e ->
+                    _uiState.value = TodoUiState.Error("카테고리 삭제에 실패했습니다: ${e.localizedMessage ?: "알 수 없는 오류"}")
+                }
+        }
+    }
+
     companion object {
+        fun factory(): ViewModelProvider.Factory =
+            viewModelFactory { initializer { TodoViewModel() } }
+
+        // 마감일시와 리마인더 오프셋이 모두 있어야 "몇 분 전에 알린다"는 리마인더가 의미를 가진다.
+        fun shouldScheduleReminder(item: TodoItem): Boolean =
+            !item.isCompleted && item.dueAt != null && item.reminderOffsetMinutes != null
+
         fun toggleInSet(id: String, current: Set<String>): Set<String> =
             if (id in current) current - id else current + id
 

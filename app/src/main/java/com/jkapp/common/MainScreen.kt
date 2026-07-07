@@ -65,7 +65,8 @@ import com.jkapp.finance.benchmark.BenchmarkViewModel
 import com.jkapp.finance.toDisplayAmount
 import com.jkapp.finance.investment.DailyAssetInvestmentViewModel
 import com.jkapp.haptic.LocalHapticController
-import com.jkapp.todo.TodoTabScreen
+import com.jkapp.todo.TodoScreen
+import com.jkapp.todo.TodoViewModel
 import java.math.BigDecimal
 
 private const val TAB_PANEL_SWIPE_THRESHOLD_PX = 60f
@@ -81,9 +82,12 @@ fun MainScreen(
     investmentViewModel: DailyAssetInvestmentViewModel,
     benchmarkViewModel: BenchmarkViewModel,
     tabOrderViewModel: TabOrderViewModel,
+    todoViewModel: TodoViewModel,
     onNavigateToDetail: (String) -> Unit,
     onNavigateToAdd: () -> Unit,
     onNavigateToRecordTypeManagement: () -> Unit,
+    onNavigateToTodoForm: (String?) -> Unit,
+    onNavigateToTodoCategoryManagement: () -> Unit,
     onNavigateToSettings: () -> Unit,
 ) {
     val user by viewModel.user.collectAsStateWithLifecycle()
@@ -275,7 +279,11 @@ fun MainScreen(
                     onNavigateToAdd = onNavigateToAdd,
                     onNavigateToRecordTypeManagement = onNavigateToRecordTypeManagement
                 )
-                MainTab.TODO -> TodoTabScreen()
+                MainTab.TODO -> TodoScreen(
+                    viewModel = todoViewModel,
+                    onNavigateToForm = onNavigateToTodoForm,
+                    onNavigateToCategoryManagement = onNavigateToTodoCategoryManagement
+                )
                 MainTab.CALENDAR -> CalendarTabScreen()
             }
         }

@@ -43,8 +43,13 @@ import com.jkapp.nav.LoginRoute
 import com.jkapp.nav.RecordTypeManagementRoute
 import com.jkapp.nav.SettingsRoute
 import com.jkapp.nav.SplashRoute
+import com.jkapp.nav.TodoCategoryManagementRoute
+import com.jkapp.nav.TodoFormRoute
 import com.jkapp.settings.SettingsScreen
 import com.jkapp.settings.SettingsViewModel
+import com.jkapp.todo.TodoCategoryManagementScreen
+import com.jkapp.todo.TodoFormScreen
+import com.jkapp.todo.TodoViewModel
 
 internal fun resolveAuthRoute(isLoggedIn: Boolean): Any = if (isLoggedIn) HomeRoute else LoginRoute
 
@@ -67,6 +72,7 @@ class MainActivity : ComponentActivity() {
     private val hapticController by lazy { HapticController(this) }
     private val authViewModel: AuthViewModel by viewModels()
     private val diaryViewModel: DiaryViewModel by viewModels { DiaryViewModel.factory(DriveRepositoryImpl(this), appPreferences) }
+    private val todoViewModel: TodoViewModel by viewModels { TodoViewModel.factory() }
     private val dailyAssetViewModel: DailyAssetViewModel by viewModels { DailyAssetViewModel.factory() }
     private val investmentViewModel: DailyAssetInvestmentViewModel by viewModels { DailyAssetInvestmentViewModel.factory() }
     private val benchmarkViewModel: BenchmarkViewModel by viewModels { BenchmarkViewModel.factory() }
@@ -129,6 +135,7 @@ class MainActivity : ComponentActivity() {
                                     investmentViewModel = investmentViewModel,
                                     benchmarkViewModel = benchmarkViewModel,
                                     tabOrderViewModel = tabOrderViewModel,
+                                    todoViewModel = todoViewModel,
                                     onNavigateToDetail = { date ->
                                         backStack.add(DiaryDetailRoute(date))
                                     },
@@ -137,6 +144,12 @@ class MainActivity : ComponentActivity() {
                                     },
                                     onNavigateToRecordTypeManagement = {
                                         backStack.add(RecordTypeManagementRoute)
+                                    },
+                                    onNavigateToTodoForm = { firestoreId ->
+                                        backStack.add(TodoFormRoute(firestoreId = firestoreId))
+                                    },
+                                    onNavigateToTodoCategoryManagement = {
+                                        backStack.add(TodoCategoryManagementRoute)
                                     },
                                     onNavigateToSettings = {
                                         backStack.add(SettingsRoute)
@@ -163,6 +176,22 @@ class MainActivity : ComponentActivity() {
                             entry<RecordTypeManagementRoute> {
                                 RecordTypeManagementScreen(
                                     viewModel = diaryViewModel,
+                                    onBack = { backStack.removeLastOrNull() }
+                                )
+                            }
+                            entry<TodoFormRoute> { route ->
+                                TodoFormScreen(
+                                    viewModel = todoViewModel,
+                                    firestoreId = route.firestoreId,
+                                    onBack = { backStack.removeLastOrNull() },
+                                    onNavigateToCategoryManagement = {
+                                        backStack.add(TodoCategoryManagementRoute)
+                                    }
+                                )
+                            }
+                            entry<TodoCategoryManagementRoute> {
+                                TodoCategoryManagementScreen(
+                                    viewModel = todoViewModel,
                                     onBack = { backStack.removeLastOrNull() }
                                 )
                             }
