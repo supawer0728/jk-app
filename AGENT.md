@@ -18,7 +18,7 @@ Google Drive는 별도 DB가 아니라, 다이어리 기록에 첨부되는 파�
 | 투자 종목 (investment) | 명의별 투자 종목 입력·조회·평가금액/수익률 관리 |
 | 벤치마크 (benchmark) | 투자자산 대비 KOSPI/S&P500/나스닥 수익률 비교 |
 | 다이어리 (diary) | 반려동물 건강·생활 기록(사진 첨부 포함) 기록·조회, 기록 유형 관리 |
-| 할일 (todo) | 오늘의 할일 관리 (자리표시자, 구현 예정) |
+| 할일 (todo) | 오늘의 할일 관리 (데이터 모델·Repository 완성, 화면/ViewModel은 구현 예정) |
 | 캘린더 (calendar) | 일정 관리 (자리표시자, 구현 예정) |
 | 설정 (settings) | 다크모드, 햅틱 강도, 하단 탭 순서 등 앱 환경 설정 |
 
@@ -127,7 +127,7 @@ com.jkapp
 │   ├── investment/  투자 종목 — ui + InvestmentFirestoreRepository
 │   └── benchmark/   벤치마크 — ui + BenchmarkFirestoreRepository
 ├── settings/       설정 화면/ViewModel
-├── todo/           오늘의 할일 (자리표시자, 구현 예정)
+├── todo/           오늘의 할일 — TodoFirestoreRepository 완성, UI/ViewModel은 구현 예정
 ├── calendar/       캘린더 (자리표시자, 구현 예정)
 ├── common/         MainScreen/HomeTabScreen/TabOrder*, AppPreferences, theme 등 여러 feature가 공유하는 것
 ├── auth/           Firebase Auth — 공유 인프라, 특정 feature에 속하지 않음
@@ -170,6 +170,8 @@ UI (Compose) → ViewModel → XxxFirestoreRepository (인터페이스)
 | `daily-assets` | `finance.asset.AssetFirestoreRepository` | `DailyAsset` (assets: `AssetItem` 목록) |
 | `daily-asset-investments` | `finance.investment.InvestmentFirestoreRepository` | `DailyAssetInvestment` (investments: `InvestmentItem` 목록) |
 | `benchmarks` | `finance.benchmark.BenchmarkFirestoreRepository` | `Benchmark` |
+| `todo-items` | `todo.TodoFirestoreRepository` | `TodoItem` (recurrence: `RecurrenceRule`, 날짜 필드는 Firestore `Timestamp`) |
+| `todo-categories` | `todo.TodoFirestoreRepository` | `TodoCategory` |
 | `tab-orders` | `common.TabOrderRepository` | 사용자별 하단 탭 순서(`List<String>`) |
 
 ## graphify
