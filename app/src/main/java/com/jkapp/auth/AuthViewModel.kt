@@ -1,6 +1,7 @@
 ﻿package com.jkapp.auth
 
 import android.app.Application
+import android.os.Build
 import androidx.credentials.ClearCredentialStateRequest
 import androidx.credentials.CredentialManager
 import androidx.credentials.exceptions.ClearCredentialException
@@ -9,6 +10,12 @@ import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
+import com.jkapp.BuildConfig
+import com.jkapp.user.LoginDevice
+import com.jkapp.user.LoginHistoryRepository
+import com.jkapp.user.LoginHistoryRepositoryImpl
+import com.jkapp.user.UserRepository
+import com.jkapp.user.UserRepositoryImpl
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,6 +32,8 @@ class AuthViewModel(
     app: Application,
     private val auth: FirebaseAuth,
     private val credentialManager: CredentialManager,
+    private val userRepository: UserRepository = UserRepositoryImpl(),
+    private val loginHistoryRepository: LoginHistoryRepository = LoginHistoryRepositoryImpl(),
 ) : AndroidViewModel(app) {
 
     constructor(app: Application) : this(
@@ -67,7 +76,7 @@ class AuthViewModel(
         val credential = GoogleAuthProvider.getCredential(idToken, null)
         viewModelScope.launch {
             runCatching {
-                suspendCancellableCoroutine { cont ->
+                val signedInUser = suspendCancellableCoroutine { cont ->
                     auth.signInWithCredential(credential)
                         .addOnSuccessListener { authResult ->
                             val user = authResult.user
@@ -75,19 +84,39 @@ class AuthViewModel(
                                 cont.resumeWithException(IllegalStateException("authResult.user is null after successful sign-in"))
                                 return@addOnSuccessListener
                             }
-                            _user.value = user
-                            cont.resume(Unit)
+                            cont.resume(user)
                         }
                         .addOnFailureListener { cont.resumeWithException(it) }
                 }
+                // 프로필 upsert/로그인 기록도 같은 runCatching 안에서 처리해, 실패 시 로그인 자체도 실패로 취급한다.
+                userRepository.upsertUserProfile(
+                    uid = signedInUser.uid,
+                    email = signedInUser.email.orEmpty(),
+                    displayName = signedInUser.displayName.orEmpty(),
+                )
+                loginHistoryRepository.recordLogin(signedInUser.uid, currentLoginDevice())
+                _user.value = signedInUser
             }.onFailure { e ->
                 if (e is CancellationException) throw e
             }.fold(
                 onSuccess = { onResult(true) },
-                onFailure = { onResult(false) },
+                onFailure = {
+                    // signInWithCredential이 이미 성공해 Firebase 세션이 생겼을 수 있다(authStateListener가
+                    // 비동기로 _user를 갱신). 프로필 upsert/로그인 기록 실패를 로그인 실패로 취급하려면
+                    // 그 세션을 실제로 롤백해야 _user와 onResult(false)가 어긋나지 않는다.
+                    auth.signOut()
+                    _user.value = null
+                    onResult(false)
+                },
             )
         }
     }
+
+    private fun currentLoginDevice() = LoginDevice(
+        osVersion = Build.VERSION.RELEASE.orEmpty(),
+        deviceModel = "${Build.MANUFACTURER} ${Build.MODEL}",
+        appVersion = BuildConfig.VERSION_NAME,
+    )
 
     fun signOut() {
         auth.signOut()
