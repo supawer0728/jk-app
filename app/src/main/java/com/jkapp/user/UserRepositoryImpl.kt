@@ -38,6 +38,31 @@ class UserRepositoryImpl(
             .await()
     }
 
+    override suspend fun getPushToken(uid: String): PushToken? =
+        usersRef.document(uid).get().await().toPushToken()
+
+    override suspend fun updatePushToken(uid: String, pushToken: PushToken) {
+        usersRef.document(uid)
+            .set(mapOf(FIELD_PUSH_TOKEN to pushToken.toFieldMap()), SetOptions.merge())
+            .await()
+    }
+
+    private fun DocumentSnapshot?.toPushToken(): PushToken? {
+        val pushTokenMap = this?.get(FIELD_PUSH_TOKEN) as? Map<*, *> ?: return null
+        val token = pushTokenMap[FIELD_PUSH_TOKEN_TOKEN] as? String ?: return null
+        return PushToken(
+            token = token,
+            updatedAt = pushTokenMap[FIELD_PUSH_TOKEN_UPDATED_AT] as? Long ?: 0L,
+            platform = pushTokenMap[FIELD_PUSH_TOKEN_PLATFORM] as? String ?: "android",
+        )
+    }
+
+    private fun PushToken.toFieldMap() = mapOf(
+        FIELD_PUSH_TOKEN_TOKEN to token,
+        FIELD_PUSH_TOKEN_UPDATED_AT to updatedAt,
+        FIELD_PUSH_TOKEN_PLATFORM to platform,
+    )
+
     private fun DocumentSnapshot?.toUserPreference(): UserPreference {
         val defaults = UserPreference()
         val preferenceMap = this?.get(FIELD_PREFERENCE) as? Map<*, *>
@@ -60,5 +85,9 @@ class UserRepositoryImpl(
         private const val FIELD_PREFERENCE = "preference"
         private const val FIELD_PREFERENCE_LANGUAGE = "language"
         private const val FIELD_PREFERENCE_TIME_ZONE = "timeZone"
+        private const val FIELD_PUSH_TOKEN = "pushToken"
+        private const val FIELD_PUSH_TOKEN_TOKEN = "token"
+        private const val FIELD_PUSH_TOKEN_UPDATED_AT = "updatedAt"
+        private const val FIELD_PUSH_TOKEN_PLATFORM = "platform"
     }
 }

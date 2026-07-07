@@ -16,6 +16,13 @@ class FakeUserRepository : UserRepository {
     var lastUpdatedPreferenceUid: String? = null
     var lastUpdatedPreference: UserPreference? = null
 
+    private val pushTokensByUid = mutableMapOf<String, PushToken>()
+    var getPushTokenError: Throwable? = null
+    var updatePushTokenError: Throwable? = null
+    var lastUpdatedPushTokenUid: String? = null
+    var lastUpdatedPushToken: PushToken? = null
+    var updatePushTokenCallCount = 0
+
     override suspend fun upsertUserProfile(uid: String, email: String, displayName: String) {
         upsertCallCount++
         upsertUserProfileError?.let { throw it }
@@ -32,5 +39,18 @@ class FakeUserRepository : UserRepository {
         lastUpdatedPreference = preference
         updatePreferenceError?.let { throw it }
         preferencesByUid.getOrPut(uid) { MutableStateFlow(UserPreference()) }.value = preference
+    }
+
+    override suspend fun getPushToken(uid: String): PushToken? {
+        getPushTokenError?.let { throw it }
+        return pushTokensByUid[uid]
+    }
+
+    override suspend fun updatePushToken(uid: String, pushToken: PushToken) {
+        updatePushTokenCallCount++
+        lastUpdatedPushTokenUid = uid
+        lastUpdatedPushToken = pushToken
+        updatePushTokenError?.let { throw it }
+        pushTokensByUid[uid] = pushToken
     }
 }
