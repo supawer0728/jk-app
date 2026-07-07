@@ -20,6 +20,11 @@
     <string name="haptic_intensity">햅틱 강도</string>
     <string name="haptic_intensity_value">%1$d</string>
     <string name="haptic_intensity_off">꺼짐</string>
+    <string name="language">언어</string>
+    <string name="language_ko">한국어</string>
+    <string name="time_zone">시간대</string>
+    <string name="time_zone_asia_seoul">한국 표준시 (Asia/Seoul)</string>
+    <string name="time_zone_utc">협정 세계시 (UTC)</string>
     <!-- Diary -->
     <string name="add_record">기록 추가</string>
     <string name="write_diary">일기 쓰기</string>

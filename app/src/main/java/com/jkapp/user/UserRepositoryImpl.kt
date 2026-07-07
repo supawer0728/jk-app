@@ -1,9 +1,12 @@
 package com.jkapp.user
 
+import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 import com.jkapp.common.AppFirestore
 import com.jkapp.common.await
+import com.jkapp.common.snapshotFlow
+import kotlinx.coroutines.flow.Flow
 
 class UserRepositoryImpl(
     private val db: FirebaseFirestore = AppFirestore.instance,
@@ -24,6 +27,24 @@ class UserRepositoryImpl(
             fields[FIELD_PREFERENCE] = UserPreference().toFieldMap()
         }
         docRef.set(fields, SetOptions.merge()).await()
+    }
+
+    override fun observePreference(uid: String): Flow<UserPreference> =
+        usersRef.document(uid).snapshotFlow { it.toUserPreference() }
+
+    override suspend fun updatePreference(uid: String, preference: UserPreference) {
+        usersRef.document(uid)
+            .set(mapOf(FIELD_PREFERENCE to preference.toFieldMap()), SetOptions.merge())
+            .await()
+    }
+
+    private fun DocumentSnapshot?.toUserPreference(): UserPreference {
+        val defaults = UserPreference()
+        val preferenceMap = this?.get(FIELD_PREFERENCE) as? Map<*, *>
+        return UserPreference(
+            language = preferenceMap?.get(FIELD_PREFERENCE_LANGUAGE) as? String ?: defaults.language,
+            timeZone = preferenceMap?.get(FIELD_PREFERENCE_TIME_ZONE) as? String ?: defaults.timeZone,
+        )
     }
 
     private fun UserPreference.toFieldMap() = mapOf(
