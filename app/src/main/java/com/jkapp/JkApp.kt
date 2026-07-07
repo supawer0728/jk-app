@@ -18,7 +18,10 @@ import kotlinx.coroutines.launch
 class JkApp : Application() {
 
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val pushTokenManager = PushTokenManager()
+    // FirebaseApp은 FirebaseInitProvider(ContentProvider)가 초기화하며, 이는 Application 생성자보다
+    // 나중에 실행된다. 즉시 초기화하면 PushTokenManager -> UserRepositoryImpl -> AppFirestore.instance가
+    // Application 생성자 시점에 평가되어 "Default FirebaseApp is not initialized" 크래시가 난다.
+    private val pushTokenManager by lazy { PushTokenManager() }
 
     override fun onCreate() {
         super.onCreate()
