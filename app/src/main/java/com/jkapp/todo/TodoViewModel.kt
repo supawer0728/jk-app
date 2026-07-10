@@ -102,18 +102,17 @@ class TodoViewModel(
         _assigneeFilter.value = emptySet()
     }
 
-    // 진행 중인 반복 항목(recurrence != null && !isCompleted)은 completeOccurrence로 다음 회차로
-    // in-place 전진시킨다. 이미 종료된 반복 항목(반복이 endAt을 지나 status=DONE으로 고정된 경우)과
-    // 비반복 항목은 완료 상태를 단순 토글한다 — 종료된 반복 항목도 이 분기를 타지 않으면 매 탭마다
-    // completeOccurrence가 다시 실행되어 completionHistory에 같은 회차가 중복 누적된다.
-    // 이전 회차(또는 이전 완료 상태)의 알림은 항상 취소하고, 결과가 미완료로 남을 때만(다음 회차 포함) 재예약한다.
-    fun toggleCompleted(item: TodoItem) {
-        val updated = if (item.recurrence != null && !item.isCompleted) {
-            item.completeOccurrence(Instant.now())
-        } else if (item.isCompleted) {
-            item.copy(status = TodoStatus.NOT_STARTED, completedAt = null)
-        } else {
-            item.copy(status = TodoStatus.DONE, completedAt = Instant.now())
+    // 목록의 상태 사이클 버튼(이슈 #71): 미진행 -> 진행중 -> 완료 -> 미진행.
+    // 진행중 -> 완료 전이는 실제 완료 처리이므로, 반복 항목은 completeOccurrence로 다음 회차로 in-place
+    // 전진(status는 NOT_STARTED로 리셋)하고 비반복 항목은 DONE으로 고정한다. 완료/재개로 완료 여부가
+    // 바뀔 수 있으므로 이전 알림은 항상 취소하고, 결과가 미완료로 남을 때만(다음 회차 포함) 재예약한다.
+    fun advanceStatus(item: TodoItem) {
+        val updated = when (item.status) {
+            TodoStatus.NOT_STARTED -> item.copy(status = TodoStatus.IN_PROGRESS)
+            TodoStatus.IN_PROGRESS ->
+                if (item.recurrence != null) item.completeOccurrence(Instant.now())
+                else item.copy(status = TodoStatus.DONE, completedAt = Instant.now())
+            TodoStatus.DONE -> item.copy(status = TodoStatus.NOT_STARTED, completedAt = null)
         }
         viewModelScope.launch {
             runCatching { repository.updateTodoItem(updated) }
@@ -121,22 +120,6 @@ class TodoViewModel(
                     reminderScheduler.cancel(item)
                     if (shouldScheduleReminder(updated)) reminderScheduler.schedule(updated)
                 }
-                .onFailure { e ->
-                    _uiState.value = TodoUiState.Error("할 일 상태 변경에 실패했습니다: ${e.localizedMessage ?: "알 수 없는 오류"}")
-                }
-        }
-    }
-
-    // 목록에서 재생 아이콘으로 미진행 <-> 진행중을 전환한다. 완료(DONE) 항목에는 노출하지 않으므로
-    // DONE이 들어오면 무시한다. 상태만 바뀌고 dueAt/리마인더 오프셋은 그대로라 리마인더 재예약은 불필요하다.
-    fun toggleInProgress(item: TodoItem) {
-        val nextStatus = when (item.status) {
-            TodoStatus.NOT_STARTED -> TodoStatus.IN_PROGRESS
-            TodoStatus.IN_PROGRESS -> TodoStatus.NOT_STARTED
-            TodoStatus.DONE -> return
-        }
-        viewModelScope.launch {
-            runCatching { repository.updateTodoItem(item.copy(status = nextStatus)) }
                 .onFailure { e ->
                     _uiState.value = TodoUiState.Error("할 일 상태 변경에 실패했습니다: ${e.localizedMessage ?: "알 수 없는 오류"}")
                 }

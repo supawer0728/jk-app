@@ -17,11 +17,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -135,8 +134,7 @@ fun TodoScreen(
                             items(visibleItems, key = { it.firestoreId ?: it.hashCode() }) { item ->
                                 TodoListItem(
                                     item = item,
-                                    onToggleCompleted = { viewModel.toggleCompleted(item) },
-                                    onToggleInProgress = { viewModel.toggleInProgress(item) },
+                                    onAdvanceStatus = { viewModel.advanceStatus(item) },
                                     onClick = { onNavigateToForm(item.firestoreId) },
                                     onDeleteRequest = { pendingDeleteItem = item },
                                 )
@@ -231,8 +229,7 @@ private fun AssigneeFilterRow(
 @Composable
 private fun TodoListItem(
     item: TodoItem,
-    onToggleCompleted: () -> Unit,
-    onToggleInProgress: () -> Unit,
+    onAdvanceStatus: () -> Unit,
     onClick: () -> Unit,
     onDeleteRequest: () -> Unit,
 ) {
@@ -244,20 +241,24 @@ private fun TodoListItem(
                 .padding(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Checkbox(checked = item.isCompleted, onCheckedChange = { onToggleCompleted() })
-            // 완료가 아닐 때만 재생/일시정지 아이콘으로 미진행 <-> 진행중을 전환한다.
-            if (!item.isCompleted) {
-                IconButton(onClick = onToggleInProgress) {
-                    Icon(
-                        imageVector = if (item.status == TodoStatus.IN_PROGRESS) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        contentDescription = stringResource(
-                            if (item.status == TodoStatus.IN_PROGRESS) R.string.todo_status_toggle_pause
-                            else R.string.todo_status_toggle_start
-                        ),
-                        tint = if (item.status == TodoStatus.IN_PROGRESS) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+            // 상태 사이클 버튼: 미진행 -(재생)-> 진행중 -(재생)-> 완료 -(처음으로)-> 미진행.
+            // 미진행/진행중은 재생 아이콘을 그대로 유지하고, 완료 상태에서만 "처음으로" 아이콘으로 바뀐다.
+            IconButton(onClick = onAdvanceStatus) {
+                Icon(
+                    imageVector = if (item.status == TodoStatus.DONE) Icons.Default.SkipPrevious else Icons.Default.PlayArrow,
+                    contentDescription = stringResource(
+                        when (item.status) {
+                            TodoStatus.NOT_STARTED -> R.string.todo_status_toggle_start
+                            TodoStatus.IN_PROGRESS -> R.string.todo_status_advance_complete
+                            TodoStatus.DONE -> R.string.todo_status_advance_reset
+                        }
+                    ),
+                    tint = when (item.status) {
+                        TodoStatus.IN_PROGRESS -> MaterialTheme.colorScheme.primary
+                        TodoStatus.DONE -> MaterialTheme.colorScheme.onSurfaceVariant
+                        TodoStatus.NOT_STARTED -> MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(

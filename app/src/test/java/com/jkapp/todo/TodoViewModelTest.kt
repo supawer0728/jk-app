@@ -130,26 +130,83 @@ class TodoViewModelTest {
         assertEquals(listOf(jeon), viewModel.visibleItems.value)
     }
 
-    // --- toggleCompleted (비반복) ---
+    // --- advanceStatus (상태 사이클: 미진행 -> 진행중 -> 완료 -> 미진행) ---
 
     @Test
-    fun `toggleCompleted는 비반복 항목을 완료로 토글하고 알림을 취소한다`() = runTest {
+    fun `advanceStatus는 미진행 항목을 진행중으로 바꾼다`() = runTest {
         val item = makeItem("할 일", status = TodoStatus.NOT_STARTED, firestoreId = "id-1")
         fakeRepository.setItems(listOf(item))
         fakeAuth.setLoggedIn(true)
         advanceUntilIdle()
 
-        viewModel.toggleCompleted(item)
+        viewModel.advanceStatus(item)
+        advanceUntilIdle()
+
+        assertEquals(TodoStatus.IN_PROGRESS, fakeRepository.lastUpdatedItem?.status)
+        assertTrue(fakeScheduler.scheduled.isEmpty())
+    }
+
+    @Test
+    fun `advanceStatus는 진행중 비반복 항목을 완료로 바꾸고 알림을 취소한다`() = runTest {
+        val item = makeItem("할 일", status = TodoStatus.IN_PROGRESS, firestoreId = "id-1")
+        fakeRepository.setItems(listOf(item))
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+
+        viewModel.advanceStatus(item)
         advanceUntilIdle()
 
         val updated = fakeRepository.lastUpdatedItem
+        assertEquals(TodoStatus.DONE, updated?.status)
         assertEquals(true, updated?.isCompleted)
         assertEquals(1, fakeScheduler.cancelled.size)
         assertTrue(fakeScheduler.scheduled.isEmpty())
     }
 
     @Test
-    fun `toggleCompleted는 완료된 비반복 항목을 다시 미완료로 되돌리고 마감일시·리마인더가 있으면 알림을 재예약한다`() = runTest {
+    fun `advanceStatus는 진행중을 완료 처리하면 마감·리마인더가 있어도 재예약하지 않는다`() = runTest {
+        val item = makeItem(
+            "할 일", status = TodoStatus.IN_PROGRESS, firestoreId = "id-1",
+            dueAt = Instant.parse("2024-01-01T00:00:00Z"), reminderOffsetMinutes = 10,
+        )
+        fakeRepository.setItems(listOf(item))
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+
+        viewModel.advanceStatus(item)
+        advanceUntilIdle()
+
+        assertEquals(TodoStatus.DONE, fakeRepository.lastUpdatedItem?.status)
+        assertTrue(fakeScheduler.scheduled.isEmpty())
+        assertEquals(1, fakeScheduler.cancelled.size)
+    }
+
+    @Test
+    fun `advanceStatus는 진행중 반복 항목을 다음 회차로 전진시키고 이전 알림을 취소한 뒤 재예약한다`() = runTest {
+        val rule = RecurrenceRule(frequency = RecurrenceFrequency.DAILY)
+        val dueAt = Instant.parse("2024-01-01T00:00:00Z")
+        val item = makeItem(
+            "반복 할 일", status = TodoStatus.IN_PROGRESS, firestoreId = "id-1", recurrence = rule,
+            dueAt = dueAt, reminderOffsetMinutes = 10,
+        )
+        fakeRepository.setItems(listOf(item))
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+
+        viewModel.advanceStatus(item)
+        advanceUntilIdle()
+
+        val updated = fakeRepository.lastUpdatedItem
+        assertEquals(false, updated?.isCompleted)
+        assertEquals(TodoStatus.NOT_STARTED, updated?.status)
+        assertEquals(dueAt.plusSeconds(24 * 60 * 60), updated?.dueAt)
+        assertEquals(listOf(dueAt), updated?.completionHistory)
+        assertEquals(1, fakeScheduler.scheduled.size)
+        assertEquals(1, fakeScheduler.cancelled.size)
+    }
+
+    @Test
+    fun `advanceStatus는 완료 항목을 미진행으로 되돌리고 마감·리마인더가 있으면 재예약한다`() = runTest {
         val item = makeItem(
             "할 일", status = TodoStatus.DONE, firestoreId = "id-1",
             dueAt = Instant.parse("2024-01-01T00:00:00Z"), reminderOffsetMinutes = 10,
@@ -158,11 +215,10 @@ class TodoViewModelTest {
         fakeAuth.setLoggedIn(true)
         advanceUntilIdle()
 
-        viewModel.toggleCompleted(item)
+        viewModel.advanceStatus(item)
         advanceUntilIdle()
 
         val updated = fakeRepository.lastUpdatedItem
-        assertEquals(false, updated?.isCompleted)
         assertEquals(TodoStatus.NOT_STARTED, updated?.status)
         assertNull(updated?.completedAt)
         assertEquals(1, fakeScheduler.scheduled.size)
@@ -170,124 +226,18 @@ class TodoViewModelTest {
     }
 
     @Test
-    fun `toggleCompleted는 마감일시나 리마인더 오프셋이 없으면 알림을 재예약하지 않는다`() = runTest {
-        val item = makeItem("할 일", status = TodoStatus.DONE, firestoreId = "id-1")
-        fakeRepository.setItems(listOf(item))
-        fakeAuth.setLoggedIn(true)
-        advanceUntilIdle()
-
-        viewModel.toggleCompleted(item)
-        advanceUntilIdle()
-
-        assertTrue(fakeScheduler.scheduled.isEmpty())
-        assertEquals(1, fakeScheduler.cancelled.size)
-    }
-
-    // --- toggleCompleted (반복) ---
-
-    @Test
-    fun `toggleCompleted는 반복 항목을 다음 회차로 전진시키고 이전 알림을 취소한 뒤 재예약한다`() = runTest {
-        val rule = RecurrenceRule(frequency = RecurrenceFrequency.DAILY)
-        val dueAt = Instant.parse("2024-01-01T00:00:00Z")
-        val item = makeItem(
-            "반복 할 일", status = TodoStatus.NOT_STARTED, firestoreId = "id-1", recurrence = rule,
-            dueAt = dueAt, reminderOffsetMinutes = 10,
-        )
-        fakeRepository.setItems(listOf(item))
-        fakeAuth.setLoggedIn(true)
-        advanceUntilIdle()
-
-        viewModel.toggleCompleted(item)
-        advanceUntilIdle()
-
-        val updated = fakeRepository.lastUpdatedItem
-        assertEquals(false, updated?.isCompleted)
-        assertEquals(dueAt.plusSeconds(24 * 60 * 60), updated?.dueAt)
-        assertEquals(listOf(dueAt), updated?.completionHistory)
-        assertEquals(1, fakeScheduler.scheduled.size)
-        assertEquals(1, fakeScheduler.cancelled.size)
-    }
-
-    @Test
-    fun `toggleCompleted는 이미 종료된 반복 항목을 다시 탭하면 completionHistory를 중복 누적하지 않고 단순 토글한다`() = runTest {
-        val rule = RecurrenceRule(frequency = RecurrenceFrequency.DAILY, endAt = Instant.parse("2024-01-01T00:00:00Z"))
-        val lastDueAt = Instant.parse("2024-01-01T00:00:00Z")
-        val history = listOf(Instant.parse("2023-12-31T00:00:00Z"))
-        val endedItem = makeItem(
-            "종료된 반복 할 일",
-            status = TodoStatus.DONE,
-            firestoreId = "id-1",
-            recurrence = rule,
-            dueAt = lastDueAt,
-        ).copy(completionHistory = history, completedAt = lastDueAt)
-        fakeRepository.setItems(listOf(endedItem))
-        fakeAuth.setLoggedIn(true)
-        advanceUntilIdle()
-
-        viewModel.toggleCompleted(endedItem)
-        advanceUntilIdle()
-
-        val updated = fakeRepository.lastUpdatedItem
-        assertEquals(false, updated?.isCompleted)
-        assertNull(updated?.completedAt)
-        assertEquals(lastDueAt, updated?.dueAt)
-        assertEquals(history, updated?.completionHistory)
-    }
-
-    @Test
-    fun `toggleCompleted 저장 실패 시 uiState가 Error가 된다`() = runTest {
+    fun `advanceStatus 저장 실패 시 uiState가 Error가 된다`() = runTest {
         val item = makeItem("할 일", firestoreId = "id-1")
         fakeRepository.setItems(listOf(item))
         fakeAuth.setLoggedIn(true)
         advanceUntilIdle()
 
         fakeRepository.updateTodoItemError = RuntimeException("업데이트 실패")
-        viewModel.toggleCompleted(item)
+        viewModel.advanceStatus(item)
         advanceUntilIdle()
 
         val error = viewModel.uiState.value as TodoUiState.Error
         assertTrue(error.message.contains("할 일 상태 변경에 실패했습니다"))
-    }
-
-    // --- toggleInProgress ---
-
-    @Test
-    fun `toggleInProgress는 미진행 항목을 진행중으로 바꾼다`() = runTest {
-        val item = makeItem("할 일", status = TodoStatus.NOT_STARTED, firestoreId = "id-1")
-        fakeRepository.setItems(listOf(item))
-        fakeAuth.setLoggedIn(true)
-        advanceUntilIdle()
-
-        viewModel.toggleInProgress(item)
-        advanceUntilIdle()
-
-        assertEquals(TodoStatus.IN_PROGRESS, fakeRepository.lastUpdatedItem?.status)
-    }
-
-    @Test
-    fun `toggleInProgress는 진행중 항목을 미진행으로 되돌린다`() = runTest {
-        val item = makeItem("할 일", status = TodoStatus.IN_PROGRESS, firestoreId = "id-1")
-        fakeRepository.setItems(listOf(item))
-        fakeAuth.setLoggedIn(true)
-        advanceUntilIdle()
-
-        viewModel.toggleInProgress(item)
-        advanceUntilIdle()
-
-        assertEquals(TodoStatus.NOT_STARTED, fakeRepository.lastUpdatedItem?.status)
-    }
-
-    @Test
-    fun `toggleInProgress는 완료 항목에는 아무 것도 하지 않는다`() = runTest {
-        val item = makeItem("할 일", status = TodoStatus.DONE, firestoreId = "id-1")
-        fakeRepository.setItems(listOf(item))
-        fakeAuth.setLoggedIn(true)
-        advanceUntilIdle()
-
-        viewModel.toggleInProgress(item)
-        advanceUntilIdle()
-
-        assertNull(fakeRepository.lastUpdatedItem)
     }
 
     // --- addTodoItem ---

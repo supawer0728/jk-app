@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -50,6 +51,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
@@ -68,19 +74,43 @@ private val DUE_AT_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
 
 private val REMINDER_PRESETS: List<Int?> = listOf(null, 0, 10, 30, 60, 1440)
 
-// 직접 입력한 "yyyy-MM-dd HH:mm" 문자열을 Instant로 파싱한다. 형식이 맞지 않으면 null.
-private fun parseDueAt(text: String, zone: ZoneId): Instant? =
-    runCatching { LocalDateTime.parse(text.trim(), DUE_AT_FORMATTER).atZone(zone).toInstant() }.getOrNull()
+// 마감일시는 숫자만 입력받아(yyyyMMddHHmm 12자리) "____-__-__ __:__" 마스크로 보여준다.
+private const val DATE_TIME_DIGIT_COUNT = 12
+private const val DATE_TIME_MASK = "____-__-__ __:__"
+// 마스크 문자열에서 숫자가 채워질 슬롯 인덱스(yyyy-MM-dd HH:mm 기준).
+private val DATE_TIME_DIGIT_SLOTS = intArrayOf(0, 1, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15)
+private val DATE_TIME_DIGITS_FORMATTER = DateTimeFormatter.ofPattern("uuuuMMddHHmm")
 
-private fun formatDueAt(instant: Instant?, zone: ZoneId): String =
-    instant?.let { DUE_AT_FORMATTER.format(it.atZone(zone)) } ?: ""
+private fun instantToDigits(instant: Instant?, zone: ZoneId): String =
+    instant?.let { DATE_TIME_DIGITS_FORMATTER.format(it.atZone(zone)) } ?: ""
 
-// TodoFormScreen의 입력 상태 중 Instant/enum/데이터클래스 값은 autoSaver가 다루지 못하므로 커스텀
-// Saver로 rememberSaveable을 써서 프로세스 종료/복원 시에도 입력값이 보존되도록 한다.
-private val InstantOrNullSaver = Saver<Instant?, String>(
-    save = { it?.toString() ?: "" },
-    restore = { if (it.isEmpty()) null else Instant.parse(it) }
-)
+// 12자리가 모두 채워지고 유효한 날짜/시각일 때만 Instant로 파싱한다(그 외에는 null).
+private fun digitsToInstant(digits: String, zone: ZoneId): Instant? {
+    if (digits.length != DATE_TIME_DIGIT_COUNT) return null
+    return runCatching {
+        LocalDateTime.parse(digits, DATE_TIME_DIGITS_FORMATTER).atZone(zone).toInstant()
+    }.getOrNull()
+}
+
+// 숫자만 담긴 입력을 "____-__-__ __:__" 마스크에 왼쪽부터 채워 표시하고, 나머지는 밑줄로 둔다.
+private class DateTimeMaskTransformation : VisualTransformation {
+    override fun filter(text: AnnotatedString): TransformedText {
+        val digits = text.text.take(DATE_TIME_DIGIT_COUNT)
+        val masked = StringBuilder(DATE_TIME_MASK)
+        digits.forEachIndexed { i, c -> masked.setCharAt(DATE_TIME_DIGIT_SLOTS[i], c) }
+        val offsetMapping = object : OffsetMapping {
+            override fun originalToTransformed(offset: Int): Int {
+                if (offset <= 0) return 0
+                val clamped = (offset - 1).coerceAtMost(DATE_TIME_DIGIT_COUNT - 1)
+                return DATE_TIME_DIGIT_SLOTS[clamped] + 1
+            }
+
+            override fun transformedToOriginal(offset: Int): Int =
+                DATE_TIME_DIGIT_SLOTS.count { it < offset }.coerceAtMost(digits.length)
+        }
+        return TransformedText(AnnotatedString(masked.toString()), offsetMapping)
+    }
+}
 
 private val TodoPrioritySaver = Saver<TodoPriority, String>(
     save = { it.name },
@@ -148,8 +178,8 @@ fun TodoFormScreen(
     var title by rememberSaveable { mutableStateOf(existingItem?.title ?: "") }
     var assignee by rememberSaveable(stateSaver = TodoAssigneeSaver) { mutableStateOf(existingItem?.assignee ?: TodoAssignee.DEFAULT) }
     var memo by rememberSaveable { mutableStateOf(existingItem?.memo ?: "") }
-    var dueAt by rememberSaveable(stateSaver = InstantOrNullSaver) { mutableStateOf(existingItem?.dueAt) }
-    var dueAtText by rememberSaveable { mutableStateOf(formatDueAt(existingItem?.dueAt, zone)) }
+    var dueAtDigits by rememberSaveable { mutableStateOf(instantToDigits(existingItem?.dueAt, zone)) }
+    val dueAt = digitsToInstant(dueAtDigits, zone)
     var priority by rememberSaveable(stateSaver = TodoPrioritySaver) { mutableStateOf(existingItem?.priority ?: TodoPriority.NONE) }
     var recurrence by rememberSaveable(stateSaver = RecurrenceRuleOrNullSaver) { mutableStateOf(existingItem?.recurrence) }
     var reminderOffsetMinutes by rememberSaveable { mutableStateOf(existingItem?.reminderOffsetMinutes) }
@@ -166,8 +196,7 @@ fun TodoFormScreen(
             title = item.title
             assignee = item.assignee
             memo = item.memo
-            dueAt = item.dueAt
-            dueAtText = formatDueAt(item.dueAt, zone)
+            dueAtDigits = instantToDigits(item.dueAt, zone)
             priority = item.priority
             recurrence = item.recurrence
             reminderOffsetMinutes = item.reminderOffsetMinutes
@@ -201,8 +230,7 @@ fun TodoFormScreen(
             initialInstant = dueAt,
             onDismiss = { showDueAtPicker = false },
             onConfirm = { instant ->
-                dueAt = instant
-                dueAtText = formatDueAt(instant, zone)
+                dueAtDigits = instantToDigits(instant, zone)
                 showDueAtPicker = false
             },
         )
@@ -278,27 +306,23 @@ fun TodoFormScreen(
                     minLines = 3
                 )
 
-                // 마감일시: 직접 타이핑(yyyy-MM-dd HH:mm) + 달력 아이콘으로 피커. 파싱되면 dueAt을 갱신하고,
-                // 형식이 안 맞으면 dueAt은 null로 두되 입력 텍스트는 유지한다.
+                // 마감일시: 숫자만 입력받아 "____-__-__ __:__" 마스크로 자릿수에 맞춰 채운다. 달력 아이콘으로
+                // 피커도 가능. 12자리가 다 차고 유효하면 dueAt이 잡히고, 그 전까지는 dueAt은 null이다.
                 OutlinedTextField(
-                    value = dueAtText,
-                    onValueChange = {
-                        dueAtText = it
-                        dueAt = parseDueAt(it, zone)
+                    value = dueAtDigits,
+                    onValueChange = { input ->
+                        dueAtDigits = input.filter { it.isDigit() }.take(DATE_TIME_DIGIT_COUNT)
                     },
                     label = { Text(stringResource(R.string.todo_field_due_at)) },
-                    placeholder = { Text(stringResource(R.string.todo_due_at_hint)) },
                     singleLine = true,
-                    isError = dueAtText.isNotBlank() && dueAt == null,
-                    // yyyy-MM-dd HH:mm은 '-' ':' 공백 구분자가 필요해 숫자 전용 키패드를 쓰지 않는다.
+                    isError = dueAtDigits.length == DATE_TIME_DIGIT_COUNT && dueAt == null,
+                    visualTransformation = DateTimeMaskTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
                     trailingIcon = {
                         Row {
-                            if (dueAtText.isNotEmpty()) {
-                                IconButton(onClick = {
-                                    dueAt = null
-                                    dueAtText = ""
-                                }) {
+                            if (dueAtDigits.isNotEmpty()) {
+                                IconButton(onClick = { dueAtDigits = "" }) {
                                     Icon(Icons.Default.Close, contentDescription = stringResource(R.string.todo_due_at_clear))
                                 }
                             }

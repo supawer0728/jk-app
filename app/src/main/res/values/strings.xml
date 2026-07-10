@@ -218,7 +218,8 @@
     <string name="todo_status_in_progress">진행중</string>
     <string name="todo_status_done">완료</string>
     <string name="todo_status_toggle_start">진행중으로 변경</string>
-    <string name="todo_status_toggle_pause">미진행으로 변경</string>
+    <string name="todo_status_advance_complete">완료로 변경</string>
+    <string name="todo_status_advance_reset">처음으로 되돌리기</string>
     <!-- 담당자 -->
     <string name="todo_field_assignee">담당자</string>
     <string name="todo_assignee_shared">공동</string>
@@ -227,7 +228,6 @@
     <!-- 폼 펼치기/마감일시 -->
     <string name="todo_form_expand_details">상세 항목 펼치기</string>
     <string name="todo_form_collapse_details">상세 항목 접기</string>
-    <string name="todo_due_at_hint">yyyy-MM-dd HH:mm</string>
     <string name="todo_due_at_pick">달력에서 선택</string>
     <string name="todo_add">할 일 추가</string>
     <string name="todo_empty">표시할 할 일이 없습니다</string>
