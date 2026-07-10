@@ -87,7 +87,6 @@ fun MainScreen(
     onNavigateToAdd: () -> Unit,
     onNavigateToRecordTypeManagement: () -> Unit,
     onNavigateToTodoForm: (String?) -> Unit,
-    onNavigateToTodoCategoryManagement: () -> Unit,
     onNavigateToSettings: () -> Unit,
 ) {
     val user by viewModel.user.collectAsStateWithLifecycle()
@@ -282,7 +281,6 @@ fun MainScreen(
                 MainTab.TODO -> TodoScreen(
                     viewModel = todoViewModel,
                     onNavigateToForm = onNavigateToTodoForm,
-                    onNavigateToCategoryManagement = onNavigateToTodoCategoryManagement
                 )
                 MainTab.CALENDAR -> CalendarTabScreen()
             }

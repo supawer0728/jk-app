@@ -9,7 +9,9 @@ import androidx.core.content.ContextCompat
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.jkapp.R
-import com.jkapp.notification.CHANNEL_ID_TODO_REMINDER
+import com.jkapp.common.AppPreferences
+import com.jkapp.notification.ensureReminderChannel
+import kotlinx.coroutines.flow.first
 
 // 예약 시각에 실행되어, 항목이 여전히 존재하고 미완료일 때만 마감일 리마인더 알림을 띄운다.
 // 생성자는 WorkManager 기본 WorkerFactory가 리플렉션으로 찾는 (Context, WorkerParameters) 시그니처로
@@ -21,6 +23,7 @@ class TodoReminderWorker(
 ) : CoroutineWorker(context, params) {
 
     private val repository: TodoFirestoreRepository = TodoFirestoreRepositoryImpl()
+    private val appPreferences = AppPreferences(context.applicationContext)
 
     override suspend fun doWork(): Result {
         val itemId = inputData.getString(KEY_TODO_ITEM_ID) ?: return Result.failure()
@@ -31,12 +34,19 @@ class TodoReminderWorker(
                 return if (runAttemptCount + 1 < MAX_RETRY_ATTEMPTS) Result.retry() else Result.success()
             }
         if (shouldShowReminderNotification(item)) {
-            showNotification(itemId, requireNotNull(item))
+            val mode = appPreferences.notificationMode.first()
+            val sound = appPreferences.notificationSound.first()
+            showNotification(itemId, requireNotNull(item), mode, sound)
         }
         return Result.success()
     }
 
-    private fun showNotification(itemId: String, item: TodoItem) {
+    private fun showNotification(
+        itemId: String,
+        item: TodoItem,
+        mode: com.jkapp.common.NotificationMode,
+        sound: com.jkapp.common.NotificationSound,
+    ) {
         val context = applicationContext
         val hasPermission = ContextCompat.checkSelfPermission(
             context,
@@ -44,7 +54,8 @@ class TodoReminderWorker(
         ) == PackageManager.PERMISSION_GRANTED
         if (!hasPermission) return
 
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID_TODO_REMINDER)
+        val channelId = ensureReminderChannel(context, mode, sound)
+        val notification = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(context.getString(R.string.todo_reminder_notification_title))
             .setContentText(item.title)

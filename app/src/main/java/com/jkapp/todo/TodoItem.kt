@@ -7,29 +7,32 @@ data class TodoItem(
     val firestoreId: String? = null,
     val title: String,
     val memo: String = "",
-    val isCompleted: Boolean = false,
+    val status: TodoStatus = TodoStatus.NOT_STARTED,
+    val assignee: TodoAssignee = TodoAssignee.DEFAULT,
     val dueAt: Instant? = null,
     val reminderOffsetMinutes: Int? = null,
     val priority: TodoPriority = TodoPriority.NONE,
-    val categoryId: String? = null,
-    val tags: List<String> = emptyList(),
     val recurrence: RecurrenceRule? = null,
     val completionHistory: List<Instant> = emptyList(),
     val createdAt: Instant? = null,
     val completedAt: Instant? = null,
-)
+) {
+    // isCompleted는 status == DONE의 파생값이다(이슈 #71 ADR). 리마인더 예약 조건·완료 필터 등
+    // 기존 호출부가 이 프로퍼티를 그대로 쓸 수 있게 유지한다.
+    val isCompleted: Boolean get() = status == TodoStatus.DONE
+}
 
-// 완료 체크 시 반복 항목은 dueAt을 다음 회차로 in-place 전진시키고 isCompleted를 false로 리셋한다.
+// 완료 처리 시 반복 항목은 dueAt을 다음 회차로 in-place 전진시키고 상태를 NOT_STARTED로 리셋한다.
 // 지나간 dueAt은 completionHistory에 쌓이고, 다음 회차가 endAt을 넘어서면 반복을 종료하며
-// isCompleted=true로 고정한다. 반복이 없는 항목은 단순히 완료 처리한다.
+// status=DONE으로 고정한다. 반복이 없는 항목은 단순히 완료(DONE) 처리한다.
 fun TodoItem.completeOccurrence(completedInstant: Instant): TodoItem {
-    val rule = recurrence ?: return copy(isCompleted = true, completedAt = completedInstant)
+    val rule = recurrence ?: return copy(status = TodoStatus.DONE, completedAt = completedInstant)
     val currentDueAt = dueAt ?: completedInstant
     val nextDueAt = rule.nextDueAt(currentDueAt)
     val recurrenceEnded = rule.endAt?.let { nextDueAt.isAfter(it) } ?: false
     return copy(
         dueAt = if (recurrenceEnded) currentDueAt else nextDueAt,
-        isCompleted = recurrenceEnded,
+        status = if (recurrenceEnded) TodoStatus.DONE else TodoStatus.NOT_STARTED,
         completedAt = completedInstant,
         completionHistory = completionHistory + currentDueAt,
     )

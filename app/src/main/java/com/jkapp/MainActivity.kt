@@ -43,11 +43,9 @@ import com.jkapp.nav.LoginRoute
 import com.jkapp.nav.RecordTypeManagementRoute
 import com.jkapp.nav.SettingsRoute
 import com.jkapp.nav.SplashRoute
-import com.jkapp.nav.TodoCategoryManagementRoute
 import com.jkapp.nav.TodoFormRoute
 import com.jkapp.settings.SettingsScreen
 import com.jkapp.settings.SettingsViewModel
-import com.jkapp.todo.TodoCategoryManagementScreen
 import com.jkapp.todo.TodoFormScreen
 import com.jkapp.todo.TodoReminderSchedulerImpl
 import com.jkapp.todo.TodoViewModel
@@ -149,9 +147,6 @@ class MainActivity : ComponentActivity() {
                                     onNavigateToTodoForm = { firestoreId ->
                                         backStack.add(TodoFormRoute(firestoreId = firestoreId))
                                     },
-                                    onNavigateToTodoCategoryManagement = {
-                                        backStack.add(TodoCategoryManagementRoute)
-                                    },
                                     onNavigateToSettings = {
                                         backStack.add(SettingsRoute)
                                     }
@@ -185,15 +180,6 @@ class MainActivity : ComponentActivity() {
                                     viewModel = todoViewModel,
                                     firestoreId = route.firestoreId,
                                     onBack = { backStack.removeLastOrNull() },
-                                    onNavigateToCategoryManagement = {
-                                        backStack.add(TodoCategoryManagementRoute)
-                                    }
-                                )
-                            }
-                            entry<TodoCategoryManagementRoute> {
-                                TodoCategoryManagementScreen(
-                                    viewModel = todoViewModel,
-                                    onBack = { backStack.removeLastOrNull() }
                                 )
                             }
                             entry<SettingsRoute> {

@@ -163,29 +163,25 @@
     <string name="notification_channel_todo_reminder_description">할 일 마감일이 다가오면 알려줍니다</string>
     <string name="todo_reminder_notification_title">할 일 마감 알림</string>
     <string name="todo_reminder_permission_denied">알림 권한이 없어 리마인더 알림이 표시되지 않습니다. 설정에서 알림을 허용해 주세요.</string>
+    <!-- 알림 설정 -->
+    <string name="notification_mode">알림 방식</string>
+    <string name="notification_mode_sound">소리만</string>
+    <string name="notification_mode_vibrate">진동만</string>
+    <string name="notification_mode_sound_and_vibrate">소리 + 진동</string>
+    <string name="notification_mode_off">끔</string>
+    <string name="notification_sound">알림음</string>
+    <string name="notification_sound_default">기본</string>
+    <string name="notification_sound_alarm">알람</string>
+    <string name="notification_sound_ringtone">벨소리</string>
     <!-- Todo -->
-    <string name="todo_category_management_title">카테고리 관리</string>
-    <string name="todo_category_add">카테고리 추가</string>
-    <string name="todo_category_name">이름</string>
-    <string name="todo_category_emoji">이모지</string>
-    <string name="todo_category_color">색상</string>
-    <string name="todo_category_delete_confirm">이 카테고리를 삭제하시겠습니까? 이 카테고리를 사용하는 할 일은 카테고리 없음으로 변경됩니다.</string>
-    <string name="todo_category_none">카테고리 없음</string>
-    <string name="todo_category_manage_entry">카테고리 관리</string>
     <string name="todo_form_add_title">할 일 추가</string>
     <string name="todo_form_edit_title">할 일 수정</string>
     <string name="todo_field_title">제목</string>
     <string name="todo_field_memo">메모</string>
     <string name="todo_field_due_at">마감일시</string>
     <string name="todo_field_priority">우선순위</string>
-    <string name="todo_field_category">카테고리</string>
-    <string name="todo_field_tags">태그</string>
-    <string name="todo_field_tag_input">태그 입력</string>
-    <string name="todo_tag_add">추가</string>
-    <string name="todo_tag_delete">태그 삭제</string>
     <string name="todo_field_recurrence">반복</string>
     <string name="todo_field_reminder">리마인더</string>
-    <string name="todo_due_at_none">설정 안함</string>
     <string name="todo_due_at_clear">마감일시 지우기</string>
     <string name="todo_priority_none">없음</string>
     <string name="todo_priority_low">낮음</string>
@@ -212,12 +208,27 @@
     <string name="todo_reminder_30min">30분 전</string>
     <string name="todo_reminder_1hour">1시간 전</string>
     <string name="todo_reminder_1day">1일 전</string>
-    <string name="todo_status_all">전체</string>
-    <string name="todo_status_active">진행 중</string>
-    <string name="todo_status_completed">완료</string>
-    <string name="todo_sort_due_date">마감일순</string>
-    <string name="todo_sort_priority">우선순위순</string>
-    <string name="todo_sort_created_at">생성일순</string>
+    <!-- 목록 필터 (오늘/전체/반복/완료) -->
+    <string name="todo_filter_today">오늘</string>
+    <string name="todo_filter_all">전체</string>
+    <string name="todo_filter_recurring">반복</string>
+    <string name="todo_filter_completed">완료</string>
+    <!-- 상태 3단계 -->
+    <string name="todo_status_not_started">미진행</string>
+    <string name="todo_status_in_progress">진행중</string>
+    <string name="todo_status_done">완료</string>
+    <string name="todo_status_toggle_start">진행중으로 변경</string>
+    <string name="todo_status_advance_complete">완료로 변경</string>
+    <string name="todo_status_advance_reset">처음으로 되돌리기</string>
+    <!-- 담당자 -->
+    <string name="todo_field_assignee">담당자</string>
+    <string name="todo_assignee_shared">공동</string>
+    <string name="todo_assignee_kwon">권유경</string>
+    <string name="todo_assignee_jeon">전지훈</string>
+    <!-- 폼 펼치기/마감일시 -->
+    <string name="todo_form_expand_details">상세 항목 펼치기</string>
+    <string name="todo_form_collapse_details">상세 항목 접기</string>
+    <string name="todo_due_at_pick">달력에서 선택</string>
     <string name="todo_add">할 일 추가</string>
     <string name="todo_empty">표시할 할 일이 없습니다</string>
     <string name="todo_delete_confirm_title">할 일 삭제</string>

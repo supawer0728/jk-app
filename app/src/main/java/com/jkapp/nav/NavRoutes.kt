@@ -24,7 +24,4 @@ data object RecordTypeManagementRoute
 data class TodoFormRoute(val firestoreId: String? = null)
 
 @Serializable
-data object TodoCategoryManagementRoute
-
-@Serializable
 data object SettingsRoute

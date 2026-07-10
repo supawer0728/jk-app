@@ -2,24 +2,24 @@ package com.jkapp.todo
 
 import android.Manifest
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenuItem
@@ -28,10 +28,9 @@ import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.InputChip
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -52,6 +51,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
@@ -61,6 +65,7 @@ import com.jkapp.R
 import com.jkapp.common.IsoDateTimePickerDialog
 import java.time.DayOfWeek
 import java.time.Instant
+import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.launch
@@ -69,24 +74,52 @@ private val DUE_AT_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
 
 private val REMINDER_PRESETS: List<Int?> = listOf(null, 0, 10, 30, 60, 1440)
 
-// TodoFormScreen은 카테고리 드롭다운의 "카테고리 관리" 진입점에서 전역 backStack에 별도 라우트를
-// push한다(NavRoutes.TodoCategoryManagementRoute). Navigation3는 최상단이 아닌 엔트리를 컴포지션에서
-// 제거하므로 plain remember 상태는 그 사이 사라진다 — 이 값들은 Instant/enum/List/데이터클래스라
-// autoSaver가 다루지 못해 원래 plain remember로 남겨뒀던 것들이라, 여기서는 커스텀 Saver로
-// rememberSaveable을 써서 카테고리 관리 화면을 거쳐 돌아와도 입력값이 보존되도록 한다.
-private val InstantOrNullSaver = Saver<Instant?, String>(
-    save = { it?.toString() ?: "" },
-    restore = { if (it.isEmpty()) null else Instant.parse(it) }
-)
+// 마감일시는 숫자만 입력받아(yyyyMMddHHmm 12자리) "____-__-__ __:__" 마스크로 보여준다.
+private const val DATE_TIME_DIGIT_COUNT = 12
+private const val DATE_TIME_MASK = "____-__-__ __:__"
+// 마스크 문자열에서 숫자가 채워질 슬롯 인덱스(yyyy-MM-dd HH:mm 기준).
+private val DATE_TIME_DIGIT_SLOTS = intArrayOf(0, 1, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15)
+private val DATE_TIME_DIGITS_FORMATTER = DateTimeFormatter.ofPattern("uuuuMMddHHmm")
+
+private fun instantToDigits(instant: Instant?, zone: ZoneId): String =
+    instant?.let { DATE_TIME_DIGITS_FORMATTER.format(it.atZone(zone)) } ?: ""
+
+// 12자리가 모두 채워지고 유효한 날짜/시각일 때만 Instant로 파싱한다(그 외에는 null).
+private fun digitsToInstant(digits: String, zone: ZoneId): Instant? {
+    if (digits.length != DATE_TIME_DIGIT_COUNT) return null
+    return runCatching {
+        LocalDateTime.parse(digits, DATE_TIME_DIGITS_FORMATTER).atZone(zone).toInstant()
+    }.getOrNull()
+}
+
+// 숫자만 담긴 입력을 "____-__-__ __:__" 마스크에 왼쪽부터 채워 표시하고, 나머지는 밑줄로 둔다.
+private class DateTimeMaskTransformation : VisualTransformation {
+    override fun filter(text: AnnotatedString): TransformedText {
+        val digits = text.text.take(DATE_TIME_DIGIT_COUNT)
+        val masked = StringBuilder(DATE_TIME_MASK)
+        digits.forEachIndexed { i, c -> masked.setCharAt(DATE_TIME_DIGIT_SLOTS[i], c) }
+        val offsetMapping = object : OffsetMapping {
+            override fun originalToTransformed(offset: Int): Int {
+                if (offset <= 0) return 0
+                val clamped = (offset - 1).coerceAtMost(DATE_TIME_DIGIT_COUNT - 1)
+                return DATE_TIME_DIGIT_SLOTS[clamped] + 1
+            }
+
+            override fun transformedToOriginal(offset: Int): Int =
+                DATE_TIME_DIGIT_SLOTS.count { it < offset }.coerceAtMost(digits.length)
+        }
+        return TransformedText(AnnotatedString(masked.toString()), offsetMapping)
+    }
+}
 
 private val TodoPrioritySaver = Saver<TodoPriority, String>(
     save = { it.name },
     restore = { TodoPriority.valueOf(it) }
 )
 
-private val StringListSaver = Saver<List<String>, ArrayList<String>>(
-    save = { ArrayList(it) },
-    restore = { it.toList() }
+private val TodoAssigneeSaver = Saver<TodoAssignee, String>(
+    save = { it.name },
+    restore = { TodoAssignee.fromNameOrDefault(it) }
 )
 
 private val RecurrenceRuleOrNullSaver = Saver<RecurrenceRule?, List<Any?>>(
@@ -134,38 +167,37 @@ fun TodoFormScreen(
     viewModel: TodoViewModel,
     firestoreId: String?,
     onBack: () -> Unit,
-    onNavigateToCategoryManagement: () -> Unit,
 ) {
     val isEditMode = firestoreId != null
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val success = uiState as? TodoUiState.Success
-    val categories = success?.categories ?: emptyList()
     val existingItem = if (isEditMode) success?.items?.find { it.firestoreId == firestoreId } else null
 
+    val zone = remember { ZoneId.systemDefault() }
+
     var title by rememberSaveable { mutableStateOf(existingItem?.title ?: "") }
+    var assignee by rememberSaveable(stateSaver = TodoAssigneeSaver) { mutableStateOf(existingItem?.assignee ?: TodoAssignee.DEFAULT) }
     var memo by rememberSaveable { mutableStateOf(existingItem?.memo ?: "") }
-    var dueAt by rememberSaveable(stateSaver = InstantOrNullSaver) { mutableStateOf(existingItem?.dueAt) }
+    var dueAtDigits by rememberSaveable { mutableStateOf(instantToDigits(existingItem?.dueAt, zone)) }
+    val dueAt = digitsToInstant(dueAtDigits, zone)
     var priority by rememberSaveable(stateSaver = TodoPrioritySaver) { mutableStateOf(existingItem?.priority ?: TodoPriority.NONE) }
-    var categoryId by rememberSaveable { mutableStateOf(existingItem?.categoryId) }
-    var tags by rememberSaveable(stateSaver = StringListSaver) { mutableStateOf(existingItem?.tags ?: emptyList()) }
     var recurrence by rememberSaveable(stateSaver = RecurrenceRuleOrNullSaver) { mutableStateOf(existingItem?.recurrence) }
     var reminderOffsetMinutes by rememberSaveable { mutableStateOf(existingItem?.reminderOffsetMinutes) }
+    // 기본 노출은 제목+담당자만. 수정 모드에서는 기존 상세값을 바로 볼 수 있게 펼친 상태로 시작한다.
+    var detailsExpanded by rememberSaveable { mutableStateOf(isEditMode) }
 
     var priorityDropdownExpanded by remember { mutableStateOf(false) }
-    var categoryDropdownExpanded by remember { mutableStateOf(false) }
     var reminderDropdownExpanded by remember { mutableStateOf(false) }
     var showDueAtPicker by rememberSaveable { mutableStateOf(false) }
     var showRecurrenceDialog by rememberSaveable { mutableStateOf(false) }
-    var tagInput by rememberSaveable { mutableStateOf("") }
 
     LaunchedEffect(existingItem) {
         existingItem?.let { item ->
             title = item.title
+            assignee = item.assignee
             memo = item.memo
-            dueAt = item.dueAt
+            dueAtDigits = instantToDigits(item.dueAt, zone)
             priority = item.priority
-            categoryId = item.categoryId
-            tags = item.tags
             recurrence = item.recurrence
             reminderOffsetMinutes = item.reminderOffsetMinutes
         }
@@ -181,7 +213,6 @@ fun TodoFormScreen(
 
     val isDataReady = !isEditMode || existingItem != null
     val isValid = isDataReady && title.isNotBlank()
-    val selectedCategory = categories.find { it.docId == categoryId }
 
     // 리마인더를 켤 때(없음이 아닌 프리셋 선택 시) POST_NOTIFICATIONS 권한을 요청한다. 거부해도 저장은
     // 그대로 진행하고, 알림이 표시되지 않는다는 점만 스낵바로 경고한다.
@@ -199,7 +230,7 @@ fun TodoFormScreen(
             initialInstant = dueAt,
             onDismiss = { showDueAtPicker = false },
             onConfirm = { instant ->
-                dueAt = instant
+                dueAtDigits = instantToDigits(instant, zone)
                 showDueAtPicker = false
             },
         )
@@ -247,166 +278,130 @@ fun TodoFormScreen(
                 modifier = Modifier.fillMaxWidth()
             )
 
-            OutlinedTextField(
-                value = memo,
-                onValueChange = { memo = it },
-                label = { Text(stringResource(R.string.todo_field_memo)) },
-                modifier = Modifier.fillMaxWidth(),
-                minLines = 3
-            )
+            AssigneeSelector(selected = assignee, onSelect = { assignee = it })
 
-            Box {
+            OutlinedButton(
+                onClick = { detailsExpanded = !detailsExpanded },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    stringResource(
+                        if (detailsExpanded) R.string.todo_form_collapse_details
+                        else R.string.todo_form_expand_details
+                    ),
+                    modifier = Modifier.weight(1f)
+                )
+                Icon(
+                    imageVector = if (detailsExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = null,
+                )
+            }
+
+            if (detailsExpanded) {
                 OutlinedTextField(
-                    value = dueAt?.let {
-                        DUE_AT_FORMATTER.format(it.atZone(ZoneId.systemDefault()))
-                    } ?: stringResource(R.string.todo_due_at_none),
-                    onValueChange = {},
+                    value = memo,
+                    onValueChange = { memo = it },
+                    label = { Text(stringResource(R.string.todo_field_memo)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 3
+                )
+
+                // 마감일시: 숫자만 입력받아 "____-__-__ __:__" 마스크로 자릿수에 맞춰 채운다. 달력 아이콘으로
+                // 피커도 가능. 12자리가 다 차고 유효하면 dueAt이 잡히고, 그 전까지는 dueAt은 null이다.
+                OutlinedTextField(
+                    value = dueAtDigits,
+                    onValueChange = { input ->
+                        dueAtDigits = input.filter { it.isDigit() }.take(DATE_TIME_DIGIT_COUNT)
+                    },
                     label = { Text(stringResource(R.string.todo_field_due_at)) },
-                    readOnly = true,
                     singleLine = true,
+                    isError = dueAtDigits.length == DATE_TIME_DIGIT_COUNT && dueAt == null,
+                    visualTransformation = DateTimeMaskTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
                     trailingIcon = {
                         Row {
-                            if (dueAt != null) {
-                                IconButton(onClick = { dueAt = null }) {
+                            if (dueAtDigits.isNotEmpty()) {
+                                IconButton(onClick = { dueAtDigits = "" }) {
                                     Icon(Icons.Default.Close, contentDescription = stringResource(R.string.todo_due_at_clear))
                                 }
                             }
-                            Icon(Icons.Default.DateRange, contentDescription = null)
+                            IconButton(onClick = { showDueAtPicker = true }) {
+                                Icon(Icons.Default.DateRange, contentDescription = stringResource(R.string.todo_due_at_pick))
+                            }
                         }
                     }
                 )
-                Box(modifier = Modifier.matchParentSize().clickable { showDueAtPicker = true })
-            }
 
-            ExposedDropdownMenuBox(
-                expanded = priorityDropdownExpanded,
-                onExpandedChange = { priorityDropdownExpanded = !priorityDropdownExpanded }
-            ) {
-                OutlinedTextField(
-                    value = priorityLabel(priority),
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text(stringResource(R.string.todo_field_priority)) },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = priorityDropdownExpanded) },
-                    modifier = Modifier
-                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
-                        .fillMaxWidth()
-                )
-                ExposedDropdownMenu(
+                ExposedDropdownMenuBox(
                     expanded = priorityDropdownExpanded,
-                    onDismissRequest = { priorityDropdownExpanded = false }
+                    onExpandedChange = { priorityDropdownExpanded = !priorityDropdownExpanded }
                 ) {
-                    TodoPriority.entries.forEach { entry ->
-                        DropdownMenuItem(
-                            text = { Text(priorityLabel(entry)) },
-                            onClick = {
-                                priority = entry
-                                priorityDropdownExpanded = false
-                            }
-                        )
-                    }
-                }
-            }
-
-            ExposedDropdownMenuBox(
-                expanded = categoryDropdownExpanded,
-                onExpandedChange = { categoryDropdownExpanded = !categoryDropdownExpanded }
-            ) {
-                OutlinedTextField(
-                    value = selectedCategory?.let { "${it.emoji} ${it.name}" }
-                        ?: stringResource(R.string.todo_category_none),
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text(stringResource(R.string.todo_field_category)) },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryDropdownExpanded) },
-                    modifier = Modifier
-                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
-                        .fillMaxWidth()
-                )
-                ExposedDropdownMenu(
-                    expanded = categoryDropdownExpanded,
-                    onDismissRequest = { categoryDropdownExpanded = false }
-                ) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.todo_category_none)) },
-                        onClick = {
-                            categoryId = null
-                            categoryDropdownExpanded = false
-                        }
+                    OutlinedTextField(
+                        value = priorityLabel(priority),
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text(stringResource(R.string.todo_field_priority)) },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = priorityDropdownExpanded) },
+                        modifier = Modifier
+                            .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                            .fillMaxWidth()
                     )
-                    categories.forEach { category ->
-                        DropdownMenuItem(
-                            text = { Text("${category.emoji} ${category.name}") },
-                            onClick = {
-                                categoryId = category.docId
-                                categoryDropdownExpanded = false
-                            }
-                        )
-                    }
-                    HorizontalDivider()
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.todo_category_manage_entry)) },
-                        onClick = {
-                            categoryDropdownExpanded = false
-                            onNavigateToCategoryManagement()
-                        }
-                    )
-                }
-            }
-
-            TagInputSection(
-                tags = tags,
-                tagInput = tagInput,
-                onTagInputChange = { tagInput = it },
-                onAddTag = {
-                    val trimmed = tagInput.trim()
-                    if (trimmed.isNotEmpty() && trimmed !in tags) {
-                        tags = tags + trimmed
-                    }
-                    tagInput = ""
-                },
-                onRemoveTag = { tag -> tags = tags.filter { it != tag } },
-            )
-
-            OutlinedButton(
-                onClick = { showRecurrenceDialog = true },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("${stringResource(R.string.todo_field_recurrence)}: ${recurrenceSummary(recurrence)}")
-            }
-
-            ExposedDropdownMenuBox(
-                expanded = reminderDropdownExpanded,
-                onExpandedChange = { reminderDropdownExpanded = !reminderDropdownExpanded }
-            ) {
-                OutlinedTextField(
-                    value = reminderPresetLabel(reminderOffsetMinutes),
-                    onValueChange = {},
-                    readOnly = true,
-                    enabled = dueAt != null,
-                    label = { Text(stringResource(R.string.todo_field_reminder)) },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = reminderDropdownExpanded) },
-                    modifier = Modifier
-                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
-                        .fillMaxWidth()
-                )
-                ExposedDropdownMenu(
-                    expanded = reminderDropdownExpanded,
-                    onDismissRequest = { reminderDropdownExpanded = false }
-                ) {
-                    REMINDER_PRESETS.forEach { minutes ->
-                        DropdownMenuItem(
-                            text = { Text(reminderPresetLabel(minutes)) },
-                            onClick = {
-                                reminderOffsetMinutes = minutes
-                                reminderDropdownExpanded = false
-                                // 리마인더를 처음 켤 때(없음이 아닌 프리셋)만 알림 권한을 요청한다.
-                                if (minutes != null && !notificationPermissionState.status.isGranted) {
-                                    notificationPermissionState.launchPermissionRequest()
+                    ExposedDropdownMenu(
+                        expanded = priorityDropdownExpanded,
+                        onDismissRequest = { priorityDropdownExpanded = false }
+                    ) {
+                        TodoPriority.entries.forEach { entry ->
+                            DropdownMenuItem(
+                                text = { Text(priorityLabel(entry)) },
+                                onClick = {
+                                    priority = entry
+                                    priorityDropdownExpanded = false
                                 }
-                            }
-                        )
+                            )
+                        }
+                    }
+                }
+
+                OutlinedButton(
+                    onClick = { showRecurrenceDialog = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("${stringResource(R.string.todo_field_recurrence)}: ${recurrenceSummary(recurrence)}")
+                }
+
+                ExposedDropdownMenuBox(
+                    expanded = reminderDropdownExpanded,
+                    onExpandedChange = { reminderDropdownExpanded = !reminderDropdownExpanded }
+                ) {
+                    OutlinedTextField(
+                        value = reminderPresetLabel(reminderOffsetMinutes),
+                        onValueChange = {},
+                        readOnly = true,
+                        enabled = dueAt != null,
+                        label = { Text(stringResource(R.string.todo_field_reminder)) },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = reminderDropdownExpanded) },
+                        modifier = Modifier
+                            .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                            .fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = reminderDropdownExpanded,
+                        onDismissRequest = { reminderDropdownExpanded = false }
+                    ) {
+                        REMINDER_PRESETS.forEach { minutes ->
+                            DropdownMenuItem(
+                                text = { Text(reminderPresetLabel(minutes)) },
+                                onClick = {
+                                    reminderOffsetMinutes = minutes
+                                    reminderDropdownExpanded = false
+                                    // 리마인더를 처음 켤 때(없음이 아닌 프리셋)만 알림 권한을 요청한다.
+                                    if (minutes != null && !notificationPermissionState.status.isGranted) {
+                                        notificationPermissionState.launchPermissionRequest()
+                                    }
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -418,16 +413,11 @@ fun TodoFormScreen(
                         firestoreId = firestoreId,
                         title = title.trim(),
                         memo = memo.trim(),
-                        isCompleted = existingItem?.isCompleted ?: false,
+                        status = existingItem?.status ?: TodoStatus.NOT_STARTED,
+                        assignee = assignee,
                         dueAt = dueAt,
                         reminderOffsetMinutes = if (dueAt != null) reminderOffsetMinutes else null,
                         priority = priority,
-                        // categoryId를 그대로 쓰지 않고 selectedCategory?.docId로 다시 확인한다 — 카테고리 관리
-                        // 화면에서 현재 선택된 카테고리가 삭제된 뒤 돌아온 경우, 드롭다운은 "카테고리 없음"으로
-                        // 보여주지만 categoryId 변수 자체는 삭제된 카테고리 ID를 여전히 들고 있어 그대로 저장하면
-                        // 더 이상 존재하지 않는 카테고리를 참조하게 된다.
-                        categoryId = selectedCategory?.docId,
-                        tags = tags,
                         recurrence = recurrence,
                         completionHistory = existingItem?.completionHistory ?: emptyList(),
                         createdAt = existingItem?.createdAt,
@@ -454,6 +444,26 @@ fun TodoFormScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AssigneeSelector(
+    selected: TodoAssignee,
+    onSelect: (TodoAssignee) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(stringResource(R.string.todo_field_assignee), style = MaterialTheme.typography.labelLarge)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TodoAssignee.entries.forEach { entry ->
+                FilterChip(
+                    selected = selected == entry,
+                    onClick = { onSelect(entry) },
+                    label = { Text(assigneeLabel(entry)) }
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun recurrenceSummary(recurrence: RecurrenceRule?): String {
     if (recurrence == null) return stringResource(R.string.todo_recurrence_none)
@@ -462,52 +472,6 @@ private fun recurrenceSummary(recurrence: RecurrenceRule?): String {
         RecurrenceFrequency.WEEKLY -> stringResource(R.string.todo_recurrence_weekly)
         RecurrenceFrequency.MONTHLY -> stringResource(R.string.todo_recurrence_monthly)
         RecurrenceFrequency.YEARLY -> stringResource(R.string.todo_recurrence_yearly)
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun TagInputSection(
-    tags: List<String>,
-    tagInput: String,
-    onTagInputChange: (String) -> Unit,
-    onAddTag: () -> Unit,
-    onRemoveTag: (String) -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
-                value = tagInput,
-                onValueChange = onTagInputChange,
-                label = { Text(stringResource(R.string.todo_field_tag_input)) },
-                singleLine = true,
-                modifier = Modifier.weight(1f)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            TextButton(onClick = onAddTag) {
-                Text(stringResource(R.string.todo_tag_add))
-            }
-        }
-        if (tags.isNotEmpty()) {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                tags.forEach { tag ->
-                    InputChip(
-                        selected = false,
-                        onClick = {},
-                        label = { Text(tag) },
-                        trailingIcon = {
-                            Icon(
-                                Icons.Default.Close,
-                                contentDescription = stringResource(R.string.todo_tag_delete),
-                                modifier = Modifier
-                                    .height(16.dp)
-                                    .clickable { onRemoveTag(tag) }
-                            )
-                        }
-                    )
-                }
-            }
-        }
     }
 }
 
