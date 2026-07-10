@@ -262,6 +262,7 @@ private fun DailyAssetTab(viewModel: DailyAssetViewModel) {
                 viewModel.selectDate(date)
                 showDatePicker = false
             },
+            allowFutureDates = false,
         )
     }
 
@@ -1027,6 +1028,7 @@ private fun InvestmentTab(viewModel: DailyAssetInvestmentViewModel, benchmarkVie
                 viewModel.selectDate(date)
                 showDatePicker = false
             },
+            allowFutureDates = false,
         )
     }
 
@@ -1350,6 +1352,7 @@ private fun InvestmentFormDialog(
                 date = it
                 showDatePicker = false
             },
+            allowFutureDates = false,
         )
     }
 }
@@ -1440,6 +1443,7 @@ private fun InvestmentPasteImportDialog(
                 date = it
                 showDatePicker = false
             },
+            allowFutureDates = false,
         )
     }
 }
@@ -1919,6 +1923,7 @@ private fun BenchmarkFormDialog(
                 date = it
                 showDatePicker = false
             },
+            allowFutureDates = false,
         )
     }
 }
