@@ -1,5 +1,6 @@
 package com.jkapp.todo
 
+import android.Manifest
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -34,6 +35,8 @@ import androidx.compose.material3.InputChip
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -42,6 +45,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -50,12 +54,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.google.accompanist.permissions.ExperimentalPermissionsApi
+import com.google.accompanist.permissions.isGranted
+import com.google.accompanist.permissions.rememberPermissionState
 import com.jkapp.R
 import com.jkapp.common.IsoDateTimePickerDialog
 import java.time.DayOfWeek
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.launch
 
 private val DUE_AT_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
 
@@ -120,7 +128,7 @@ private fun priorityLabel(priority: TodoPriority): String = when (priority) {
     TodoPriority.HIGH -> stringResource(R.string.todo_priority_high)
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
 @Composable
 fun TodoFormScreen(
     viewModel: TodoViewModel,
@@ -175,6 +183,17 @@ fun TodoFormScreen(
     val isValid = isDataReady && title.isNotBlank()
     val selectedCategory = categories.find { it.docId == categoryId }
 
+    // 리마인더를 켤 때(없음이 아닌 프리셋 선택 시) POST_NOTIFICATIONS 권한을 요청한다. 거부해도 저장은
+    // 그대로 진행하고, 알림이 표시되지 않는다는 점만 스낵바로 경고한다.
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val reminderPermissionDeniedMessage = stringResource(R.string.todo_reminder_permission_denied)
+    val notificationPermissionState = rememberPermissionState(Manifest.permission.POST_NOTIFICATIONS) { granted ->
+        if (!granted) {
+            scope.launch { snackbarHostState.showSnackbar(reminderPermissionDeniedMessage) }
+        }
+    }
+
     if (showDueAtPicker) {
         IsoDateTimePickerDialog(
             initialInstant = dueAt,
@@ -198,6 +217,7 @@ fun TodoFormScreen(
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
@@ -381,6 +401,10 @@ fun TodoFormScreen(
                             onClick = {
                                 reminderOffsetMinutes = minutes
                                 reminderDropdownExpanded = false
+                                // 리마인더를 처음 켤 때(없음이 아닌 프리셋)만 알림 권한을 요청한다.
+                                if (minutes != null && !notificationPermissionState.status.isGranted) {
+                                    notificationPermissionState.launchPermissionRequest()
+                                }
                             }
                         )
                     }
@@ -409,6 +433,12 @@ fun TodoFormScreen(
                         createdAt = existingItem?.createdAt,
                         completedAt = existingItem?.completedAt,
                     )
+                    // 리마인더가 예약될 항목인데 알림 권한이 없으면 저장 시점에도 권한을 요청한다. 리마인더가
+                    // 이미 설정된 항목을 드롭다운을 다시 건드리지 않고 저장하는 편집 흐름에서 알림이 조용히
+                    // 누락되는 것을 막는다(권한 부여는 저장 후에도 유효하므로 예약된 Worker가 알림을 띄운다).
+                    if (TodoViewModel.shouldScheduleReminder(item) && !notificationPermissionState.status.isGranted) {
+                        notificationPermissionState.launchPermissionRequest()
+                    }
                     if (isEditMode) {
                         viewModel.updateTodoItem(item)
                     } else {

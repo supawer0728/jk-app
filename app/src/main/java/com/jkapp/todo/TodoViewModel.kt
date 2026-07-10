@@ -219,8 +219,10 @@ class TodoViewModel(
     }
 
     companion object {
-        fun factory(): ViewModelProvider.Factory =
-            viewModelFactory { initializer { TodoViewModel() } }
+        fun factory(
+            reminderScheduler: TodoReminderScheduler = TodoReminderScheduler.NoOp,
+        ): ViewModelProvider.Factory =
+            viewModelFactory { initializer { TodoViewModel(reminderScheduler = reminderScheduler) } }
 
         // 마감일시와 리마인더 오프셋이 모두 있어야 "몇 분 전에 알린다"는 리마인더가 의미를 가진다.
         fun shouldScheduleReminder(item: TodoItem): Boolean =

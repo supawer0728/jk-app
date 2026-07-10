@@ -49,6 +49,7 @@ import com.jkapp.settings.SettingsScreen
 import com.jkapp.settings.SettingsViewModel
 import com.jkapp.todo.TodoCategoryManagementScreen
 import com.jkapp.todo.TodoFormScreen
+import com.jkapp.todo.TodoReminderSchedulerImpl
 import com.jkapp.todo.TodoViewModel
 
 internal fun resolveAuthRoute(isLoggedIn: Boolean): Any = if (isLoggedIn) HomeRoute else LoginRoute
@@ -72,7 +73,7 @@ class MainActivity : ComponentActivity() {
     private val hapticController by lazy { HapticController(this) }
     private val authViewModel: AuthViewModel by viewModels()
     private val diaryViewModel: DiaryViewModel by viewModels { DiaryViewModel.factory(DriveRepositoryImpl(this), appPreferences) }
-    private val todoViewModel: TodoViewModel by viewModels { TodoViewModel.factory() }
+    private val todoViewModel: TodoViewModel by viewModels { TodoViewModel.factory(TodoReminderSchedulerImpl(this)) }
     private val dailyAssetViewModel: DailyAssetViewModel by viewModels { DailyAssetViewModel.factory() }
     private val investmentViewModel: DailyAssetInvestmentViewModel by viewModels { DailyAssetInvestmentViewModel.factory() }
     private val benchmarkViewModel: BenchmarkViewModel by viewModels { BenchmarkViewModel.factory() }

@@ -159,6 +159,10 @@
     <!-- Notification -->
     <string name="notification_channel_todo_assignment_name">할 일 배정</string>
     <string name="notification_channel_todo_assignment_description">할 일이 배정되었을 때 알려줍니다</string>
+    <string name="notification_channel_todo_reminder_name">마감일 리마인더</string>
+    <string name="notification_channel_todo_reminder_description">할 일 마감일이 다가오면 알려줍니다</string>
+    <string name="todo_reminder_notification_title">할 일 마감 알림</string>
+    <string name="todo_reminder_permission_denied">알림 권한이 없어 리마인더 알림이 표시되지 않습니다. 설정에서 알림을 허용해 주세요.</string>
     <!-- Todo -->
     <string name="todo_category_management_title">카테고리 관리</string>
     <string name="todo_category_add">카테고리 추가</string>
