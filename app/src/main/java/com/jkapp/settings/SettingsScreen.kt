@@ -1,17 +1,22 @@
 package com.jkapp.settings
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
@@ -20,6 +25,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -30,6 +36,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jkapp.R
 import com.jkapp.common.DarkModeSetting
 import com.jkapp.common.MAX_HAPTIC_INTENSITY
+import com.jkapp.common.NotificationMode
+import com.jkapp.common.NotificationSound
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -40,6 +48,8 @@ fun SettingsScreen(
     val darkModeSetting by viewModel.darkModeSetting.collectAsStateWithLifecycle()
     val hapticIntensity by viewModel.hapticIntensity.collectAsStateWithLifecycle()
     val preference by viewModel.preference.collectAsStateWithLifecycle()
+    val notificationMode by viewModel.notificationMode.collectAsStateWithLifecycle()
+    val notificationSound by viewModel.notificationSound.collectAsStateWithLifecycle()
     // 슬라이더 위치는 로컬 상태로 즉시 반영하고, DataStore 저장은 손을 뗄 때(onValueChangeFinished)만
     // 한다. hapticIntensity StateFlow에 바로 바인딩하면 드래그 중 프레임마다 저장이 발생하고,
     // 저장이 비동기로 반영되는 동안 손가락과 엄지 위치가 어긋나 보인다.
@@ -61,36 +71,33 @@ fun SettingsScreen(
         }
     ) { innerPadding ->
         Column(modifier = Modifier.padding(innerPadding)) {
-            Text(
-                text = stringResource(R.string.dark_mode),
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
-            )
-            DarkModeOption.entries.forEach { option ->
-                SettingsOptionRow(
-                    label = stringResource(option.labelRes),
-                    selected = darkModeSetting == option.setting,
-                    onClick = { viewModel.setDarkModeSetting(option.setting) }
-                )
-            }
-            Text(
-                text = stringResource(R.string.haptic_intensity),
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+            SettingsDropdownRow(
+                label = stringResource(R.string.dark_mode),
+                options = DarkModeOption.entries,
+                selected = DarkModeOption.entries.firstOrNull { it.setting == darkModeSetting }
+                    ?: DarkModeOption.SYSTEM,
+                optionLabel = { stringResource(it.labelRes) },
+                onSelect = { viewModel.setDarkModeSetting(it.setting) },
             )
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                Text(
+                    text = stringResource(R.string.haptic_intensity),
+                    style = MaterialTheme.typography.titleMedium,
+                )
                 Slider(
                     value = sliderPosition,
                     onValueChange = { sliderPosition = it },
                     onValueChangeFinished = { viewModel.setHapticIntensity(sliderPosition.toInt()) },
                     valueRange = 0f..MAX_HAPTIC_INTENSITY.toFloat(),
                     steps = MAX_HAPTIC_INTENSITY - 1,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 12.dp),
                 )
                 Text(
                     text = if (sliderPosition.toInt() == 0) {
@@ -98,32 +105,93 @@ fun SettingsScreen(
                     } else {
                         stringResource(R.string.haptic_intensity_value, sliderPosition.toInt())
                     },
-                    modifier = Modifier.padding(start = 12.dp),
                 )
             }
-            Text(
-                text = stringResource(R.string.language),
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+            SettingsDropdownRow(
+                label = stringResource(R.string.language),
+                options = LanguageOption.entries,
+                selected = LanguageOption.entries.firstOrNull { it.code == preference.language }
+                    ?: LanguageOption.KOREAN,
+                optionLabel = { stringResource(it.labelRes) },
+                onSelect = { viewModel.setLanguage(it.code) },
             )
-            LanguageOption.entries.forEach { option ->
-                SettingsOptionRow(
-                    label = stringResource(option.labelRes),
-                    selected = preference.language == option.code,
-                    onClick = { viewModel.setLanguage(option.code) }
+            SettingsDropdownRow(
+                label = stringResource(R.string.time_zone),
+                options = TimeZoneOption.entries,
+                selected = TimeZoneOption.entries.firstOrNull { it.zoneId == preference.timeZone }
+                    ?: TimeZoneOption.ASIA_SEOUL,
+                optionLabel = { stringResource(it.labelRes) },
+                onSelect = { viewModel.setTimeZone(it.zoneId) },
+            )
+            SettingsDropdownRow(
+                label = stringResource(R.string.notification_mode),
+                options = NotificationModeOption.entries,
+                selected = NotificationModeOption.entries.firstOrNull { it.mode == notificationMode }
+                    ?: NotificationModeOption.SOUND_AND_VIBRATE,
+                optionLabel = { stringResource(it.labelRes) },
+                onSelect = { viewModel.setNotificationMode(it.mode) },
+            )
+            // 알림음 선택은 소리를 내는 방식일 때만 의미가 있어, 그 경우에만 노출한다.
+            if (notificationMode.hasSound) {
+                SettingsDropdownRow(
+                    label = stringResource(R.string.notification_sound),
+                    options = NotificationSoundOption.entries,
+                    selected = NotificationSoundOption.entries.firstOrNull { it.sound == notificationSound }
+                        ?: NotificationSoundOption.DEFAULT,
+                    optionLabel = { stringResource(it.labelRes) },
+                    onSelect = { viewModel.setNotificationSound(it.sound) },
                 )
             }
-            Text(
-                text = stringResource(R.string.time_zone),
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun <T> SettingsDropdownRow(
+    label: String,
+    options: List<T>,
+    selected: T,
+    optionLabel: @Composable (T) -> String,
+    onSelect: (T) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.weight(1f),
+        )
+        ExposedDropdownMenuBox(
+            expanded = expanded,
+            onExpandedChange = { expanded = !expanded },
+        ) {
+            OutlinedTextField(
+                value = optionLabel(selected),
+                onValueChange = {},
+                readOnly = true,
+                singleLine = true,
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                modifier = Modifier
+                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                    .width(180.dp),
             )
-            TimeZoneOption.entries.forEach { option ->
-                SettingsOptionRow(
-                    label = stringResource(option.labelRes),
-                    selected = preference.timeZone == option.zoneId,
-                    onClick = { viewModel.setTimeZone(option.zoneId) }
-                )
+            ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                options.forEach { option ->
+                    DropdownMenuItem(
+                        text = { Text(optionLabel(option)) },
+                        onClick = {
+                            onSelect(option)
+                            expanded = false
+                        },
+                    )
+                }
             }
         }
     }
@@ -145,20 +213,15 @@ private enum class TimeZoneOption(val zoneId: String, val labelRes: Int) {
     UTC("UTC", R.string.time_zone_utc),
 }
 
-@Composable
-private fun SettingsOptionRow(
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .selectable(selected = selected, onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        RadioButton(selected = selected, onClick = onClick)
-        Text(text = label, modifier = Modifier.padding(start = 8.dp))
-    }
+private enum class NotificationModeOption(val mode: NotificationMode, val labelRes: Int) {
+    SOUND(NotificationMode.SOUND, R.string.notification_mode_sound),
+    VIBRATE(NotificationMode.VIBRATE, R.string.notification_mode_vibrate),
+    SOUND_AND_VIBRATE(NotificationMode.SOUND_AND_VIBRATE, R.string.notification_mode_sound_and_vibrate),
+    OFF(NotificationMode.OFF, R.string.notification_mode_off),
+}
+
+private enum class NotificationSoundOption(val sound: NotificationSound, val labelRes: Int) {
+    DEFAULT(NotificationSound.DEFAULT, R.string.notification_sound_default),
+    ALARM(NotificationSound.ALARM, R.string.notification_sound_alarm),
+    RINGTONE(NotificationSound.RINGTONE, R.string.notification_sound_ringtone),
 }

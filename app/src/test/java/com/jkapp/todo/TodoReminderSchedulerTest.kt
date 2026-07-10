@@ -55,13 +55,13 @@ class TodoReminderSchedulerTest {
 
     @Test
     fun `shouldShowReminderNotification은 미완료 항목에 대해 true다`() {
-        val item = TodoItem(firestoreId = "id1", title = "제출", isCompleted = false)
+        val item = TodoItem(firestoreId = "id1", title = "제출", status = TodoStatus.NOT_STARTED)
         assertTrue(shouldShowReminderNotification(item))
     }
 
     @Test
     fun `shouldShowReminderNotification은 완료된 항목이면 false다`() {
-        val item = TodoItem(firestoreId = "id1", title = "제출", isCompleted = true)
+        val item = TodoItem(firestoreId = "id1", title = "제출", status = TodoStatus.DONE)
         assertFalse(shouldShowReminderNotification(item))
     }
 

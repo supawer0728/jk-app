@@ -11,6 +11,8 @@ import com.jkapp.auth.FirebaseAuthRepository
 import com.jkapp.common.AppPreferences
 import com.jkapp.common.DEFAULT_HAPTIC_INTENSITY
 import com.jkapp.common.DarkModeSetting
+import com.jkapp.common.NotificationMode
+import com.jkapp.common.NotificationSound
 import com.jkapp.user.UserPreference
 import com.jkapp.user.UserRepository
 import com.jkapp.user.UserRepositoryImpl
@@ -53,6 +55,24 @@ class SettingsViewModel(
     fun setHapticIntensity(intensity: Int) {
         viewModelScope.launch {
             appPreferences.setHapticIntensity(intensity)
+        }
+    }
+
+    val notificationMode: StateFlow<NotificationMode> = appPreferences.notificationMode
+        .stateIn(viewModelScope, SharingStarted.Eagerly, NotificationMode.SOUND_AND_VIBRATE)
+
+    fun setNotificationMode(mode: NotificationMode) {
+        viewModelScope.launch {
+            appPreferences.setNotificationMode(mode)
+        }
+    }
+
+    val notificationSound: StateFlow<NotificationSound> = appPreferences.notificationSound
+        .stateIn(viewModelScope, SharingStarted.Eagerly, NotificationSound.DEFAULT)
+
+    fun setNotificationSound(sound: NotificationSound) {
+        viewModelScope.launch {
+            appPreferences.setNotificationSound(sound)
         }
     }
 
