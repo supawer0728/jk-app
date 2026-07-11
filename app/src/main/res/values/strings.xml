@@ -83,10 +83,10 @@
     <string name="next_date">다음 날짜</string>
     <string name="asset_add_individual">개별 입력</string>
     <string name="asset_add_paste">구글시트 붙여넣기</string>
-    <string name="asset_paste_import_title">구글시트 붙여넣기</string>
-    <string name="asset_paste_import_description">구글 스프레드시트에서 복사한 표를 그대로 붙여넣으세요. (이름, 명의, 계좌, 계좌번호, 카드, 금액 순서. 카드는 무시됩니다)</string>
+    <string name="asset_import_sheet">구글시트에서 가져오기</string>
+    <string name="asset_import_sheet_title">구글시트에서 가져오기</string>
+    <string name="asset_import_sheet_loading">구글시트를 읽는 중…</string>
     <string name="asset_paste_import_field">붙여넣기</string>
-    <string name="asset_paste_import_has_header">첫 줄은 헤더입니다</string>
     <string name="asset_paste_import_parse">확인</string>
     <string name="asset_paste_import_back">다시 입력</string>
     <string name="asset_paste_import_summary">%1$d건 인식, %2$d건 오류</string>

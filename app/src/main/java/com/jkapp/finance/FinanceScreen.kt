@@ -81,6 +81,7 @@ import com.jkapp.common.LoadingIndicator
 import com.jkapp.common.todayDate
 import com.jkapp.finance.asset.ASSET_OWNERS
 import com.jkapp.finance.asset.AssetItem
+import com.jkapp.finance.asset.AssetSheetImportState
 import com.jkapp.finance.asset.DEFAULT_HIDDEN_ASSET_NAMES
 import com.jkapp.finance.asset.DailyAssetUiState
 import com.jkapp.finance.asset.DailyAssetViewModel
@@ -167,8 +168,26 @@ private fun DailyAssetTab(viewModel: DailyAssetViewModel) {
     // AssetItem은 Parcelable/Serializable이 아니므로 rememberSaveable로 저장할 수 없다(회전 시 초기화됨).
     var formTarget by remember { mutableStateOf<AssetFormTarget?>(null) }
     var showFabMenu by remember { mutableStateOf(false) }
-    var showPasteImport by rememberSaveable { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<AssetPendingDelete?>(null) }
+    val sheetImport by viewModel.sheetImport.collectAsStateWithLifecycle()
+    val actionError by viewModel.actionError.collectAsStateWithLifecycle()
+
+    // 시트 접근 동의(계정 선택/권한)가 필요하면 복구 인텐트를 실행하고, 동의 후 다시 가져온다.
+    val sheetAuthRecoveryIntent by viewModel.sheetAuthRecoveryIntent.collectAsStateWithLifecycle()
+    val sheetAuthLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        result.data?.getStringExtra(AccountManager.KEY_ACCOUNT_NAME)?.let { accountName ->
+            viewModel.onSheetAccountSelected(accountName)
+        }
+        viewModel.clearSheetAuthRecoveryIntent()
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            viewModel.importFromSheet()
+        }
+    }
+    LaunchedEffect(sheetAuthRecoveryIntent) {
+        sheetAuthRecoveryIntent?.let { sheetAuthLauncher.launch(it) }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         when (val state = uiState) {
@@ -248,10 +267,10 @@ private fun DailyAssetTab(viewModel: DailyAssetViewModel) {
                             },
                         )
                         DropdownMenuItem(
-                            text = { Text(stringResource(R.string.asset_add_paste)) },
+                            text = { Text(stringResource(R.string.asset_import_sheet)) },
                             onClick = {
                                 showFabMenu = false
-                                showPasteImport = true
+                                viewModel.importFromSheet()
                             },
                         )
                     }
@@ -288,15 +307,27 @@ private fun DailyAssetTab(viewModel: DailyAssetViewModel) {
         )
     }
 
-    if (showPasteImport) {
-        // 자산이 하나도 없어 선택된 날짜가 없을 때는 오늘 날짜로 첫 문서를 생성한다.
-        val dateForImport = selectedDate ?: todayDate()
-        AssetPasteImportDialog(
-            onDismiss = { showPasteImport = false },
-            onParse = viewModel::parsePasteText,
-            onImport = { items ->
-                viewModel.importAssets(dateForImport, items)
-                showPasteImport = false
+    when (val importState = sheetImport) {
+        is AssetSheetImportState.Loading -> AssetSheetLoadingDialog(
+            onCancel = { viewModel.dismissSheetImport() },
+        )
+        is AssetSheetImportState.Preview -> AssetSheetImportDialog(
+            rows = importState.rows,
+            onDismiss = { viewModel.dismissSheetImport() },
+            // 저장 대상 날짜는 실행 시점(오늘)이다. 해당 날짜 문서가 있으면 수정, 없으면 신규 생성된다.
+            onImport = { items -> viewModel.confirmSheetImport(todayDate(), items) },
+        )
+        AssetSheetImportState.Idle -> Unit
+    }
+
+    actionError?.let { message ->
+        AlertDialog(
+            onDismissRequest = { viewModel.consumeActionError() },
+            text = { Text(message) },
+            confirmButton = {
+                TextButton(onClick = { viewModel.consumeActionError() }) {
+                    Text(stringResource(android.R.string.ok))
+                }
             },
         )
     }
@@ -645,34 +676,79 @@ private fun AssetFormDialog(
 }
 
 @Composable
-private fun AssetPasteImportDialog(
-    onDismiss: () -> Unit,
-    onParse: (text: String, hasHeader: Boolean) -> List<ParsedAssetRow>,
-    onImport: (List<AssetItem>) -> Unit,
-) {
-    var hasHeader by rememberSaveable { mutableStateOf(true) }
-
-    PasteImportDialog(
-        title = stringResource(R.string.asset_paste_import_title),
-        description = stringResource(R.string.asset_paste_import_description),
-        extraOptions = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = hasHeader, onCheckedChange = { hasHeader = it })
-                Text(stringResource(R.string.asset_paste_import_has_header))
+private fun AssetSheetLoadingDialog(onCancel: () -> Unit) {
+    AlertDialog(
+        // 백드롭 탭으로도 취소할 수 있게 해, 응답이 늦어도 로딩에 갇히지 않도록 한다.
+        onDismissRequest = onCancel,
+        title = { Text(stringResource(R.string.asset_import_sheet_title)) },
+        text = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                Text(stringResource(R.string.asset_import_sheet_loading))
             }
         },
-        onDismiss = onDismiss,
-        onParse = { text -> onParse(text, hasHeader) },
-        itemOf = { it.item },
-        errorOf = { it.error },
-        rawLineOf = { it.rawLine },
-        onImport = onImport,
-    ) { item ->
-        Text(
-            text = "${item.owner} · ${item.name}" + (item.amount?.let { " · ${it.toDisplayAmount()}" } ?: ""),
-            style = MaterialTheme.typography.bodySmall,
-        )
-    }
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
+        },
+    )
+}
+
+// 시트에서 읽어 파싱한 결과를 저장 전 미리보기로 보여준다. 붙여넣기와 달리 입력 단계가 없고
+// 곧바로 파싱 결과(성공/오류)를 나열한다.
+@Composable
+private fun AssetSheetImportDialog(
+    rows: List<ParsedAssetRow>,
+    onDismiss: () -> Unit,
+    onImport: (List<AssetItem>) -> Unit,
+) {
+    val items = rows.mapNotNull { it.item }
+    val errorCount = rows.size - items.size
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.asset_import_sheet_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = stringResource(R.string.asset_paste_import_summary, items.size, errorCount),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 280.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    items(rows) { row ->
+                        val item = row.item
+                        if (item != null) {
+                            Text(
+                                text = "${item.owner} · ${item.name}" +
+                                    (item.amount?.let { " · ${it.toDisplayAmount()}" } ?: ""),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        } else {
+                            Text(
+                                text = "⚠ ${row.error}: ${row.rawLine.take(30)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onImport(items) },
+                enabled = items.isNotEmpty(),
+            ) { Text(stringResource(R.string.save)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        },
+    )
 }
 
 // 텍스트 붙여넣기 → 파싱 → 미리보기 → 확인 후 저장이라는 공통 흐름을 자산/벤치마크 붙여넣기 다이얼로그가
