@@ -1,0 +1,86 @@
+# detekt 룰셋 — jkapp
+# doc/CODE_STYLE.md, doc/CODE_CONVENTION.md 기준에 맞춰 조정한다.
+# buildUponDefaultConfig = true 이므로 여기서는 기본값과 다르게 둘 규칙만 명시한다.
+
+build:
+  maxIssues: 0
+  excludeCorrectable: false
+
+config:
+  validation: true
+  warningsAsErrors: false
+  checkExhaustiveness: false
+
+complexity:
+  active: true
+  LongParameterList:
+    active: true
+    # Compose 화면은 상태·콜백을 파라미터로 받아 파라미터가 많아지는 것이 관용적이다.
+    functionThreshold: 8
+    constructorThreshold: 8
+    ignoreDefaultParameters: true
+    ignoreAnnotated: ['Composable']
+  TooManyFunctions:
+    active: true
+    ignoreAnnotatedFunctions: ['Composable', 'Preview']
+    thresholdInFiles: 20
+    thresholdInClasses: 20
+    thresholdInInterfaces: 20
+    thresholdInObjects: 20
+    thresholdInEnums: 20
+  LongMethod:
+    active: true
+    # Compose 함수는 선언적 UI 트리로 인해 자연히 길어진다.
+    threshold: 80
+    ignoreAnnotated: ['Composable', 'Preview']
+  CyclomaticComplexMethod:
+    active: true
+    threshold: 20
+    ignoreAnnotated: ['Composable']
+
+naming:
+  active: true
+  FunctionNaming:
+    active: true
+    # @Composable 함수는 PascalCase 명사를 쓴다(CODE_STYLE 3절).
+    ignoreAnnotated: ['Composable', 'Preview']
+  TopLevelPropertyNaming:
+    active: true
+    constantPattern: '[A-Z][A-Z0-9]*(_[A-Z0-9]+)*'
+
+style:
+  active: true
+  MaxLineLength:
+    active: true
+    maxLineLength: 100
+    excludePackageStatements: true
+    excludeImportStatements: true
+    excludeCommentStatements: true
+  MagicNumber:
+    active: true
+    ignoreNumbers: ['-1', '0', '1', '2']
+    ignoreHashCodeFunction: true
+    ignorePropertyDeclaration: true
+    ignoreCompanionObjectPropertyDeclaration: true
+    ignoreAnnotation: true
+    ignoreNamedArgument: true
+    ignoreEnums: true
+    # Compose dp/sp 등 UI 상수는 인라인이 관용적이다.
+    ignoreAnnotated: ['Composable', 'Preview']
+  ReturnCount:
+    active: true
+    max: 4
+  UnusedPrivateMember:
+    active: true
+    ignoreAnnotated: ['Preview']
+  ForbiddenComment:
+    active: false
+
+comments:
+  active: true
+  UndocumentedPublicClass:
+    active: false
+  UndocumentedPublicFunction:
+    active: false
+  UndocumentedPublicProperty:
+    active: false
