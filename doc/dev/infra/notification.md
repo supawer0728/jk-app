@@ -8,7 +8,13 @@ Firebase Cloud Messaging(FCM) 푸시 메시지를 수신·표시하고, 알림 �
 - 한다: FCM 메시지 수신 시 알림 표시, 새 토큰 발급(`onNewToken`) 시 갱신, 앱 시작 시 알림 채널
   등록, 리마인더 설정(방식·알림음) 조합별 채널 지연 생성, 현재 토큰과 다를 때만 Firestore에 저장.
 - 하지 않는다: 푸시 토큰의 실제 Firestore 저장(→ `user` 인프라 경유), 리마인더 스케줄링(→ `todo`
-  의 WorkManager), 알림 설정값의 저장(→ `common.AppPreferences`), 서버측 푸시 발송.
+  의 WorkManager), 알림 설정값의 저장(→ `common.AppPreferences`), 서버측 푸시 **발송**(→ `functions`
+  Cloud Functions, [functions.md](functions.md)). 이 인프라는 발송된 푸시의 **수신·표시**만 담당한다.
+
+> 담당자 배정 푸시의 발송 주체는 Android 앱이 아니라 Cloud Functions다. 앱이 담당하는 것은
+> ① 토큰 발급·갱신(`onNewToken`/`PushTokenManager`)과 ② 수신 시 알림 표시(`onMessageReceived`,
+> 앱이 포그라운드일 때)뿐이다. 앱이 백그라운드/종료 상태면 FCM이 `notification` 페이로드를
+> 시스템 트레이에 자동 표시하며, 이때 `android_channel_id`로 지정된 `todo_assignment` 채널을 쓴다.
 
 ## 공개 API
 
@@ -37,3 +43,4 @@ Firebase Cloud Messaging(FCM) 푸시 메시지를 수신·표시하고, 알림 �
 ## 관련 결정 (ADR)
 
 - [`doc/adr/55/use-workmanager-for-todo-reminders.md`](../../adr/55/use-workmanager-for-todo-reminders.md) — 리마인더 스케줄러로 WorkManager 채택(설정별 알림 채널과 연동)
+- [`doc/adr/60/02-assignment-push-via-cloud-functions.md`](../../adr/60/02-assignment-push-via-cloud-functions.md) — 담당자 배정 푸시를 Cloud Functions에서 발송(수신은 이 인프라)

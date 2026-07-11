@@ -16,6 +16,10 @@ data class TodoItem(
     val completionHistory: List<Instant> = emptyList(),
     val createdAt: Instant? = null,
     val completedAt: Instant? = null,
+    // 마지막으로 저장한 사용자의 Firebase Auth uid. Repository가 쓰기 시점에 주입한다.
+    // Firestore 트리거(Cloud Functions)는 "누가 썼는지"를 모르므로, 담당자 알림에서
+    // 편집자 본인을 대상에서 제외하는 판별용으로 이 값을 저장한다(이슈 #60 ADR).
+    val lastEditedByUid: String? = null,
 ) {
     // isCompleted는 status == DONE의 파생값이다(이슈 #71 ADR). 리마인더 예약 조건·완료 필터 등
     // 기존 호출부가 이 프로퍼티를 그대로 쓸 수 있게 유지한다.

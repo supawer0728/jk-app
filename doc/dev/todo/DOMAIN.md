@@ -24,6 +24,7 @@
 | `completionHistory` | `List<Instant>` | 반복 항목이 완료 처리된 지난 회차의 `dueAt` 이력. 기본값 `emptyList()` |
 | `createdAt` | `Instant?` | 생성 시각. `addTodoItem`에서만 부여되는 불변 필드 |
 | `completedAt` | `Instant?` | 마지막 완료 처리 시각 |
+| `lastEditedByUid` | `String?` | 마지막으로 저장한 사용자의 Firebase Auth `uid`. Repository가 쓰기 시점에 주입한다. 알림 발송 시 편집자 본인을 대상에서 제외하는 데 쓴다(→ ADR/60) |
 | `isCompleted` | `Boolean` | 파생 프로퍼티(`get()`). `status == DONE`과 동치. 저장 필드 아님 |
 
 #### TodoStatus (`TodoStatus.kt`)
@@ -101,6 +102,8 @@
 - `auth.AuthRepository` — `TodoViewModel`이 로그인 상태를 구독해 로그인 시에만 데이터 수집을 시작한다.
 - `common.AppPreferences` — `TodoReminderWorker`가 알림 모드/사운드 설정을 읽어 알림 채널을 구성한다.
 - `notification.ensureReminderChannel` — 리마인더 알림 채널 생성(공유 인프라).
+- `functions`(Cloud Functions) — `todo-items` 쓰기 트리거가 담당자 배정 푸시를 발송하며,
+  `assignee`(이메일 매핑)·`lastEditedByUid`·`title` 필드를 대상 계산에 사용한다(→ [infra/functions.md](../infra/functions.md)).
 - 다른 도메인 모델을 직접 참조하거나 참조당하지는 않는다(카테고리·태그 없음).
 
 ## Firestore 컬렉션
@@ -130,6 +133,7 @@
 | `completionHistory` | `completionHistory` | `List<Timestamp>` ↔ `List<Instant>` |
 | `createdAt` | `createdAt` | `Timestamp` ↔ `Instant`. `addTodoItem`에서만 기록, 이후 갱신 안 함 |
 | `completedAt` | `completedAt` | `Timestamp` ↔ `Instant` |
+| `lastEditedByUid` | `lastEditedByUid` | 편집자 Firebase Auth `uid` 문자열. 모든 쓰기(add/update/complete) 시 주입. 서버 Cloud Functions가 자기 알림 제외에 사용(→ [infra/functions.md](../infra/functions.md)) |
 
 ### `todo-items.recurrence` (중첩 맵, RecurrenceRule)
 

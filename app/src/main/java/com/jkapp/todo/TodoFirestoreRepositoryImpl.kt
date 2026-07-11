@@ -2,16 +2,22 @@ package com.jkapp.todo
 
 import android.util.Log
 import com.google.firebase.Timestamp
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentSnapshot
+import com.google.firebase.firestore.FirebaseFirestore
 import com.jkapp.common.AppFirestore
 import com.jkapp.common.await
 import com.jkapp.common.snapshotFlow
 import java.time.Instant
 import kotlinx.coroutines.flow.Flow
 
-class TodoFirestoreRepositoryImpl : TodoFirestoreRepository {
+class TodoFirestoreRepositoryImpl(
+    db: FirebaseFirestore = AppFirestore.instance,
+    // 현재 로그인 사용자 uid 공급자. 저장 시 lastEditedByUid에 주입해 서버 알림 로직이 편집자
+    // 본인을 제외할 수 있게 한다. 기본값은 FirebaseAuth이며, 테스트에서 대체할 수 있도록 분리한다.
+    private val currentUidProvider: () -> String? = { FirebaseAuth.getInstance().currentUser?.uid },
+) : TodoFirestoreRepository {
 
-    private val db = AppFirestore.instance
     private val itemsRef = db.collection(COLLECTION_ITEMS)
 
     override fun getTodoItems(): Flow<List<TodoItem>> = itemsRef.snapshotFlow { snapshot ->
@@ -22,7 +28,7 @@ class TodoFirestoreRepositoryImpl : TodoFirestoreRepository {
         itemsRef.document(firestoreId).get().await().toTodoItem()
 
     override suspend fun addTodoItem(item: TodoItem): String {
-        val anchored = item.withRecurrenceAnchored()
+        val anchored = item.withRecurrenceAnchored().withEditor()
         val createdAt = anchored.createdAt ?: Instant.now()
         val data = anchored.toMap() + (FIELD_CREATED_AT to createdAt.toTimestamp())
         return itemsRef.add(data).await().id
@@ -30,7 +36,7 @@ class TodoFirestoreRepositoryImpl : TodoFirestoreRepository {
 
     override suspend fun updateTodoItem(item: TodoItem) {
         val id = item.firestoreId ?: throw IllegalArgumentException("수정할 할일의 ID가 없습니다")
-        itemsRef.document(id).update(item.withRecurrenceAnchored().toMap()).await()
+        itemsRef.document(id).update(item.withRecurrenceAnchored().withEditor().toMap()).await()
     }
 
     override suspend fun deleteTodoItem(firestoreId: String) {
@@ -40,9 +46,13 @@ class TodoFirestoreRepositoryImpl : TodoFirestoreRepository {
     override suspend fun completeTodoItem(firestoreId: String) {
         val current = getTodoItemOnce(firestoreId)
             ?: throw IllegalArgumentException("완료할 할일을 찾을 수 없습니다: $firestoreId")
-        val updated = current.completeOccurrence(Instant.now())
+        val updated = current.completeOccurrence(Instant.now()).withEditor()
         itemsRef.document(firestoreId).update(updated.toMap()).await()
     }
+
+    // 저장 시점에 편집자(현재 로그인 사용자)의 uid를 박아둔다. add/update/complete 모든 쓰기 경로가
+    // 이 값을 갱신해, 서버 알림 로직이 마지막으로 저장한 사람을 대상에서 제외할 수 있게 한다.
+    private fun TodoItem.withEditor(): TodoItem = copy(lastEditedByUid = currentUidProvider())
 
     // createdAt은 addTodoItem에서만 값을 부여하는 불변 필드이므로 여기(toMap)에는 포함하지 않는다.
     // 포함시키면 updateTodoItem/completeTodoItem이 매번 최신 값으로 덮어써 생성 시각을 잃어버린다.
@@ -60,6 +70,7 @@ class TodoFirestoreRepositoryImpl : TodoFirestoreRepository {
         FIELD_RECURRENCE to recurrence?.toMap(),
         FIELD_COMPLETION_HISTORY to completionHistory.map { it.toTimestamp() },
         FIELD_COMPLETED_AT to completedAt?.toTimestamp(),
+        FIELD_LAST_EDITED_BY_UID to lastEditedByUid,
     )
 
     private fun RecurrenceRule.toMap(): Map<String, Any?> = mapOf(
@@ -92,6 +103,7 @@ class TodoFirestoreRepositoryImpl : TodoFirestoreRepository {
             completionHistory = history.map { it.toInstantValue() },
             createdAt = getTimestamp(FIELD_CREATED_AT)?.toInstantValue(),
             completedAt = getTimestamp(FIELD_COMPLETED_AT)?.toInstantValue(),
+            lastEditedByUid = getString(FIELD_LAST_EDITED_BY_UID),
         )
     }
 
@@ -144,6 +156,7 @@ class TodoFirestoreRepositoryImpl : TodoFirestoreRepository {
         private const val FIELD_COMPLETION_HISTORY = "completionHistory"
         private const val FIELD_CREATED_AT = "createdAt"
         private const val FIELD_COMPLETED_AT = "completedAt"
+        private const val FIELD_LAST_EDITED_BY_UID = "lastEditedByUid"
 
         private const val FIELD_RECURRENCE_FREQUENCY = "frequency"
         private const val FIELD_RECURRENCE_INTERVAL = "interval"
