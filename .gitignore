@@ -21,3 +21,6 @@ functions/lib/
 firebase-debug.log
 firebase-debug.*.log
 .firebase/
+
+# 로컬 편의용 심링크(CLAUDE.md -> AGENT.md). 절대경로라 머신 종속적이므로 커밋하지 않는다.
+/CLAUDE.md

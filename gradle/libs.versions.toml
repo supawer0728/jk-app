@@ -29,7 +29,7 @@ datastorePreferences = "1.2.1"
 material = "1.4.0"
 credentials = "1.6.0"
 playServicesAuth = "21.6.0"
-firebaseAuthKtx = "23.2.1"
+firebaseAuth = "24.2.0"
 firebaseFirestoreKtx = "25.1.4"
 firebaseMessagingKtx = "24.1.2"
 lifecycleProcess = "2.11.0"
@@ -81,7 +81,9 @@ material = { group = "com.google.android.material", name = "material", version.r
 androidx-credentials-core = { group = "androidx.credentials", name = "credentials", version.ref = "credentials" }
 androidx-credentials-play-auth = { group = "androidx.credentials", name = "credentials-play-services-auth", version.ref = "credentials" }
 play-auth = { group = "com.google.android.gms", name = "play-services-auth", version.ref = "playServicesAuth" }
-firebase-auth-ktx = { group = "com.google.firebase", name = "firebase-auth-ktx", version.ref = "firebaseAuthKtx" }
+# firebase-auth 24.0.0부터 KTX API가 메인 아티팩트로 통합되어 -ktx 아티팩트는 더 이상 배포되지 않는다.
+# 코드는 com.google.firebase.auth.* (메인 패키지)만 쓰므로 아티팩트만 교체하면 된다.
+firebase-auth = { group = "com.google.firebase", name = "firebase-auth", version.ref = "firebaseAuth" }
 firebase-firestore-ktx = { group = "com.google.firebase", name = "firebase-firestore-ktx", version.ref = "firebaseFirestoreKtx" }
 firebase-messaging-ktx = { group = "com.google.firebase", name = "firebase-messaging-ktx", version.ref = "firebaseMessagingKtx" }
 androidx-lifecycle-process = { group = "androidx.lifecycle", name = "lifecycle-process", version.ref = "lifecycleProcess" }

@@ -51,11 +51,15 @@ class AuthViewModel(
     val isAuthReady: StateFlow<Boolean> = _isAuthReady.asStateFlow()
 
     private val authStateListener = FirebaseAuth.AuthStateListener { firebaseAuth ->
+        // TODO(임시 진단): 재기동 시 세션 복원 여부/타이밍 확인용. 원인 파악 후 제거.
+        android.util.Log.w("AuthDebug", "authStateListener 발화: currentUser 존재=${firebaseAuth.currentUser != null}")
         _user.value = firebaseAuth.currentUser
         _isAuthReady.value = true
     }
 
     init {
+        // TODO(임시 진단): 재기동 시 세션 복원 여부/타이밍 확인용. 원인 파악 후 제거.
+        android.util.Log.w("AuthDebug", "AuthViewModel init: 생성 시점 currentUser 존재=${auth.currentUser != null}")
         auth.addAuthStateListener(authStateListener)
         // authStateListener가 끝내 발화하지 않는 극단적 상황(Firebase 초기화 실패 등)에서도
         // 스플래시에 영구히 머무르지 않도록 타임아웃 후 강제로 준비 완료 처리한다.
