@@ -6,9 +6,9 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-class InvestmentSheetPasteTest {
+class InvestmentSheetRowsTest {
 
-    private fun row(vararg cells: String) = cells.joinToString("\t")
+    private fun row(vararg cells: String): List<String> = cells.toList()
 
     private val fullHeader = row(
         "계좌", "카테고리", "카테고리 목표 비중", "투자 종목", "1주 가격", "평가 금액(원화)",
@@ -32,9 +32,7 @@ class InvestmentSheetPasteTest {
 
     @Test
     fun `비중 리밸런싱 등 파생 열이 섞여 있어도 필요한 7개 열만 헤더 이름으로 찾아 파싱한다`() {
-        val text = listOf(fullHeader, fullDataRow()).joinToString("\n")
-
-        val result = parseInvestmentSheetPaste(text, owner = "전지훈")
+        val result = parseInvestmentRows(listOf(fullHeader, fullDataRow()), owner = "전지훈")
 
         assertEquals(1, result.size)
         val item = result.single().item!!
@@ -51,9 +49,8 @@ class InvestmentSheetPasteTest {
     fun `매수금액에 달러 표시가 없으면 통화가 KRW로 인식되고 계좌 이름 별칭도 인식한다`() {
         val header = row("이름", "카테고리", "투자 종목", "1주 가격", "평가 금액(원화)", "보유수량", "매수금액")
         val data = row("종합", "주식", "삼성전자", "₩70,000", "₩700,000", "10", "₩650,000")
-        val text = listOf(header, data).joinToString("\n")
 
-        val result = parseInvestmentSheetPaste(text, owner = "전지훈")
+        val result = parseInvestmentRows(listOf(header, data), owner = "전지훈")
 
         val item = result.single().item!!
         assertEquals("KRW", item.purchaseAmount.currency)
@@ -62,12 +59,13 @@ class InvestmentSheetPasteTest {
 
     @Test
     fun `매수금액에 달러 표시가 있으면 매수금액 통화가 USD로 인식된다`() {
-        val text = listOf(
-            fullHeader,
-            fullDataRow(investmentName = "애플 AAPL", pricePerShare = "$308.6300", valuationAmount = "₩3,798,865", quantity = "8", purchaseAmount = "$2,503.3200"),
-        ).joinToString("\n")
-
-        val result = parseInvestmentSheetPaste(text, owner = "전지훈")
+        val result = parseInvestmentRows(
+            listOf(
+                fullHeader,
+                fullDataRow(investmentName = "애플 AAPL", pricePerShare = "$308.6300", valuationAmount = "₩3,798,865", quantity = "8", purchaseAmount = "$2,503.3200"),
+            ),
+            owner = "전지훈",
+        )
 
         val item = result.single().item!!
         assertEquals(BigDecimal("308.6300"), item.pricePerShare)
@@ -77,12 +75,13 @@ class InvestmentSheetPasteTest {
 
     @Test
     fun `1주 가격이 달러여도 매수금액에 달러 표시가 없으면 매수금액 통화는 KRW로 인식된다`() {
-        val text = listOf(
-            fullHeader,
-            fullDataRow(investmentName = "애플 AAPL", pricePerShare = "$308.6300", valuationAmount = "₩3,798,865", quantity = "8", purchaseAmount = "₩3,000,000"),
-        ).joinToString("\n")
-
-        val result = parseInvestmentSheetPaste(text, owner = "전지훈")
+        val result = parseInvestmentRows(
+            listOf(
+                fullHeader,
+                fullDataRow(investmentName = "애플 AAPL", pricePerShare = "$308.6300", valuationAmount = "₩3,798,865", quantity = "8", purchaseAmount = "₩3,000,000"),
+            ),
+            owner = "전지훈",
+        )
 
         val item = result.single().item!!
         assertEquals("KRW", item.purchaseAmount.currency)
@@ -93,9 +92,8 @@ class InvestmentSheetPasteTest {
     fun `열 순서가 달라도 헤더 이름만 맞으면 정상 파싱한다`() {
         val header = row("1주 가격", "매수금액", "계좌", "카테고리", "투자 종목", "보유수량", "평가 금액(원화)")
         val data = row("₩1000", "₩9000", "종합", "현금", "현금", "10", "₩10000")
-        val text = listOf(header, data).joinToString("\n")
 
-        val result = parseInvestmentSheetPaste(text, owner = "전지훈")
+        val result = parseInvestmentRows(listOf(header, data), owner = "전지훈")
 
         val item = result.single().item!!
         assertEquals("종합", item.assetName)
@@ -107,22 +105,21 @@ class InvestmentSheetPasteTest {
 
     @Test
     fun `계 합계 행은 건너뛴다`() {
-        val text = listOf(
-            fullHeader,
-            fullDataRow(),
-            row("계", "", "100%", "-", "-", "₩177,676,520", "-", "100.00%", "-", "-", "-", "-", "-", "₩173,827,840", "₩177,676,520", "₩3,848,680", "2.21%"),
-        ).joinToString("\n")
-
-        val result = parseInvestmentSheetPaste(text, owner = "전지훈")
+        val result = parseInvestmentRows(
+            listOf(
+                fullHeader,
+                fullDataRow(),
+                row("계", "", "100%", "-", "-", "₩177,676,520", "-", "100.00%", "-", "-", "-", "-", "-", "₩173,827,840", "₩177,676,520", "₩3,848,680", "2.21%"),
+            ),
+            owner = "전지훈",
+        )
 
         assertEquals(1, result.size)
     }
 
     @Test
     fun `계좌 카테고리 투자종목이 비어 있으면 에러로 표시한다`() {
-        val text = listOf(fullHeader, fullDataRow(investmentName = "")).joinToString("\n")
-
-        val result = parseInvestmentSheetPaste(text, owner = "전지훈")
+        val result = parseInvestmentRows(listOf(fullHeader, fullDataRow(investmentName = "")), owner = "전지훈")
 
         assertNull(result.single().item)
         assertTrue(result.single().error!!.contains("투자 종목"))
@@ -130,9 +127,7 @@ class InvestmentSheetPasteTest {
 
     @Test
     fun `금액 열이 숫자로 변환할 수 없으면 에러로 표시한다`() {
-        val text = listOf(fullHeader, fullDataRow(pricePerShare = "가격미정")).joinToString("\n")
-
-        val result = parseInvestmentSheetPaste(text, owner = "전지훈")
+        val result = parseInvestmentRows(listOf(fullHeader, fullDataRow(pricePerShare = "가격미정")), owner = "전지훈")
 
         assertNull(result.single().item)
         assertTrue(result.single().error!!.contains("1주 가격"))
@@ -141,19 +136,16 @@ class InvestmentSheetPasteTest {
     @Test
     fun `필수 헤더가 없으면 모든 행이 에러로 표시된다`() {
         val header = row("계좌", "투자 종목", "1주 가격", "평가 금액(원화)", "보유수량", "매수금액")
-        val text = listOf(header, fullDataRow()).joinToString("\n")
 
-        val result = parseInvestmentSheetPaste(text, owner = "전지훈")
+        val result = parseInvestmentRows(listOf(header, fullDataRow()), owner = "전지훈")
 
         assertNull(result.single().item)
         assertTrue(result.single().error!!.contains("카테고리"))
     }
 
     @Test
-    fun `같은 붙여넣기 안에서 계좌 카테고리 투자종목이 중복되면 에러로 표시한다`() {
-        val text = listOf(fullHeader, fullDataRow(), fullDataRow()).joinToString("\n")
-
-        val result = parseInvestmentSheetPaste(text, owner = "전지훈")
+    fun `같은 입력 안에서 계좌 카테고리 투자종목이 중복되면 에러로 표시한다`() {
+        val result = parseInvestmentRows(listOf(fullHeader, fullDataRow(), fullDataRow()), owner = "전지훈")
 
         assertEquals(2, result.size)
         result.forEach { row ->
@@ -163,8 +155,32 @@ class InvestmentSheetPasteTest {
     }
 
     @Test
-    fun `빈 텍스트나 헤더만 있으면 빈 목록을 반환한다`() {
-        assertEquals(emptyList<ParsedInvestmentRow>(), parseInvestmentSheetPaste("", owner = "전지훈"))
-        assertEquals(emptyList<ParsedInvestmentRow>(), parseInvestmentSheetPaste(fullHeader, owner = "전지훈"))
+    fun `빈 행 목록이나 헤더만 있으면 빈 목록을 반환한다`() {
+        assertEquals(emptyList<ParsedInvestmentRow>(), parseInvestmentRows(emptyList(), owner = "전지훈"))
+        assertEquals(emptyList<ParsedInvestmentRow>(), parseInvestmentRows(listOf(fullHeader), owner = "전지훈"))
+    }
+
+    @Test
+    fun `모든 셀이 빈 행은 무시된다`() {
+        val header = row("계좌", "카테고리", "투자 종목", "1주 가격", "평가 금액(원화)", "보유수량", "매수금액")
+        val data = row("종합", "주식", "삼성전자", "₩70,000", "₩700,000", "10", "₩650,000")
+        val blankRow = row("", "", "", "", "", "", "")
+
+        val result = parseInvestmentRows(listOf(header, data, blankRow), owner = "전지훈")
+
+        assertEquals(1, result.size)
+        assertEquals("삼성전자", result.single().item!!.investmentName)
+    }
+
+    @Test
+    fun `시트 API가 뒤쪽 빈 셀을 생략해 열 수가 부족해도 해당 필드의 값 없음 오류로 처리한다`() {
+        val header = row("계좌", "카테고리", "투자 종목", "1주 가격", "평가 금액(원화)", "보유수량", "매수금액")
+        // 매수금액 셀이 비어 있어 시트 API가 뒤쪽을 생략한 형태(6칸만 전달).
+        val data = row("종합", "주식", "삼성전자", "₩70,000", "₩700,000", "10")
+
+        val result = parseInvestmentRows(listOf(header, data), owner = "전지훈")
+
+        assertNull(result.single().item)
+        assertTrue(result.single().error!!.contains("매수금액"))
     }
 }

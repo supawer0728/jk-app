@@ -1,12 +1,16 @@
 package com.jkapp.finance.investment
 
+import android.content.Intent
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.jkapp.auth.AuthRepository
+import com.jkapp.auth.FirebaseAuthRepository
 import java.math.BigDecimal
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -19,16 +23,27 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 
 // 투자종목 등록/수정 폼과 명의 탭이 함께 참조하는 고정 명의 목록 (DailyAsset의 ASSET_OWNERS와 달리 "공동"은 없다).
 internal val INVESTMENT_OWNERS = listOf("전지훈", "권유경")
 
 class DailyAssetInvestmentViewModel(
     private val repository: InvestmentFirestoreRepository = InvestmentFirestoreRepositoryImpl(),
+    private val sheetRepository: InvestmentSheetRepository = InvestmentSheetRepository.NoOp,
+    private val authRepository: AuthRepository = FirebaseAuthRepository(),
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<DailyAssetInvestmentUiState>(DailyAssetInvestmentUiState.Loading)
     val uiState: StateFlow<DailyAssetInvestmentUiState> = _uiState.asStateFlow()
+
+    // 구글시트에서 가져오기 흐름 상태(로딩/미리보기).
+    private val _sheetImport = MutableStateFlow<InvestmentSheetImportState>(InvestmentSheetImportState.Idle)
+    val sheetImport: StateFlow<InvestmentSheetImportState> = _sheetImport.asStateFlow()
+
+    // 시트 접근 동의가 필요할 때 UI가 실행할 복구 인텐트. Drive/벤치마크 패턴과 동일하게 다룬다.
+    private val _sheetAuthRecoveryIntent = MutableStateFlow<Intent?>(null)
+    val sheetAuthRecoveryIntent: StateFlow<Intent?> = _sheetAuthRecoveryIntent.asStateFlow()
 
     // 저장/삭제 실패는 _uiState를 덮어쓰지 않는다(BenchmarkViewModel과 동일한 이유 — 이슈 #37 이전
     // DailyAssetViewModel처럼 uiState를 Error로 덮으면 Firestore 리스너가 재발행하기 전까지 목록이
@@ -127,6 +142,7 @@ class DailyAssetInvestmentViewModel(
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     private var dataJob: Job? = null
+    private var sheetImportJob: Job? = null
 
     // add/update/delete 요청을 직렬화해, 서로 다른 요청이 같은 stale 스냅샷을 읽고
     // 상대방의 변경을 덮어쓰는 lost-update를 방지한다.
@@ -140,6 +156,12 @@ class DailyAssetInvestmentViewModel(
                     emit(DailyAssetInvestmentUiState.Error("투자 종목 목록을 불러오는 중 오류가 발생했습니다: ${e.localizedMessage ?: "알 수 없는 오류"}"))
                 }
                 .collect { state -> _uiState.value = state }
+        }
+        // 로그인된 구글 계정을 시트 저장소에 전달해, 이미 동의한 사용자는 계정 선택 없이 바로 읽는다.
+        viewModelScope.launch {
+            authRepository.observeCurrentUserEmail().collect { email ->
+                email?.let { sheetRepository.setAccount(it) }
+            }
         }
         // 사용자가 고른 날짜가 현재 명의의 목록에 없어졌으면(명의 전환, 데이터 삭제 등) 가장 최신
         // 날짜로 대체한다. availableDates가 바뀔 때만 반응해야, 아직 데이터가 없는 새 날짜를 고르는
@@ -156,6 +178,7 @@ class DailyAssetInvestmentViewModel(
     override fun onCleared() {
         super.onCleared()
         dataJob?.cancel()
+        sheetImportJob?.cancel()
     }
 
     // 개별 입력 다이얼로그는 날짜를 오늘로 기본값을 두되 자유롭게 고를 수 있게 했으므로, 저장 후
@@ -198,22 +221,72 @@ class DailyAssetInvestmentViewModel(
         mutateInvestments(date, owner, "투자 종목 삭제에 실패했습니다") { items -> items.filterNot { it in targetSet } }
     }
 
-    // 구글시트 붙여넣기 텍스트를 파싱한다. owner는 붙여넣기 다이얼로그에서 선택한 명의로, 파싱된
-    // 모든 종목에 공통 적용된다. 파싱 실패 행은 원본 값을 그대로 로그에 남겨 디버깅에 활용한다.
-    fun parsePasteText(text: String, owner: String): List<ParsedInvestmentRow> {
-        // 붙여넣기는 서식 없는 텍스트로만 전달되어 화면에서 원본 시트와 비교하기 어려우므로,
-        // 원본 텍스트와 각 행의 파싱 결과(성공/실패 모두)를 로그로 남겨 어떤 값이 어떻게
-        // 인식됐는지 logcat에서 확인할 수 있게 한다.
-        Log.d(TAG, "투자 종목 붙여넣기 원본 텍스트(owner=$owner):\n$text")
-        val result = parseInvestmentSheetPaste(text, owner)
-        result.forEach { row ->
-            if (row.error != null) {
-                Log.w(TAG, "투자 종목 붙여넣기 파싱 실패: error=${row.error}, input=\"${row.rawLine}\"")
-            } else {
-                Log.d(TAG, "투자 종목 붙여넣기 파싱 성공: ${row.item}")
-            }
+    // 고정된 원본 구글시트에서 명의별 블록(전지훈 H:N, 권유경 P:V)을 읽어 각 블록을 해당 명의로
+    // 파싱한 뒤 미리보기 상태로 만든다. 접근 동의가 필요하면 복구 인텐트를 노출하고, 그 외 오류는
+    // actionError로 안내한다(BenchmarkViewModel.importFromSheet와 동일한 흐름).
+    fun importFromSheet() {
+        if (_sheetImport.value == InvestmentSheetImportState.Loading) return
+        sheetImportJob = viewModelScope.launch {
+            _sheetImport.value = InvestmentSheetImportState.Loading
+            // 응답이 지나치게 늦으면(네트워크/토큰 지연) 로딩에 갇히지 않도록 타임아웃을 둔다.
+            // withTimeoutOrNull은 초과 시 예외 대신 null을 돌려주므로 취소(CancellationException)와 구분된다.
+            runCatching { withTimeoutOrNull(SHEET_IMPORT_TIMEOUT_MS) { sheetRepository.readInvestmentBlocks() } }
+                .onSuccess { blocks ->
+                    if (blocks == null) {
+                        _sheetImport.value = InvestmentSheetImportState.Idle
+                        _actionError.value = "구글시트를 불러오지 못했습니다: 응답 시간이 초과되었습니다"
+                        return@onSuccess
+                    }
+                    val importBlocks = blocks.map { block ->
+                        val parsed = parseInvestmentRows(block.rows, block.owner)
+                        parsed.filter { it.error != null }.forEach { row ->
+                            Log.w(TAG, "투자 종목 시트 파싱 실패(owner=${block.owner}): error=${row.error}, input=\"${row.rawLine}\"")
+                        }
+                        InvestmentSheetImportBlock(owner = block.owner, rows = parsed)
+                    }
+                    _sheetImport.value = InvestmentSheetImportState.Preview(importBlocks)
+                }
+                .onFailure { e ->
+                    // 사용자가 로딩을 취소하면 조용히 종료한다(상태는 dismissSheetImport가 이미 정리).
+                    if (e is CancellationException) return@onFailure
+                    _sheetImport.value = InvestmentSheetImportState.Idle
+                    when (e) {
+                        is InvestmentSheetAuthException -> _sheetAuthRecoveryIntent.value = e.recoveryIntent
+                        else -> _actionError.value =
+                            "구글시트를 불러오지 못했습니다: ${e.localizedMessage ?: "알 수 없는 오류"}"
+                    }
+                }
         }
-        return result
+    }
+
+    // 계정 선택/동의 화면에서 돌아온 계정 이름을 시트 저장소에 반영한다.
+    fun onSheetAccountSelected(accountName: String) {
+        sheetRepository.setAccount(accountName)
+    }
+
+    fun clearSheetAuthRecoveryIntent() {
+        _sheetAuthRecoveryIntent.value = null
+    }
+
+    // 미리보기에서 확인한 명의별 종목을 실행 시점 날짜(date)로 저장하고 미리보기를 닫는다.
+    // 명의별 문서가 분리되어 있으므로 블록마다 importInvestments를 호출한다(각각 upsert/merge).
+    fun confirmSheetImport(date: String) {
+        val preview = _sheetImport.value as? InvestmentSheetImportState.Preview ?: return
+        // importInvestments는 저장 후 해당 명의/날짜로 화면을 전환하지만, 두 명의를 함께 저장하는
+        // 여기서는 마지막 블록 명의로 탭이 튀는 게 자연스럽지 않다(빈 블록이 섞이면 비결정적이기도 하다).
+        // 사용자가 보고 있던 명의를 유지한 채 오늘 날짜만 보여주도록, 저장 후 선택 상태를 명시적으로 되돌린다.
+        val targetOwner = _selectedOwner.value
+        preview.blocks.forEach { block ->
+            importInvestments(date, block.owner, block.rows.mapNotNull { it.item })
+        }
+        selectOwner(targetOwner)
+        selectDate(date)
+        _sheetImport.value = InvestmentSheetImportState.Idle
+    }
+
+    fun dismissSheetImport() {
+        sheetImportJob?.cancel()
+        _sheetImport.value = InvestmentSheetImportState.Idle
     }
 
     // (계좌, 카테고리, 투자종목)이 같은 항목은 시세/보유수량/매수금액(통화 포함)을 갱신하고,
@@ -284,8 +357,11 @@ class DailyAssetInvestmentViewModel(
 
     companion object {
         private const val TAG = "DailyAssetInvestmentViewModel"
+        private const val SHEET_IMPORT_TIMEOUT_MS = 30_000L
 
-        fun factory(): ViewModelProvider.Factory =
-            viewModelFactory { initializer { DailyAssetInvestmentViewModel() } }
+        fun factory(
+            sheetRepository: InvestmentSheetRepository = InvestmentSheetRepository.NoOp,
+        ): ViewModelProvider.Factory =
+            viewModelFactory { initializer { DailyAssetInvestmentViewModel(sheetRepository = sheetRepository) } }
     }
 }

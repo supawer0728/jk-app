@@ -1,16 +1,22 @@
 package com.jkapp.finance.investment
 
+import android.content.Intent
+import com.jkapp.auth.FakeAuthRepository
+import com.jkapp.common.todayDate
+import io.mockk.mockk
 import java.math.BigDecimal
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.yield
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -21,13 +27,21 @@ class DailyAssetInvestmentViewModelTest {
 
     private val testDispatcher = StandardTestDispatcher()
     private lateinit var fakeRepository: FakeInvestmentFirestoreRepository
+    private lateinit var fakeSheetRepository: FakeInvestmentSheetRepository
+    private lateinit var fakeAuthRepository: FakeAuthRepository
     private lateinit var viewModel: DailyAssetInvestmentViewModel
 
     @Before
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
         fakeRepository = FakeInvestmentFirestoreRepository()
-        viewModel = DailyAssetInvestmentViewModel(repository = fakeRepository)
+        fakeSheetRepository = FakeInvestmentSheetRepository()
+        fakeAuthRepository = FakeAuthRepository()
+        viewModel = DailyAssetInvestmentViewModel(
+            repository = fakeRepository,
+            sheetRepository = fakeSheetRepository,
+            authRepository = fakeAuthRepository,
+        )
     }
 
     @After
@@ -450,5 +464,204 @@ class DailyAssetInvestmentViewModelTest {
         val state = viewModel.uiState.value as DailyAssetInvestmentUiState.Success
         val doc = state.investments.find { it.date == "2026-07-04" && it.owner == "전지훈" }
         assertEquals(listOf(item), doc?.investments)
+    }
+
+    // --- 구글시트에서 가져오기 흐름 ---
+
+    private val sheetHeader = listOf("계좌", "카테고리", "투자 종목", "1주 가격", "평가 금액(원화)", "보유수량", "매수금액")
+
+    private fun sheetBlock(owner: String, vararg investmentNames: String) = InvestmentSheetBlock(
+        owner = owner,
+        rows = listOf(sheetHeader) + investmentNames.map { name ->
+            listOf("주식계좌", "국내주식", name, "70000", "700000", "10", "650000")
+        },
+    )
+
+    @Test
+    fun `로그인된 계정이 시트 저장소에 전달된다`() = runTest {
+        fakeAuthRepository.currentEmail = "user@example.com"
+        fakeAuthRepository.setLoggedIn(true)
+        advanceUntilIdle()
+
+        assertEquals("user@example.com", fakeSheetRepository.selectedAccount)
+    }
+
+    @Test
+    fun `importFromSheet 성공 시 명의별로 파싱한 미리보기 상태가 된다`() = runTest {
+        advanceUntilIdle()
+        fakeSheetRepository.blocks = listOf(
+            sheetBlock("전지훈", "삼성전자", "카카오"),
+            sheetBlock("권유경", "네이버"),
+        )
+
+        viewModel.importFromSheet()
+        advanceUntilIdle()
+
+        val preview = viewModel.sheetImport.value as InvestmentSheetImportState.Preview
+        assertEquals(listOf("전지훈", "권유경"), preview.blocks.map { it.owner })
+        assertEquals(
+            listOf("삼성전자", "카카오"),
+            preview.blocks.first { it.owner == "전지훈" }.rows.mapNotNull { it.item?.investmentName },
+        )
+        assertEquals(
+            listOf("네이버"),
+            preview.blocks.first { it.owner == "권유경" }.rows.mapNotNull { it.item?.investmentName },
+        )
+        assertNull(viewModel.actionError.value)
+    }
+
+    @Test
+    fun `confirmSheetImport는 명의별로 오늘 날짜 문서에 저장하고 미리보기를 닫는다`() = runTest {
+        advanceUntilIdle()
+        val today = todayDate()
+        fakeSheetRepository.blocks = listOf(
+            sheetBlock("전지훈", "삼성전자"),
+            sheetBlock("권유경", "네이버"),
+        )
+        viewModel.importFromSheet()
+        advanceUntilIdle()
+
+        viewModel.confirmSheetImport(today)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as DailyAssetInvestmentUiState.Success
+        assertEquals(
+            listOf("삼성전자"),
+            state.investments.single { it.date == today && it.owner == "전지훈" }.investments.map { it.investmentName },
+        )
+        assertEquals(
+            listOf("네이버"),
+            state.investments.single { it.date == today && it.owner == "권유경" }.investments.map { it.investmentName },
+        )
+        assertEquals(InvestmentSheetImportState.Idle, viewModel.sheetImport.value)
+    }
+
+    @Test
+    fun `confirmSheetImport는 기존 종목은 시세를 수정하고 없는 종목은 새로 추가한다`() = runTest {
+        val today = todayDate()
+        val existing = makeItem(investmentName = "삼성전자", valuationAmount = BigDecimal("700000"))
+        fakeRepository.setDailyAssetInvestments(
+            listOf(DailyAssetInvestment(date = today, owner = "전지훈", investments = listOf(existing)))
+        )
+        advanceUntilIdle()
+        fakeSheetRepository.blocks = listOf(
+            // 삼성전자는 기존 종목(평가금액이 800000으로 갱신), 카카오는 신규.
+            InvestmentSheetBlock(
+                owner = "전지훈",
+                rows = listOf(
+                    sheetHeader,
+                    listOf("주식계좌", "국내주식", "삼성전자", "70000", "800000", "10", "650000"),
+                    listOf("주식계좌", "국내주식", "카카오", "70000", "700000", "10", "650000"),
+                ),
+            ),
+        )
+        viewModel.importFromSheet()
+        advanceUntilIdle()
+
+        viewModel.confirmSheetImport(today)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as DailyAssetInvestmentUiState.Success
+        val doc = state.investments.single { it.date == today && it.owner == "전지훈" }
+        assertEquals(setOf("삼성전자", "카카오"), doc.investments.map { it.investmentName }.toSet())
+        assertEquals(BigDecimal("800000"), doc.investments.single { it.investmentName == "삼성전자" }.valuationAmount)
+    }
+
+    @Test
+    fun `confirmSheetImport는 보고 있던 명의 탭을 유지하고 날짜를 오늘로 맞춘다`() = runTest {
+        advanceUntilIdle()
+        val today = todayDate()
+        viewModel.selectOwner("권유경")
+        fakeSheetRepository.blocks = listOf(
+            sheetBlock("전지훈", "삼성전자"),
+            sheetBlock("권유경", "네이버"),
+        )
+        viewModel.importFromSheet()
+        advanceUntilIdle()
+
+        viewModel.confirmSheetImport(today)
+        advanceUntilIdle()
+
+        // 마지막 블록(권유경)으로 튀지 않고 사용자가 보고 있던 명의를 그대로 유지한다.
+        assertEquals("권유경", viewModel.selectedOwner.value)
+        assertEquals(today, viewModel.selectedDate.value)
+    }
+
+    @Test
+    fun `confirmSheetImport는 전량 파싱 실패한 명의 블록은 문서를 만들지 않는다`() = runTest {
+        advanceUntilIdle()
+        val today = todayDate()
+        fakeSheetRepository.blocks = listOf(
+            sheetBlock("전지훈", "삼성전자"),
+            // 권유경 블록은 투자 종목이 비어 전량 에러 → 저장되지 않아야 한다.
+            InvestmentSheetBlock(
+                owner = "권유경",
+                rows = listOf(sheetHeader, listOf("주식계좌", "국내주식", "", "70000", "700000", "10", "650000")),
+            ),
+        )
+        viewModel.importFromSheet()
+        advanceUntilIdle()
+
+        viewModel.confirmSheetImport(today)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as DailyAssetInvestmentUiState.Success
+        assertNotNull(state.investments.find { it.date == today && it.owner == "전지훈" })
+        assertNull(state.investments.find { it.date == today && it.owner == "권유경" })
+        assertNull(viewModel.actionError.value)
+    }
+
+    @Test
+    fun `importFromSheet 인증 예외 시 복구 인텐트가 설정되고 미리보기는 열리지 않는다`() = runTest {
+        advanceUntilIdle()
+        fakeSheetRepository.error = InvestmentSheetAuthException(mockk<Intent>(relaxed = true))
+
+        viewModel.importFromSheet()
+        advanceUntilIdle()
+
+        assertNotNull(viewModel.sheetAuthRecoveryIntent.value)
+        assertEquals(InvestmentSheetImportState.Idle, viewModel.sheetImport.value)
+        assertNull(viewModel.actionError.value)
+    }
+
+    @Test
+    fun `importFromSheet 일반 오류 시 actionError가 설정된다`() = runTest {
+        advanceUntilIdle()
+        fakeSheetRepository.error = RuntimeException("네트워크 오류")
+
+        viewModel.importFromSheet()
+        advanceUntilIdle()
+
+        assertTrue(viewModel.actionError.value!!.contains("구글시트를 불러오지 못했습니다"))
+        assertEquals(InvestmentSheetImportState.Idle, viewModel.sheetImport.value)
+    }
+
+    @Test
+    fun `로딩 중 dismissSheetImport로 취소하면 Idle로 돌아가고 오류를 남기지 않는다`() = runTest {
+        advanceUntilIdle()
+        fakeSheetRepository.suspendIndefinitely = true
+
+        viewModel.importFromSheet()
+        // 시계를 진행시키지 않고 현재 시점 작업만 실행한다(타임아웃 30초는 아직 발화하지 않음).
+        runCurrent()
+        assertEquals(InvestmentSheetImportState.Loading, viewModel.sheetImport.value)
+
+        viewModel.dismissSheetImport()
+        advanceUntilIdle()
+
+        assertEquals(InvestmentSheetImportState.Idle, viewModel.sheetImport.value)
+        assertNull(viewModel.actionError.value)
+    }
+
+    @Test
+    fun `응답이 타임아웃되면 actionError가 설정되고 Idle로 돌아간다`() = runTest {
+        advanceUntilIdle()
+        fakeSheetRepository.suspendIndefinitely = true
+
+        viewModel.importFromSheet()
+        advanceUntilIdle() // 가상 시계가 타임아웃(30초)을 지나 withTimeoutOrNull이 null을 반환한다.
+
+        assertTrue(viewModel.actionError.value!!.contains("시간이 초과"))
+        assertEquals(InvestmentSheetImportState.Idle, viewModel.sheetImport.value)
     }
 }
