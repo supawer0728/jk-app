@@ -31,26 +31,31 @@ private val ISO_DATE_REGEX = Regex("""\d{4}-\d{2}-\d{2}""")
 // 부호(-)는 별도로 감지해 재조합 후 다시 적용한다(음수는 출금을 의미하므로 보존해야 한다).
 private val AMOUNT_DIGITS_PATTERN = Regex("[0-9.]")
 
-// 구글 스프레드시트에서 복사한 벤치마크 표(첫 줄은 헤더)를 파싱한다.
-fun parseBenchmarkSheetPaste(text: String): List<ParsedBenchmarkRow> {
-    val lines = text.lines().filter { it.isNotBlank() }
-    if (lines.size < 2) return emptyList()
+// 구글 시트 API가 돌려준 셀 행 목록(0번째 = 헤더 행)을 파싱한다.
+// 시트에는 수익률/전월대비/MDD 등 파생 계산 열이 여러 개 섞여 있고 순서도 달라질 수 있어,
+// 고정 열 위치 대신 헤더 행의 이름으로 필요한 6개 열만 찾아 사용한다.
+fun parseBenchmarkRows(rows: List<List<String>>): List<ParsedBenchmarkRow> {
+    // 모든 셀이 비어 있는 행(시트 하단의 빈 행 등)은 무시한다.
+    val nonBlankRows = rows.filter { row -> row.any { it.isNotBlank() } }
+    if (nonBlankRows.size < 2) return emptyList()
 
-    val header = lines.first().split('\t').map { it.normalizeHeaderCell() }
+    val header = nonBlankRows.first().map { it.normalizeHeaderCell() }
     val columnIndexes = BENCHMARK_COLUMNS.associate { column ->
         column.label to header.indexOfFirst { cell -> cell in column.aliases }
     }
-    val dataLines = lines.drop(1)
+    val dataRows = nonBlankRows.drop(1)
 
     val missingLabels = columnIndexes.filterValues { it < 0 }.keys
     if (missingLabels.isNotEmpty()) {
         val message = "헤더에서 다음 열을 찾을 수 없습니다: ${missingLabels.joinToString(", ")}"
-        return dataLines.map { line -> ParsedBenchmarkRow(benchmark = null, error = message, rawLine = line) }
+        return dataRows.map { cells ->
+            ParsedBenchmarkRow(benchmark = null, error = message, rawLine = cells.toRawLine())
+        }
     }
 
-    val parsedRows = dataLines.map { line -> parseBenchmarkRow(line, columnIndexes) }
+    val parsedRows = dataRows.map { cells -> parseBenchmarkRow(cells, columnIndexes) }
 
-    // 같은 붙여넣기 안에 같은 날짜가 중복되면 어느 값이 맞는지 알 수 없으므로 자동으로 하나를
+    // 같은 입력 안에 같은 날짜가 중복되면 어느 값이 맞는지 알 수 없으므로 자동으로 하나를
     // 고르지 않고 에러로 표시한다.
     val duplicateDates = parsedRows.mapNotNull { it.benchmark?.date }
         .groupingBy { it }.eachCount()
@@ -60,36 +65,41 @@ fun parseBenchmarkSheetPaste(text: String): List<ParsedBenchmarkRow> {
     return parsedRows.map { row ->
         val date = row.benchmark?.date
         if (date != null && date in duplicateDates) {
-            ParsedBenchmarkRow(benchmark = null, error = "같은 붙여넣기 안에 날짜가 중복되었습니다: $date", rawLine = row.rawLine)
+            ParsedBenchmarkRow(benchmark = null, error = "같은 입력 안에 날짜가 중복되었습니다: $date", rawLine = row.rawLine)
         } else {
             row
         }
     }
 }
 
+// 오류 메시지에 원본을 보여줄 때 쓰는 표시용 문자열. 붙여넣기 텍스트와 동일하게 탭으로 잇는다.
+private fun List<String>.toRawLine(): String = joinToString("\t")
+
 // 헤더 셀 이름을 비교할 때 공백 차이(예: "KOSPI 상승률" vs "KOSPI상승률")와 대소문자 차이를
 // 무시하되, "KOSPI"와 "KOSPI 상승률"처럼 접두사만 같은 열은 여전히 다른 값으로 남겨 서로 섞이지 않게 한다.
 private fun String.normalizeHeaderCell(): String = trim().replace(Regex("\\s+"), "").uppercase()
 
-private fun parseBenchmarkRow(line: String, columnIndexes: Map<String, Int>): ParsedBenchmarkRow {
-    val cells = line.split('\t').map { it.trim() }
+private fun parseBenchmarkRow(rawCells: List<String>, columnIndexes: Map<String, Int>): ParsedBenchmarkRow {
+    val rawLine = rawCells.toRawLine()
+    val cells = rawCells.map { it.trim() }
     val maxIndex = columnIndexes.values.max()
-    if (cells.size <= maxIndex) {
-        return ParsedBenchmarkRow(
-            benchmark = null,
-            error = "컬럼 수가 부족합니다 (${cells.size}/${maxIndex + 1})",
-            rawLine = line,
-        )
+    // 시트 API는 뒤쪽 빈 셀을 생략해 보내므로, 필요한 열까지 빈 문자열로 채워 위치를 맞춘다.
+    // 이렇게 하면 값이 없는 필드는 "컬럼 수 부족"이 아니라 해당 필드의 "값이 비어 있습니다"로
+    // 더 정확한 오류가 난다.
+    val paddedCells = if (cells.size <= maxIndex) {
+        cells + List(maxIndex + 1 - cells.size) { "" }
+    } else {
+        cells
     }
 
-    val date = cells[columnIndexes.getValue("날짜")]
+    val date = paddedCells[columnIndexes.getValue("날짜")]
     if (!ISO_DATE_REGEX.matches(date)) {
-        return ParsedBenchmarkRow(benchmark = null, error = "날짜 형식이 올바르지 않습니다(yyyy-MM-dd): $date", rawLine = line)
+        return ParsedBenchmarkRow(benchmark = null, error = "날짜 형식이 올바르지 않습니다(yyyy-MM-dd): $date", rawLine = rawLine)
     }
 
     val amounts = mutableMapOf<String, BigDecimal>()
     for (label in AMOUNT_COLUMN_LABELS) {
-        val raw = cells[columnIndexes.getValue(label)]
+        val raw = paddedCells[columnIndexes.getValue(label)]
         val amount = when (val result = parseAmountCell(raw)) {
             is BenchmarkAmountParseResult.Value -> result.amount
             // 추가투자는 "이번 달에 추가 납입이 없었다"는 뜻으로 비어 있을 수 있으므로 0으로 취급한다.
@@ -97,12 +107,12 @@ private fun parseBenchmarkRow(line: String, columnIndexes: Map<String, Int>): Pa
             BenchmarkAmountParseResult.Blank -> if (label == "추가투자") {
                 BigDecimal.ZERO
             } else {
-                return ParsedBenchmarkRow(benchmark = null, error = "$label 값이 비어 있습니다", rawLine = line)
+                return ParsedBenchmarkRow(benchmark = null, error = "$label 값이 비어 있습니다", rawLine = rawLine)
             }
             BenchmarkAmountParseResult.Invalid -> return ParsedBenchmarkRow(
                 benchmark = null,
                 error = "$label 값을 숫자로 변환할 수 없습니다: $raw",
-                rawLine = line,
+                rawLine = rawLine,
             )
         }
         amounts[label] = amount
@@ -119,7 +129,7 @@ private fun parseBenchmarkRow(line: String, columnIndexes: Map<String, Int>): Pa
             nasdaq = amounts.getValue("나스닥"),
         ),
         error = null,
-        rawLine = line,
+        rawLine = rawLine,
     )
 }
 

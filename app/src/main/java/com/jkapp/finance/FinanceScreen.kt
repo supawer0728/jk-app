@@ -1,5 +1,8 @@
 package com.jkapp.finance
 
+import android.accounts.AccountManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -36,6 +39,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -83,6 +87,7 @@ import com.jkapp.finance.asset.DailyAssetViewModel
 import com.jkapp.finance.asset.ParsedAssetRow
 import com.jkapp.finance.benchmark.Benchmark
 import com.jkapp.finance.benchmark.BenchmarkRowMetrics
+import com.jkapp.finance.benchmark.BenchmarkSheetImportState
 import com.jkapp.finance.benchmark.BenchmarkUiState
 import com.jkapp.finance.benchmark.BenchmarkViewModel
 import com.jkapp.finance.benchmark.ParsedBenchmarkRow
@@ -1471,13 +1476,30 @@ private fun BenchmarkTab(viewModel: BenchmarkViewModel) {
     var formTarget by remember { mutableStateOf<BenchmarkFormTarget?>(null) }
     var pendingDelete by remember { mutableStateOf<Benchmark?>(null) }
     var showFabMenu by remember { mutableStateOf(false) }
-    var showPasteImport by rememberSaveable { mutableStateOf(false) }
+    val sheetImport by viewModel.sheetImport.collectAsStateWithLifecycle()
     var isSelectionMode by rememberSaveable { mutableStateOf(false) }
     var selectedDates by remember { mutableStateOf<Set<String>>(emptySet()) }
     var showDeleteAllConfirm by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val existingDates = remember(entries) {
         entries.map { it.benchmark.date }.toSet()
+    }
+
+    // 시트 접근 동의(계정 선택/권한)가 필요하면 복구 인텐트를 실행하고, 동의 후 다시 가져온다.
+    val sheetAuthRecoveryIntent by viewModel.sheetAuthRecoveryIntent.collectAsStateWithLifecycle()
+    val sheetAuthLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        result.data?.getStringExtra(AccountManager.KEY_ACCOUNT_NAME)?.let { accountName ->
+            viewModel.onSheetAccountSelected(accountName)
+        }
+        viewModel.clearSheetAuthRecoveryIntent()
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            viewModel.importFromSheet()
+        }
+    }
+    LaunchedEffect(sheetAuthRecoveryIntent) {
+        sheetAuthRecoveryIntent?.let { sheetAuthLauncher.launch(it) }
     }
 
     // 선택 모드에 들어가면 최신 날짜(맨 앞 행)부터 볼 수 있도록 목록 맨 위로 이동한다.
@@ -1598,10 +1620,10 @@ private fun BenchmarkTab(viewModel: BenchmarkViewModel) {
                                         },
                                     )
                                     DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.asset_add_paste)) },
+                                        text = { Text(stringResource(R.string.benchmark_import_sheet)) },
                                         onClick = {
                                             showFabMenu = false
-                                            showPasteImport = true
+                                            viewModel.importFromSheet()
                                         },
                                     )
                                 }
@@ -1630,16 +1652,17 @@ private fun BenchmarkTab(viewModel: BenchmarkViewModel) {
         )
     }
 
-    if (showPasteImport) {
-        BenchmarkPasteImportDialog(
-            existingDates = existingDates,
-            onDismiss = { showPasteImport = false },
-            onParse = viewModel::parsePasteText,
-            onImport = { benchmarks ->
-                viewModel.importBenchmarks(benchmarks)
-                showPasteImport = false
-            },
+    when (val importState = sheetImport) {
+        is BenchmarkSheetImportState.Loading -> BenchmarkSheetLoadingDialog(
+            onCancel = { viewModel.dismissSheetImport() },
         )
+        is BenchmarkSheetImportState.Preview -> BenchmarkSheetImportDialog(
+            rows = importState.rows,
+            existingDates = existingDates,
+            onDismiss = { viewModel.dismissSheetImport() },
+            onImport = { benchmarks -> viewModel.confirmSheetImport(benchmarks) },
+        )
+        BenchmarkSheetImportState.Idle -> Unit
     }
 
     actionError?.let { message ->
@@ -1950,28 +1973,80 @@ private fun BenchmarkNumberField(
 }
 
 @Composable
-private fun BenchmarkPasteImportDialog(
+private fun BenchmarkSheetLoadingDialog(onCancel: () -> Unit) {
+    AlertDialog(
+        // 백드롭 탭으로도 취소할 수 있게 해, 응답이 늦어도 로딩에 갇히지 않도록 한다.
+        onDismissRequest = onCancel,
+        title = { Text(stringResource(R.string.benchmark_import_sheet_title)) },
+        text = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                Text(stringResource(R.string.benchmark_import_sheet_loading))
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
+        },
+    )
+}
+
+// 시트에서 읽어 파싱한 결과를 저장 전 미리보기로 보여준다. 붙여넣기와 달리 입력 단계가 없고
+// 곧바로 파싱 결과(성공/오류)를 나열한다.
+@Composable
+private fun BenchmarkSheetImportDialog(
+    rows: List<ParsedBenchmarkRow>,
     existingDates: Set<String>,
     onDismiss: () -> Unit,
-    onParse: (text: String) -> List<ParsedBenchmarkRow>,
     onImport: (List<Benchmark>) -> Unit,
 ) {
-    PasteImportDialog(
-        title = stringResource(R.string.benchmark_paste_import_title),
-        description = stringResource(R.string.benchmark_paste_import_description),
-        onDismiss = onDismiss,
-        onParse = onParse,
-        itemOf = { it.benchmark },
-        errorOf = { it.error },
-        rawLineOf = { it.rawLine },
-        onImport = onImport,
-    ) { benchmark ->
-        val willOverwrite = benchmark.date in existingDates
-        Text(
-            text = "${benchmark.date} · ${benchmark.currentAmount.toDisplayAmount()}" +
-                if (willOverwrite) " · ${stringResource(R.string.benchmark_paste_import_overwrite)}" else "",
-            style = MaterialTheme.typography.bodySmall,
-            color = if (willOverwrite) MaterialTheme.colorScheme.tertiary else Color.Unspecified,
-        )
-    }
+    val benchmarks = rows.mapNotNull { it.benchmark }
+    val errorCount = rows.size - benchmarks.size
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.benchmark_import_sheet_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = stringResource(R.string.asset_paste_import_summary, benchmarks.size, errorCount),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 280.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    items(rows) { row ->
+                        val benchmark = row.benchmark
+                        if (benchmark != null) {
+                            val willOverwrite = benchmark.date in existingDates
+                            Text(
+                                text = "${benchmark.date} · ${benchmark.currentAmount.toDisplayAmount()}" +
+                                    if (willOverwrite) " · ${stringResource(R.string.benchmark_paste_import_overwrite)}" else "",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (willOverwrite) MaterialTheme.colorScheme.tertiary else Color.Unspecified,
+                            )
+                        } else {
+                            Text(
+                                text = "⚠ ${row.error}: ${row.rawLine.take(30)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onImport(benchmarks) },
+                enabled = benchmarks.isNotEmpty(),
+            ) { Text(stringResource(R.string.save)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        },
+    )
 }
