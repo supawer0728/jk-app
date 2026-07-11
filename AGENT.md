@@ -18,9 +18,11 @@ Google Drive는 별도 DB가 아니라, 다이어리 기록에 첨부되는 파�
 | 투자 종목 (investment) | 명의별 투자 종목 입력·조회·평가금액/수익률 관리 |
 | 벤치마크 (benchmark) | 투자자산 대비 KOSPI/S&P500/나스닥 수익률 비교 |
 | 다이어리 (diary) | 반려동물 건강·생활 기록(사진 첨부 포함) 기록·조회, 기록 유형 관리 |
-| 할일 (todo) | 오늘의 할일 관리 (데이터 모델·Repository 완성, 화면/ViewModel은 구현 예정) |
+| 할일 (todo) | 오늘의 할일 관리. 상태 3단계·우선순위·담당자·반복(RecurrenceRule)·마감 리마인더(WorkManager) |
 | 캘린더 (calendar) | 일정 관리 (자리표시자, 구현 예정) |
 | 설정 (settings) | 다크모드, 햅틱 강도, 하단 탭 순서 등 앱 환경 설정 |
+| 알림 (notification) | FCM 푸시 알림 수신·채널·토큰 관리 (공유 인프라) |
+| 사용자 (user) | 사용자 프로필·로그인 이력·푸시 토큰 (공유 인프라) |
 
 ### 사용자 / 데이터 공유 구조
 
@@ -57,6 +59,37 @@ AI가 코드를 작성할 때는 아래 두 문서를 따른다.
 - 상태/결과: `sealed interface` + exhaustive `when`
 - 컬렉션 변환: 함수형 체인 (`filter`, `map`, `sumOf` …)
 - 코루틴: `GlobalScope` 금지, `viewModelScope` 사용, 오류 처리 필수
+
+## docs as code
+
+소스코드의 도메인·비즈니스 로직은 [`doc/dev/`](doc/dev/README.md)에 문서로 관리한다.
+코드와 문서는 하나의 변경 단위이며, 문서는 코드의 **현재 상태**를 반영해야 한다.
+문서 체계·지도·템플릿 링크는 [`doc/dev/README.md`](doc/dev/README.md)를 참고한다.
+
+**3원칙 (반드시 지킨다)**
+
+1. **변경 전 문서 반영**: 소스코드를 바꾸기 전에 관련 문서(DOMAIN/FEATURE/infra)를 먼저 갱신한다.
+2. **변경 전 모순 검증**: 소스코드를 바꾸기 전에 문서 간·문서와 기존 코드 간 모순이 없는지 검증한다.
+3. **PR 전 정합성 검증**: PR을 올리기 전에 소스코드와 문서 내용이 일치하는지 검증한다
+   ([PR 템플릿](.github/PULL_REQUEST_TEMPLATE.md)의 체크리스트로 강제).
+
+**문서 종류** (템플릿 원본: `doc/template/`)
+
+| 문서 | 담는 것 |
+|------|---------|
+| `doc/dev/<feature>/DOMAIN.md` | 도메인 모델의 속성·기능(메서드)·타 도메인 연관성·Firestore 컬렉션 |
+| `doc/dev/<feature>/FEATURE.md` | 비즈니스 규칙·계산·상태 전이·유효성·주요 플로우 |
+| `doc/dev/infra/<name>.md` | 공유 인프라(auth/drive/notification/user/common)의 책임·공개 API·의존 관계 |
+| `doc/adr/<이슈>/<slug>.md` | 중요한 결정의 근거(왜). DOMAIN/FEATURE(무엇/어떻게)와 역할을 분리한다 |
+
+**언제 무엇을 갱신하나**
+
+| 변경 종류 | 갱신할 문서 |
+|-----------|-------------|
+| 도메인 모델 속성·Firestore 필드 | 해당 feature `DOMAIN.md` |
+| 비즈니스 규칙·계산·상태 전이 | 해당 feature `FEATURE.md` |
+| 공유 인프라 공개 API | `doc/dev/infra/<name>.md` |
+| 아키텍처·데이터 모델·라이브러리·보안 결정 | `doc/adr/<이슈>/` 신규 ADR ([Phase 4 참고](.claude/skills/issue-dev/SKILL.md)) |
 
 ## 기술 스택 (확정)
 
@@ -127,11 +160,13 @@ com.jkapp
 │   ├── investment/  투자 종목 — ui + InvestmentFirestoreRepository
 │   └── benchmark/   벤치마크 — ui + BenchmarkFirestoreRepository
 ├── settings/       설정 화면/ViewModel
-├── todo/           오늘의 할일 — TodoFirestoreRepository 완성, UI/ViewModel은 구현 예정
+├── todo/           오늘의 할일 — 화면/ViewModel/Repository + 반복·리마인더(WorkManager)
 ├── calendar/       캘린더 (자리표시자, 구현 예정)
 ├── common/         MainScreen/HomeTabScreen/TabOrder*, AppPreferences, theme 등 여러 feature가 공유하는 것
 ├── auth/           Firebase Auth — 공유 인프라, 특정 feature에 속하지 않음
 ├── drive/          Google Drive(첨부파일 저장) — 공유 인프라
+├── notification/   FCM 푸시 알림(수신·채널·토큰) — 공유 인프라
+├── user/           사용자 프로필·로그인 이력·푸시 토큰 — 공유 인프라
 ├── haptic/         햅틱 피드백 컨트롤러
 └── nav/            네비게이션 라우트 정의
 ```
