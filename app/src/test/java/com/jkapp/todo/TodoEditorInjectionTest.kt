@@ -5,6 +5,8 @@ import com.google.android.gms.tasks.Task
 import com.google.firebase.firestore.CollectionReference
 import com.google.firebase.firestore.DocumentReference
 import com.google.firebase.firestore.FirebaseFirestore
+import com.jkapp.push.FakePushRepository
+import com.jkapp.user.FakeUserRepository
 import io.mockk.CapturingSlot
 import io.mockk.every
 import io.mockk.mockk
@@ -41,7 +43,15 @@ class TodoEditorInjectionTest {
         every { collectionRef.add(capture(dataSlot)) } returns taskReturning(addedRef)
         val db = mockk<FirebaseFirestore>()
         every { db.collection("todo-items") } returns collectionRef
-        return TodoFirestoreRepositoryImpl(db) { uid }
+        // userRepository/pushRepository는 fake로 대체해, 담당자 배정 push 생성 경로(이슈 #89)가
+        // 실제 Firestore(AppFirestore.instance)를 건드리지 않게 한다. 토큰을 등록하지 않았으므로
+        // push는 생성되지 않는다(대상이 없음) - 이 테스트의 관심사는 lastEditedByUid 주입뿐이다.
+        return TodoFirestoreRepositoryImpl(
+            db = db,
+            currentUidProvider = { uid },
+            userRepository = FakeUserRepository(),
+            pushRepository = FakePushRepository(),
+        )
     }
 
     @Test
@@ -74,7 +84,15 @@ class TodoEditorInjectionTest {
         every { collectionRef.document("todo-1") } returns docRef
         val db = mockk<FirebaseFirestore>()
         every { db.collection("todo-items") } returns collectionRef
-        val repository = TodoFirestoreRepositoryImpl(db) { "uid-editor" }
+        // getTodoItemOnce(before 조회)가 실행되므로 docRef.get()도 스텁한다. title이 없는 snapshot을
+        // 반환하면 toTodoItem()이 null이 되어 before=null(변경 없음 판정과 무관하게 안전)로 처리된다.
+        every { docRef.get() } returns taskReturning(mockk(relaxed = true))
+        val repository = TodoFirestoreRepositoryImpl(
+            db = db,
+            currentUidProvider = { "uid-editor" },
+            userRepository = FakeUserRepository(),
+            pushRepository = FakePushRepository(),
+        )
 
         repository.updateTodoItem(TodoItem(firestoreId = "todo-1", title = "빨래"))
 

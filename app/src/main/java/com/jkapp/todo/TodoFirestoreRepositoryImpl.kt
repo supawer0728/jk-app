@@ -8,14 +8,23 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.jkapp.common.AppFirestore
 import com.jkapp.common.await
 import com.jkapp.common.snapshotFlow
+import com.jkapp.notification.CHANNEL_ID_TODO_ASSIGNMENT
+import com.jkapp.push.PushMessage
+import com.jkapp.push.PushRepository
+import com.jkapp.push.PushRepositoryImpl
+import com.jkapp.user.UserRepository
+import com.jkapp.user.UserRepositoryImpl
 import java.time.Instant
 import kotlinx.coroutines.flow.Flow
 
 class TodoFirestoreRepositoryImpl(
     db: FirebaseFirestore = AppFirestore.instance,
-    // 현재 로그인 사용자 uid 공급자. 저장 시 lastEditedByUid에 주입해 서버 알림 로직이 편집자
-    // 본인을 제외할 수 있게 한다. 기본값은 FirebaseAuth이며, 테스트에서 대체할 수 있도록 분리한다.
+    // 현재 로그인 사용자 uid 공급자. 저장 시 lastEditedByUid에 주입해 마지막 편집자를 감사(audit)
+    // 기록으로 남기고, 담당자 배정 push 생성 시 편집자 본인을 대상에서 제외하는 데도 쓴다(→ ADR/60/01
+    // 근거 갱신). 기본값은 FirebaseAuth이며, 테스트에서 대체할 수 있도록 분리한다.
     private val currentUidProvider: () -> String? = { FirebaseAuth.getInstance().currentUser?.uid },
+    private val userRepository: UserRepository = UserRepositoryImpl(),
+    private val pushRepository: PushRepository = PushRepositoryImpl(),
 ) : TodoFirestoreRepository {
 
     private val itemsRef = db.collection(COLLECTION_ITEMS)
@@ -31,12 +40,17 @@ class TodoFirestoreRepositoryImpl(
         val anchored = item.withRecurrenceAnchored().withEditor()
         val createdAt = anchored.createdAt ?: Instant.now()
         val data = anchored.toMap() + (FIELD_CREATED_AT to createdAt.toTimestamp())
-        return itemsRef.add(data).await().id
+        val id = itemsRef.add(data).await().id
+        maybeCreateAssignmentPush(before = null, after = anchored.copy(firestoreId = id))
+        return id
     }
 
     override suspend fun updateTodoItem(item: TodoItem) {
         val id = item.firestoreId ?: throw IllegalArgumentException("수정할 할일의 ID가 없습니다")
-        itemsRef.document(id).update(item.withRecurrenceAnchored().withEditor().toMap()).await()
+        val before = getTodoItemOnce(id)
+        val after = item.withRecurrenceAnchored().withEditor()
+        itemsRef.document(id).update(after.toMap()).await()
+        maybeCreateAssignmentPush(before, after)
     }
 
     override suspend fun deleteTodoItem(firestoreId: String) {
@@ -48,11 +62,42 @@ class TodoFirestoreRepositoryImpl(
             ?: throw IllegalArgumentException("완료할 할일을 찾을 수 없습니다: $firestoreId")
         val updated = current.completeOccurrence(Instant.now()).withEditor()
         itemsRef.document(firestoreId).update(updated.toMap()).await()
+        // completeOccurrence는 assignee·title을 바꾸지 않으므로 push를 만들지 않는다(FEATURE 참고).
     }
 
     // 저장 시점에 편집자(현재 로그인 사용자)의 uid를 박아둔다. add/update/complete 모든 쓰기 경로가
-    // 이 값을 갱신해, 서버 알림 로직이 마지막으로 저장한 사람을 대상에서 제외할 수 있게 한다.
+    // 이 값을 갱신해, 마지막으로 저장한 사람을 감사 기록으로 남긴다.
     private fun TodoItem.withEditor(): TodoItem = copy(lastEditedByUid = currentUidProvider())
+
+    // 담당자 배정 push 생성(이슈 #89, 구 Cloud Functions 로직을 앱으로 이식). 이전 문서(before, 신규
+    // 생성이면 null)와 저장된 문서(after)를 비교해 assignee·title이 실제로 바뀐 경우에만 push를
+    // 만든다. 상태 순환·완료 전진은 이 비교에서 걸러지므로 completeTodoItem 경로는 호출하지 않는다.
+    //
+    // push 경로(getPushTokensByEmails 읽기 + createPush 쓰기)의 예외는 여기서 격리한다. 이 함수는
+    // 주 작업(todo 저장)이 이미 성공한 뒤 부수적으로 호출되므로, push 실패가 저장 결과를 "실패"로
+    // 오염시켜 사용자가 재시도(→ 중복 할일 생성)하게 만들면 안 된다.
+    private suspend fun maybeCreateAssignmentPush(before: TodoItem?, after: TodoItem) {
+        if (!shouldCreateAssignmentPush(before, after)) return
+
+        // runCatching으로 push 경로 예외를 격리한다(TodoViewModel과 동일한 관용). 주 작업(todo
+        // 저장)은 이미 성공했으므로 push 실패는 삼키고 기록만 한다.
+        runCatching {
+            val editorUid = after.lastEditedByUid
+            val tokens = userRepository.getPushTokensByEmails(after.assignee.emails)
+                .filterNot { it.uid == editorUid }
+                .map { it.token }
+            if (tokens.isNotEmpty()) {
+                pushRepository.createPush(
+                    PushMessage(
+                        title = assignmentPushTitle(before),
+                        body = after.title,
+                        channelId = CHANNEL_ID_TODO_ASSIGNMENT,
+                        tokens = tokens,
+                    )
+                )
+            }
+        }.onFailure { Log.w(LOG_TAG, "담당자 배정 push 생성 실패(저장은 완료됨)", it) }
+    }
 
     // createdAt은 addTodoItem에서만 값을 부여하는 불변 필드이므로 여기(toMap)에는 포함하지 않는다.
     // 포함시키면 updateTodoItem/completeTodoItem이 매번 최신 값으로 덮어써 생성 시각을 잃어버린다.
@@ -142,7 +187,19 @@ class TodoFirestoreRepositoryImpl(
     companion object {
         private const val TAG = "TodoFirestoreRepositoryImpl"
 
+        // 앱 전역 로그 태그(AGENT.md의 로그 필터 규칙과 통일). push 실패 등 부수 작업 경고에 쓴다.
+        private const val LOG_TAG = "jkapp"
+
         private const val COLLECTION_ITEMS = "todo-items"
+
+        // 이전 문서(before)와 저장된 문서(after)를 비교해 배정(assignee)·제목(title)이 모두 그대로면
+        // 상태 순환·완료 전진 등 배정과 무관한 쓰기이므로 push를 만들 필요가 없다. before가 없으면
+        // (신규 생성) 항상 만든다. 순수 함수라 Firestore/push 의존 없이 직접 단위 테스트할 수 있다.
+        fun shouldCreateAssignmentPush(before: TodoItem?, after: TodoItem): Boolean =
+            before == null || before.assignee != after.assignee || before.title != after.title
+
+        fun assignmentPushTitle(before: TodoItem?): String =
+            if (before == null) "새 할일이 등록되었습니다" else "할일이 수정되었습니다"
 
         private const val FIELD_TITLE = "title"
         private const val FIELD_MEMO = "memo"

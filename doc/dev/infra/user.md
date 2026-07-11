@@ -5,19 +5,23 @@ feature에 속하지 않고 auth·notification·settings가 공유한다. 패키
 
 ## 책임
 
-- 한다: 사용자 프로필 upsert(`users/{uid}`), 설정 실시간 구독·갱신, 푸시 토큰 조회·갱신, 로그인
-  이력 추가(`login-history`). 최초 생성 시에만 설정 기본값을 넣어 기존 사용자 설정을 보존.
+- 한다: 사용자 프로필 upsert(`users/{uid}`), 설정 실시간 구독·갱신, 푸시 토큰 조회·갱신, 이메일
+  목록으로 대상 사용자의 푸시 토큰 일괄 조회, 로그인 이력 추가(`login-history`). 최초 생성 시에만
+  설정 기본값을 넣어 기존 사용자 설정을 보존.
 - 하지 않는다: 인증/로그인 자체(→ `auth`), 설정 UI(→ `settings`), 기기별 로컬 설정(다크모드·햅틱
-  강도는 `common.AppPreferences`가 DataStore로 담당하며 여기서 제외).
+  강도는 `common.AppPreferences`가 DataStore로 담당하며 여기서 제외), 편집자 본인 제외 등 발송 대상의
+  최종 판단(→ 호출한 feature, 이슈 #89부터 `todo.TodoFirestoreRepositoryImpl`), `pushes` 문서 생성
+  (→ `push.PushRepository`).
 
 ## 공개 API
 
 | 구성요소 | 종류 | 설명 |
 |----------|------|------|
-| `UserRepository` | 인터페이스 | `upsertUserProfile(uid, email, displayName)`, `observePreference(uid): Flow<UserPreference>`, `updatePreference(uid, preference)`, `getPushToken(uid): PushToken?`, `updatePushToken(uid, pushToken)` |
-| `UserRepositoryImpl` | 클래스 | `users` 컬렉션 구현체. upsert는 `SetOptions.merge()` 사용 |
+| `UserRepository` | 인터페이스 | `upsertUserProfile(uid, email, displayName)`, `observePreference(uid): Flow<UserPreference>`, `updatePreference(uid, preference)`, `getPushToken(uid): PushToken?`, `updatePushToken(uid, pushToken)`, `getPushTokensByEmails(emails: List<String>): List<UserPushTarget>` |
+| `UserRepositoryImpl` | 클래스 | `users` 컬렉션 구현체. upsert는 `SetOptions.merge()` 사용. `getPushTokensByEmails`는 `whereIn("email", emails)` 쿼리 후 `pushToken.token`이 있는 문서만 매핑 |
 | `LoginHistoryRepository` / `LoginHistoryRepositoryImpl` | 인터페이스/클래스 | `recordLogin(uid, device)` — `login-history`에 append |
 | `User`, `UserPreference`, `PushToken`, `LoginDevice`, `LoginHistory` | data class | 도메인 모델 |
+| `UserPushTarget(uid, token)` | data class | `getPushTokensByEmails`의 반환 요소. 호출한 feature가 `uid`로 편집자 본인을 걸러낸 뒤 `token`만 남겨 사용한다 |
 
 도메인 모델 필드: `UserPreference(language="ko", timeZone="Asia/Seoul")`,
 `PushToken(token, updatedAt, platform="android")`,
@@ -51,10 +55,13 @@ feature에 속하지 않고 auth·notification·settings가 공유한다. 패키
 
 - 사용하는 곳: `auth`(`AuthViewModel`이 로그인 성공 시 `upsertUserProfile`·`recordLogin`),
   `notification`(`PushTokenManager`가 `getPushToken`/`updatePushToken`),
-  `settings`(설정 화면이 `observePreference`/`updatePreference`).
+  `settings`(설정 화면이 `observePreference`/`updatePreference`),
+  `todo`(`TodoFirestoreRepositoryImpl`이 담당자 배정 push 생성 시 `getPushTokensByEmails`로 대상
+  토큰을 조회, → [infra/push.md](push.md)).
 - 의존하는 것: Cloud Firestore SDK, `common`의 `AppFirestore`(공유 인스턴스)·`await`·`snapshotFlow`.
 
 ## 관련 결정 (ADR)
 
 - [`doc/adr/56/user-profile-upsert-strategy.md`](../../adr/56/user-profile-upsert-strategy.md) — 프로필 upsert 전략(merge, 기본값 최초 1회) 및 로그인 실패 처리
 - [`doc/adr/57/settings-preference-scope-and-timezone-storage.md`](../../adr/57/settings-preference-scope-and-timezone-storage.md) — 설정 동기화 범위 축소(기기별 설정 제외) 및 시간대 저장 원칙
+- [`doc/adr/89/01-pushes-collection-send-only-functions.md`](../../adr/89/01-pushes-collection-send-only-functions.md) — 이메일→토큰 조회를 `user` 인프라의 공개 API로 신설한 근거

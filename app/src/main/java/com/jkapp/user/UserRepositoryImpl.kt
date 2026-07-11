@@ -47,6 +47,16 @@ class UserRepositoryImpl(
             .await()
     }
 
+    // Firestore whereIn은 최대 30개 값까지 지원한다. 가족 2인 고정 매핑이라 emails는 최대 2개뿐이라
+    // 항상 한도 내다. emails가 비어 있으면 whereIn 자체가 유효하지 않은 쿼리라 빈 목록으로 짧게 반환한다.
+    override suspend fun getPushTokensByEmails(emails: List<String>): List<UserPushTarget> {
+        if (emails.isEmpty()) return emptyList()
+        return usersRef.whereIn(FIELD_EMAIL, emails).get().await().documents.mapNotNull { doc ->
+            val token = doc.toPushToken()?.token ?: return@mapNotNull null
+            UserPushTarget(uid = doc.id, token = token)
+        }
+    }
+
     private fun DocumentSnapshot?.toPushToken(): PushToken? {
         val pushTokenMap = this?.get(FIELD_PUSH_TOKEN) as? Map<*, *> ?: return null
         val token = pushTokenMap[FIELD_PUSH_TOKEN_TOKEN] as? String ?: return null
