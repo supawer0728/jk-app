@@ -28,6 +28,16 @@
 - **알림 권한**: 리마인더를 켜는 프리셋 선택 시, 그리고 저장 시점에 `POST_NOTIFICATIONS` 권한을
   요청한다. 거부해도 저장은 진행하고 알림만 표시되지 않으며 스낵바로 경고한다.
   강제 위치 `TodoFormScreen`.
+- **편집자 UID 주입**: 모든 쓰기(`addTodoItem`/`updateTodoItem`/`completeTodoItem`) 시 현재 로그인
+  사용자의 `uid`를 `lastEditedByUid`에 주입한다. Firestore 트리거는 "누가 썼는지"를 알 수 없으므로,
+  서버 알림 로직이 편집자 본인을 대상에서 제외하려면 이 값이 필요하다. 강제 위치
+  `TodoFirestoreRepositoryImpl`(`currentUidProvider`). → ADR/60
+- **담당자 배정 푸시 발송**: `todo-items` 쓰기 시 Cloud Functions가 담당자에게 FCM 푸시를 보낸다.
+  발송 대상은 `assignee.emails`로 식별되는 사용자(공동=`SHARED`이면 두 사용자, 개인 배정이면 1인)에서
+  `lastEditedByUid` 편집자를 뺀 집합이다. 결과적으로 `SHARED`는 편집자를 제외한 상대방만, 개인 배정은
+  편집자가 아닌 담당자만 알림을 받는다(편집자 자신을 지정하면 아무도 받지 않는다).
+  `assignee`·`title`이 이전과 모두 같은 쓰기(상태 순환·완료 전진 등)는 발송하지 않는다.
+  강제 위치 `functions/main.py`(→ [infra/functions.md](../infra/functions.md)). → ADR/60
 
 ## 계산 / 파생 값
 
@@ -94,6 +104,10 @@
    `getTodoItemOnce`로 항목 재조회 → 여전히 존재하고 미완료면(`shouldShowReminderNotification`)
    알림 표시. 조회 실패 시 최대 3회까지만 재시도(낡은 알림 방지). 재부팅/앱 종료 후에도
    WorkManager가 예약을 유지한다. → ADR/55
+8. **담당자 배정 푸시**: 기기 A가 담당자를 지정해 저장(`lastEditedByUid = A`) → `todo-items` 쓰기 →
+   Cloud Functions 트리거 → `assignee.emails`로 대상 사용자 조회 → 편집자(A) 제외 → 남은 대상의
+   `pushToken.token`으로 FCM 발송 → 상대 기기에 `todo_assignment` 채널로 시스템 알림 도착.
+   상세는 [infra/functions.md](../infra/functions.md). → ADR/60
 
 ## 관련 결정 (ADR)
 
@@ -103,3 +117,5 @@
 - [`doc/adr/52/weekly-recurrence-advance-algorithm.md`](../../adr/52/weekly-recurrence-advance-algorithm.md) — WEEKLY 다중 요일 다음 회차 전진 알고리즘
 - [`doc/adr/52/monthly-yearly-anchor-day-drift.md`](../../adr/52/monthly-yearly-anchor-day-drift.md) — MONTHLY/YEARLY 말일 클램프 누적(anchor drift) 방지
 - [`doc/adr/55/use-workmanager-for-todo-reminders.md`](../../adr/55/use-workmanager-for-todo-reminders.md) — 마감 리마인더 스케줄러로 WorkManager 채택
+- [`doc/adr/60/01-last-edited-by-uid-for-self-notification-exclusion.md`](../../adr/60/01-last-edited-by-uid-for-self-notification-exclusion.md) — 편집자 UID 필드로 자기 알림 제외
+- [`doc/adr/60/02-assignment-push-via-cloud-functions.md`](../../adr/60/02-assignment-push-via-cloud-functions.md) — 담당자 배정 푸시를 Cloud Functions로 발송

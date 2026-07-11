@@ -60,7 +60,8 @@ doc/
 |--------|------|------|
 | auth | [auth.md](infra/auth.md) | Firebase Auth(Google 로그인) |
 | drive | [drive.md](infra/drive.md) | Google Drive 첨부파일 저장 |
-| notification | [notification.md](infra/notification.md) | FCM 푸시 알림 |
+| notification | [notification.md](infra/notification.md) | FCM 푸시 알림 수신·표시 |
+| functions | [functions.md](infra/functions.md) | Cloud Functions(Python) 서버측 로직·담당자 배정 푸시 발송 |
 | user | [user.md](infra/user.md) | 사용자 프로필·로그인 이력·푸시 토큰 |
 | common | [common.md](infra/common.md) | 앱 환경설정(DataStore)·하단 탭 순서·공용 화면/유틸 |
 
