@@ -1,6 +1,9 @@
 package com.jkapp.finance.asset
 
+import android.content.Intent
+import com.jkapp.auth.FakeAuthRepository
 import com.jkapp.common.todayDate
+import io.mockk.mockk
 import java.math.BigDecimal
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -9,11 +12,13 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.yield
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -24,13 +29,21 @@ class DailyAssetViewModelTest {
 
     private val testDispatcher = StandardTestDispatcher()
     private lateinit var fakeRepository: FakeAssetFirestoreRepository
+    private lateinit var fakeSheetRepository: FakeAssetSheetRepository
+    private lateinit var fakeAuthRepository: FakeAuthRepository
     private lateinit var viewModel: DailyAssetViewModel
 
     @Before
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
         fakeRepository = FakeAssetFirestoreRepository()
-        viewModel = DailyAssetViewModel(repository = fakeRepository)
+        fakeSheetRepository = FakeAssetSheetRepository()
+        fakeAuthRepository = FakeAuthRepository()
+        viewModel = DailyAssetViewModel(
+            repository = fakeRepository,
+            sheetRepository = fakeSheetRepository,
+            authRepository = fakeAuthRepository,
+        )
     }
 
     @After
@@ -79,25 +92,118 @@ class DailyAssetViewModelTest {
         assertEquals(listOf(makeAsset("현금"), makeAsset("주식")), dailyAsset?.assets)
     }
 
+    private val sheetHeader = listOf("이름", "명의", "계좌", "계좌번호", "카드", "금액")
+
     @Test
-    fun `parsePasteText는 파서 결과를 그대로 반환한다`() = runTest {
-        val text = "현금\tJ\t-\t-\t-\t₩ 1,000"
+    fun `importFromSheet 성공 시 미리보기 상태가 되고 시트 행을 파싱해 담는다`() = runTest {
+        fakeSheetRepository.rows = listOf(
+            sheetHeader,
+            listOf("현금", "J", "-", "-", "-", "₩ 1,000"),
+            listOf("주식", "K", "삼성증권", "-", "-", "₩ 2,000"),
+        )
 
-        val result = viewModel.parsePasteText(text, hasHeader = false)
+        viewModel.importFromSheet()
+        advanceUntilIdle()
 
-        assertEquals(1, result.size)
-        assertEquals("전지훈", result.single().item?.owner)
+        val preview = viewModel.sheetImport.value as AssetSheetImportState.Preview
+        assertEquals(listOf("현금", "주식"), preview.rows.mapNotNull { it.item?.name })
+        assertEquals(listOf("전지훈", "권유경"), preview.rows.mapNotNull { it.item?.owner })
+        assertNull(viewModel.actionError.value)
     }
 
     @Test
-    fun `parsePasteText는 파싱 실패 행이 있어도 예외 없이 전체 결과를 반환한다`() = runTest {
-        val text = "컬럼부족\tJ"
+    fun `confirmSheetImport는 실행 시점 날짜에 자산을 저장하고 미리보기를 닫는다`() = runTest {
+        advanceUntilIdle()
+        fakeSheetRepository.rows = listOf(
+            sheetHeader,
+            listOf("현금", "J", "-", "-", "-", "₩ 1,000"),
+        )
+        viewModel.importFromSheet()
+        advanceUntilIdle()
 
-        val result = viewModel.parsePasteText(text, hasHeader = false)
+        val preview = viewModel.sheetImport.value as AssetSheetImportState.Preview
+        val today = todayDate()
+        viewModel.confirmSheetImport(today, preview.rows.mapNotNull { it.item })
+        advanceUntilIdle()
 
-        assertEquals(1, result.size)
-        assertNull(result.single().item)
-        assertTrue(result.single().error!!.isNotBlank())
+        val state = viewModel.uiState.value as DailyAssetUiState.Success
+        val dailyAsset = state.dailyAssets.single { it.date == today }
+        assertEquals("현금", dailyAsset.assets.single().name)
+        assertEquals(BigDecimal("1000"), dailyAsset.assets.single().amount)
+        assertEquals(AssetSheetImportState.Idle, viewModel.sheetImport.value)
+    }
+
+    @Test
+    fun `confirmSheetImport는 기존 날짜 문서가 있으면 항목을 병합한다`() = runTest {
+        val today = todayDate()
+        fakeRepository.setDailyAssets(
+            listOf(DailyAsset(date = today, assets = listOf(makeAsset("현금", amount = BigDecimal("100")))))
+        )
+        advanceUntilIdle()
+
+        viewModel.confirmSheetImport(
+            today,
+            listOf(
+                AssetItem(name = "현금", owner = "전지훈", amount = BigDecimal("500")),
+                AssetItem(name = "주식", owner = "권유경", amount = BigDecimal("2000")),
+            ),
+        )
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value as DailyAssetUiState.Success
+        val assets = state.dailyAssets.single { it.date == today }.assets
+        assertEquals(BigDecimal("500"), assets.single { it.name == "현금" }.amount)
+        assertEquals(BigDecimal("2000"), assets.single { it.name == "주식" }.amount)
+    }
+
+    @Test
+    fun `importFromSheet 인증 예외 시 복구 인텐트가 설정되고 미리보기는 열리지 않는다`() = runTest {
+        fakeSheetRepository.error = AssetSheetAuthException(mockk<Intent>(relaxed = true))
+
+        viewModel.importFromSheet()
+        advanceUntilIdle()
+
+        assertNotNull(viewModel.sheetAuthRecoveryIntent.value)
+        assertEquals(AssetSheetImportState.Idle, viewModel.sheetImport.value)
+        assertNull(viewModel.actionError.value)
+    }
+
+    @Test
+    fun `importFromSheet 일반 오류 시 actionError가 설정된다`() = runTest {
+        fakeSheetRepository.error = RuntimeException("네트워크 오류")
+
+        viewModel.importFromSheet()
+        advanceUntilIdle()
+
+        assertTrue(viewModel.actionError.value!!.contains("구글시트를 불러오지 못했습니다"))
+        assertEquals(AssetSheetImportState.Idle, viewModel.sheetImport.value)
+    }
+
+    @Test
+    fun `로딩 중 dismissSheetImport로 취소하면 Idle로 돌아가고 오류를 남기지 않는다`() = runTest {
+        fakeSheetRepository.suspendIndefinitely = true
+
+        viewModel.importFromSheet()
+        // 시계를 진행시키지 않고 현재 시점 작업만 실행한다(타임아웃 30초는 아직 발화하지 않음).
+        runCurrent()
+        assertEquals(AssetSheetImportState.Loading, viewModel.sheetImport.value)
+
+        viewModel.dismissSheetImport()
+        advanceUntilIdle()
+
+        assertEquals(AssetSheetImportState.Idle, viewModel.sheetImport.value)
+        assertNull(viewModel.actionError.value)
+    }
+
+    @Test
+    fun `응답이 타임아웃되면 actionError가 설정되고 Idle로 돌아간다`() = runTest {
+        fakeSheetRepository.suspendIndefinitely = true
+
+        viewModel.importFromSheet()
+        advanceUntilIdle() // 가상 시계가 타임아웃(30초)을 지나 withTimeoutOrNull이 null을 반환한다.
+
+        assertTrue(viewModel.actionError.value!!.contains("시간이 초과"))
+        assertEquals(AssetSheetImportState.Idle, viewModel.sheetImport.value)
     }
 
     @Test
