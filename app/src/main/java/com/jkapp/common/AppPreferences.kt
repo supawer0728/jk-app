@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import java.io.IOException
+import java.time.LocalDate
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
@@ -30,6 +31,10 @@ const val MAX_HAPTIC_INTENSITY = 10
 
 private val KEY_NOTIFICATION_MODE = stringPreferencesKey("notification_mode")
 private val KEY_NOTIFICATION_SOUND = stringPreferencesKey("notification_sound")
+
+// pushes 30일 정리(이슈 #89)를 하루 1회만 실행하기 위한 마지막 실행 날짜 캐시. ISO-8601(yyyy-MM-dd)
+// 문자열로 저장한다.
+private val KEY_LAST_PUSH_CLEANUP_DATE = stringPreferencesKey("last_push_cleanup_date")
 
 // 리마인더 알림 방식(이슈 #71). OFF는 무음(소리·진동 없음)으로 알림만 조용히 표시한다.
 enum class NotificationMode {
@@ -113,6 +118,19 @@ class AppPreferences(private val context: Context) {
     suspend fun setNotificationSound(sound: NotificationSound) {
         try {
             context.dataStore.edit { prefs -> prefs[KEY_NOTIFICATION_SOUND] = sound.name }
+        } catch (e: IOException) {
+            // 읽기 경로(safePreferencesData)와 동일하게 쓰기 실패도 크래시 없이 무시한다.
+        }
+    }
+
+    // push.PushCleanupScheduler가 하루 1회 가드 판정에 쓰는 마지막 정리 실행 날짜. 파싱 실패(손상된
+    // 값)나 필드 없음(최초 실행)은 모두 null로 처리해 정리가 실행되게 한다.
+    val lastPushCleanupDate: Flow<LocalDate?> = context.safePreferencesData
+        .map { prefs -> prefs[KEY_LAST_PUSH_CLEANUP_DATE]?.let { runCatching { LocalDate.parse(it) }.getOrNull() } }
+
+    suspend fun setLastPushCleanupDate(date: LocalDate) {
+        try {
+            context.dataStore.edit { prefs -> prefs[KEY_LAST_PUSH_CLEANUP_DATE] = date.toString() }
         } catch (e: IOException) {
             // 읽기 경로(safePreferencesData)와 동일하게 쓰기 실패도 크래시 없이 무시한다.
         }

@@ -61,8 +61,9 @@ doc/
 | auth | [auth.md](infra/auth.md) | Firebase Auth(Google 로그인) |
 | drive | [drive.md](infra/drive.md) | Google Drive 첨부파일 저장 |
 | notification | [notification.md](infra/notification.md) | FCM 푸시 알림 수신·표시 |
-| functions | [functions.md](infra/functions.md) | Cloud Functions(Python) 서버측 로직·담당자 배정 푸시 발송 |
-| user | [user.md](infra/user.md) | 사용자 프로필·로그인 이력·푸시 토큰 |
+| push | [push.md](infra/push.md) | `pushes` 컬렉션 생성·30일 정리(대상 계산은 각 feature가 담당) |
+| functions | [functions.md](infra/functions.md) | Cloud Functions(Python) — `pushes` 문서 감지 후 FCM 발송 전담 |
+| user | [user.md](infra/user.md) | 사용자 프로필·로그인 이력·푸시 토큰(이메일 기반 조회 포함) |
 | common | [common.md](infra/common.md) | 앱 환경설정(DataStore)·하단 탭 순서·공용 화면/유틸 |
 
 ## 문서 갱신 규칙

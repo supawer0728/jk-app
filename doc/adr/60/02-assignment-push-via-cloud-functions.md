@@ -1,7 +1,15 @@
 # 담당자 배정 푸시를 Cloud Functions에서 발송하고, notification 페이로드 + 채널 라우팅으로 보낸다
 
-**상태**: 결정됨
+**상태**: 대체됨 (→ [ADR 89/01](../89/01-pushes-collection-send-only-functions.md))
 **날짜**: 2026-07-11
+
+> **대체 (이슈 #89)**: 이 ADR이 결정한 "Cloud Functions가 담당자 이메일 매핑·`users` 조회·편집자
+> 제외까지 전부 계산해 발송한다"는 아키텍처는 이슈 #89에서 대체되었다. 대상 계산은 앱
+> (`todo.TodoFirestoreRepositoryImpl` + `user.UserRepository`)으로 옮겨갔고, Cloud Functions는
+> `pushes` 컬렉션 생성을 감지해 이미 계산된 토큰 목록으로 발송만 하는 역할로 축소되었다. "메시지
+> 형식(notification 페이로드 + Android 채널 라우팅)" 근거는 새 아키텍처에서도 그대로 유효해
+> [ADR 89/01](../89/01-pushes-collection-send-only-functions.md)이 이어받았다. 아래 내용은
+> **이슈 #60 시점의 결정 기록**으로 보존한다.
 
 ## 맥락
 

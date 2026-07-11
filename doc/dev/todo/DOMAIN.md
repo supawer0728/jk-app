@@ -24,7 +24,7 @@
 | `completionHistory` | `List<Instant>` | 반복 항목이 완료 처리된 지난 회차의 `dueAt` 이력. 기본값 `emptyList()` |
 | `createdAt` | `Instant?` | 생성 시각. `addTodoItem`에서만 부여되는 불변 필드 |
 | `completedAt` | `Instant?` | 마지막 완료 처리 시각 |
-| `lastEditedByUid` | `String?` | 마지막으로 저장한 사용자의 Firebase Auth `uid`. Repository가 쓰기 시점에 주입한다. 알림 발송 시 편집자 본인을 대상에서 제외하는 데 쓴다(→ ADR/60) |
+| `lastEditedByUid` | `String?` | 마지막으로 저장한 사용자의 Firebase Auth `uid`를 남기는 감사(audit) 필드. Repository가 쓰기 시점에 주입한다. 담당자 배정 push 생성 시 대상에서 편집자 본인을 제외하는 판별에도 쓰인다(→ ADR/60/01 근거 갱신) |
 | `isCompleted` | `Boolean` | 파생 프로퍼티(`get()`). `status == DONE`과 동치. 저장 필드 아님 |
 
 #### TodoStatus (`TodoStatus.kt`)
@@ -102,8 +102,12 @@
 - `auth.AuthRepository` — `TodoViewModel`이 로그인 상태를 구독해 로그인 시에만 데이터 수집을 시작한다.
 - `common.AppPreferences` — `TodoReminderWorker`가 알림 모드/사운드 설정을 읽어 알림 채널을 구성한다.
 - `notification.ensureReminderChannel` — 리마인더 알림 채널 생성(공유 인프라).
-- `functions`(Cloud Functions) — `todo-items` 쓰기 트리거가 담당자 배정 푸시를 발송하며,
-  `assignee`(이메일 매핑)·`lastEditedByUid`·`title` 필드를 대상 계산에 사용한다(→ [infra/functions.md](../infra/functions.md)).
+- `user.UserRepository.getPushTokensByEmails` — 담당자 배정 push 생성 시 `assignee.emails`로
+  대상 사용자의 토큰을 조회한다(→ [infra/user.md](../infra/user.md)).
+- `push.PushRepository.createPush` — 조회한 토큰으로 `pushes` 문서를 만든다(→ [infra/push.md](../infra/push.md)).
+- `functions`(Cloud Functions) — `pushes` 문서 생성 트리거가 실제 FCM 발송을 담당한다
+  (대상 계산은 이제 이 도메인이 하므로 `functions`는 `assignee`·`lastEditedByUid`를 더 이상
+  읽지 않는다, → [infra/functions.md](../infra/functions.md)).
 - 다른 도메인 모델을 직접 참조하거나 참조당하지는 않는다(카테고리·태그 없음).
 
 ## Firestore 컬렉션

@@ -29,15 +29,23 @@
   요청한다. 거부해도 저장은 진행하고 알림만 표시되지 않으며 스낵바로 경고한다.
   강제 위치 `TodoFormScreen`.
 - **편집자 UID 주입**: 모든 쓰기(`addTodoItem`/`updateTodoItem`/`completeTodoItem`) 시 현재 로그인
-  사용자의 `uid`를 `lastEditedByUid`에 주입한다. Firestore 트리거는 "누가 썼는지"를 알 수 없으므로,
-  서버 알림 로직이 편집자 본인을 대상에서 제외하려면 이 값이 필요하다. 강제 위치
-  `TodoFirestoreRepositoryImpl`(`currentUidProvider`). → ADR/60
-- **담당자 배정 푸시 발송**: `todo-items` 쓰기 시 Cloud Functions가 담당자에게 FCM 푸시를 보낸다.
-  발송 대상은 `assignee.emails`로 식별되는 사용자(공동=`SHARED`이면 두 사용자, 개인 배정이면 1인)에서
-  `lastEditedByUid` 편집자를 뺀 집합이다. 결과적으로 `SHARED`는 편집자를 제외한 상대방만, 개인 배정은
-  편집자가 아닌 담당자만 알림을 받는다(편집자 자신을 지정하면 아무도 받지 않는다).
-  `assignee`·`title`이 이전과 모두 같은 쓰기(상태 순환·완료 전진 등)는 발송하지 않는다.
-  강제 위치 `functions/main.py`(→ [infra/functions.md](../infra/functions.md)). → ADR/60
+  사용자의 `uid`를 `lastEditedByUid`에 주입한다. 이 필드는 "마지막으로 이 할일을 저장한 사람"을
+  남기는 감사(audit) 기록이며, 담당자 배정 push를 생성할 때 대상에서 편집자 본인을 제외하는
+  판별에도 함께 쓰인다. 강제 위치 `TodoFirestoreRepositoryImpl`(`currentUidProvider`). → ADR/60/01(근거 갱신)
+- **담당자 배정 push 생성**: `addTodoItem`/`updateTodoItem`이 저장 직후 이전 문서(`before`, 없으면
+  신규 생성)와 저장된 문서(`after`)를 비교해 `assignee` 또는 `title`이 실제로 바뀐 경우에만
+  `push.PushRepository.createPush`로 `pushes` 문서를 만든다. 상태 순환·완료 전진(`completeTodoItem`
+  경로 포함)은 `assignee`·`title`을 바꾸지 않으므로 이 비교에서 자연히 걸러져 push가 생성되지
+  않는다. 삭제(`deleteTodoItem`)도 push를 만들지 않는다.
+  발송 대상은 `assignee.emails`로 `user.UserRepository.getPushTokensByEmails`가 조회한 사용자
+  (공동=`SHARED`이면 두 사용자, 개인 배정이면 1인)에서 `lastEditedByUid`(이 저장을 수행한 편집자)를
+  뺀 집합이다. 결과적으로 `SHARED`는 편집자를 제외한 상대방만, 개인 배정은 편집자가 아닌 담당자만
+  알림을 받는다(편집자 자신을 지정하면 대상이 없어 push를 만들지 않는다). 신규 생성이면 제목
+  "새 할일이 등록되었습니다", 수정이면 "할일이 수정되었습니다"로 `PushMessage.title`을 채운다.
+  강제 위치 `TodoFirestoreRepositoryImpl`(`maybeCreateAssignmentPush`,
+  `shouldCreateAssignmentPush`/`assignmentPushTitle`). → ADR/89(구 Cloud Functions 로직을 앱으로 이식)
+- **실제 발송**: `pushes` 문서 생성을 Cloud Functions가 감지해 `tokens` 목록으로 FCM을 발송한다.
+  강제 위치 `functions/main.py`(→ [infra/functions.md](../infra/functions.md), [infra/push.md](../infra/push.md)). → ADR/89
 
 ## 계산 / 파생 값
 
@@ -104,10 +112,13 @@
    `getTodoItemOnce`로 항목 재조회 → 여전히 존재하고 미완료면(`shouldShowReminderNotification`)
    알림 표시. 조회 실패 시 최대 3회까지만 재시도(낡은 알림 방지). 재부팅/앱 종료 후에도
    WorkManager가 예약을 유지한다. → ADR/55
-8. **담당자 배정 푸시**: 기기 A가 담당자를 지정해 저장(`lastEditedByUid = A`) → `todo-items` 쓰기 →
-   Cloud Functions 트리거 → `assignee.emails`로 대상 사용자 조회 → 편집자(A) 제외 → 남은 대상의
-   `pushToken.token`으로 FCM 발송 → 상대 기기에 `todo_assignment` 채널로 시스템 알림 도착.
-   상세는 [infra/functions.md](../infra/functions.md). → ADR/60
+8. **담당자 배정 푸시**: 기기 A가 담당자를 지정해 저장(`lastEditedByUid = A`) →
+   `TodoFirestoreRepositoryImpl`이 저장 전 `before` 문서를 읽고 저장 후 `after`와 비교 →
+   `assignee`·`title` 변경이 있으면 `user.getPushTokensByEmails(assignee.emails)`로 대상 조회 →
+   편집자(A) 제외 → 남은 토큰으로 `push.PushRepository.createPush`가 `pushes` 문서 생성 →
+   Cloud Functions가 `pushes` 문서 생성을 감지해 FCM 발송 → 상대 기기에 문서의 `channelId`
+   (`todo_assignment`) 채널로 시스템 알림 도착. 상세는 [infra/push.md](../infra/push.md),
+   [infra/functions.md](../infra/functions.md). → ADR/89
 
 ## 관련 결정 (ADR)
 
@@ -117,5 +128,7 @@
 - [`doc/adr/52/weekly-recurrence-advance-algorithm.md`](../../adr/52/weekly-recurrence-advance-algorithm.md) — WEEKLY 다중 요일 다음 회차 전진 알고리즘
 - [`doc/adr/52/monthly-yearly-anchor-day-drift.md`](../../adr/52/monthly-yearly-anchor-day-drift.md) — MONTHLY/YEARLY 말일 클램프 누적(anchor drift) 방지
 - [`doc/adr/55/use-workmanager-for-todo-reminders.md`](../../adr/55/use-workmanager-for-todo-reminders.md) — 마감 리마인더 스케줄러로 WorkManager 채택
-- [`doc/adr/60/01-last-edited-by-uid-for-self-notification-exclusion.md`](../../adr/60/01-last-edited-by-uid-for-self-notification-exclusion.md) — 편집자 UID 필드로 자기 알림 제외
-- [`doc/adr/60/02-assignment-push-via-cloud-functions.md`](../../adr/60/02-assignment-push-via-cloud-functions.md) — 담당자 배정 푸시를 Cloud Functions로 발송
+- [`doc/adr/60/01-last-edited-by-uid-for-self-notification-exclusion.md`](../../adr/60/01-last-edited-by-uid-for-self-notification-exclusion.md) — 편집자 UID 필드 도입(근거 갱신: 알림 제외 → 감사 기록 + push 생성 시 제외 판별)
+- [`doc/adr/60/02-assignment-push-via-cloud-functions.md`](../../adr/60/02-assignment-push-via-cloud-functions.md) — (대체됨 → ADR/89) 담당자 배정 푸시를 Cloud Functions가 대상까지 계산해 발송하던 구 아키텍처
+- [`doc/adr/89/01-pushes-collection-send-only-functions.md`](../../adr/89/01-pushes-collection-send-only-functions.md) — `pushes` 컬렉션 기반으로 단순화, 대상 계산(assignee/title 변경 비교)을 앱으로 이관
+- [`doc/adr/89/02-30-day-push-cleanup-policy.md`](../../adr/89/02-30-day-push-cleanup-policy.md) — `pushes` 30일 정리 정책

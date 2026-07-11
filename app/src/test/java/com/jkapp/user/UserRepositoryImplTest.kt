@@ -8,6 +8,8 @@ import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.EventListener
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.firestore.Query
+import com.google.firebase.firestore.QuerySnapshot
 import com.google.firebase.firestore.SetOptions
 import io.mockk.every
 import io.mockk.mockk
@@ -17,6 +19,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -139,6 +142,64 @@ class UserRepositoryImplTest {
             PushToken(token = "token-a", updatedAt = 100L, platform = "android"),
             repository.getPushToken("uid-1"),
         )
+    }
+
+    // 이슈 #89: 담당자 배정 push 생성 시 이메일→토큰을 일괄 조회하는 getPushTokensByEmails 검증.
+
+    @Test
+    fun `emails가 비어 있으면 쿼리 없이 빈 목록을 반환한다`() = runTest {
+        // collection()은 생성자에서 즉시 호출되므로 스텁하되, whereIn은 스텁하지 않아 호출되면
+        // MockKException으로 실패해 "쿼리 없이 조기 반환"을 검증한다.
+        val collectionRef = mockk<CollectionReference>()
+        val db = mockk<FirebaseFirestore>()
+        every { db.collection("users") } returns collectionRef
+        val repository = UserRepositoryImpl(db)
+
+        assertEquals(emptyList<UserPushTarget>(), repository.getPushTokensByEmails(emptyList()))
+    }
+
+    @Test
+    fun `emails로 whereIn 조회 후 pushToken이 있는 문서만 uid-token 쌍으로 매핑한다`() = runTest {
+        val docWithToken = mockk<DocumentSnapshot>()
+        every { docWithToken.id } returns "uid-1"
+        every { docWithToken.get("pushToken") } returns mapOf("token" to "token-a")
+
+        val docWithoutToken = mockk<DocumentSnapshot>()
+        every { docWithoutToken.id } returns "uid-2"
+        every { docWithoutToken.get("pushToken") } returns null
+
+        val querySnapshot = mockk<QuerySnapshot>()
+        every { querySnapshot.documents } returns listOf(docWithToken, docWithoutToken)
+
+        val query = mockk<Query>()
+        every { query.get() } returns taskReturning(querySnapshot)
+
+        val collectionRef = mockk<CollectionReference>()
+        every { collectionRef.whereIn("email", listOf("a@x.com", "b@x.com")) } returns query
+        val db = mockk<FirebaseFirestore>()
+        every { db.collection("users") } returns collectionRef
+        val repository = UserRepositoryImpl(db)
+
+        val targets = repository.getPushTokensByEmails(listOf("a@x.com", "b@x.com"))
+
+        assertEquals(listOf(UserPushTarget(uid = "uid-1", token = "token-a")), targets)
+    }
+
+    @Test
+    fun `whereIn 결과 문서가 없으면 빈 목록을 반환한다`() = runTest {
+        val querySnapshot = mockk<QuerySnapshot>()
+        every { querySnapshot.documents } returns emptyList()
+
+        val query = mockk<Query>()
+        every { query.get() } returns taskReturning(querySnapshot)
+
+        val collectionRef = mockk<CollectionReference>()
+        every { collectionRef.whereIn("email", listOf("nobody@x.com")) } returns query
+        val db = mockk<FirebaseFirestore>()
+        every { db.collection("users") } returns collectionRef
+        val repository = UserRepositoryImpl(db)
+
+        assertTrue(repository.getPushTokensByEmails(listOf("nobody@x.com")).isEmpty())
     }
 
     @Test

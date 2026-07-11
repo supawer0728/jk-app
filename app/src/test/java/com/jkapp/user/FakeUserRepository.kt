@@ -53,4 +53,22 @@ class FakeUserRepository : UserRepository {
         updatePushTokenError?.let { throw it }
         pushTokensByUid[uid] = pushToken
     }
+
+    // uid <-> email 매핑과 getPushTokensByEmails 응답을 테스트가 직접 세팅할 수 있게 한다.
+    private val emailsByUid = mutableMapOf<String, String>()
+    var getPushTokensByEmailsError: Throwable? = null
+    var lastRequestedEmails: List<String>? = null
+
+    fun setUserEmail(uid: String, email: String) {
+        emailsByUid[uid] = email
+    }
+
+    override suspend fun getPushTokensByEmails(emails: List<String>): List<UserPushTarget> {
+        lastRequestedEmails = emails
+        getPushTokensByEmailsError?.let { throw it }
+        if (emails.isEmpty()) return emptyList()
+        return emailsByUid.entries
+            .filter { (_, email) -> email in emails }
+            .mapNotNull { (uid, _) -> pushTokensByUid[uid]?.let { UserPushTarget(uid, it.token) } }
+    }
 }

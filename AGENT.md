@@ -22,7 +22,8 @@ Google Drive는 별도 DB가 아니라, 다이어리 기록에 첨부되는 파�
 | 캘린더 (calendar) | 일정 관리 (자리표시자, 구현 예정) |
 | 설정 (settings) | 다크모드, 햅틱 강도, 하단 탭 순서 등 앱 환경 설정 |
 | 알림 (notification) | FCM 푸시 알림 수신·채널·토큰 관리 (공유 인프라) |
-| 사용자 (user) | 사용자 프로필·로그인 이력·푸시 토큰 (공유 인프라) |
+| 푸시 (push) | `pushes` 컬렉션 생성·30일 정리, 발송은 Cloud Functions (공유 인프라) |
+| 사용자 (user) | 사용자 프로필·로그인 이력·푸시 토큰(이메일 기반 조회 포함) (공유 인프라) |
 
 ### 사용자 / 데이터 공유 구조
 
@@ -166,7 +167,8 @@ com.jkapp
 ├── auth/           Firebase Auth — 공유 인프라, 특정 feature에 속하지 않음
 ├── drive/          Google Drive(첨부파일 저장) — 공유 인프라
 ├── notification/   FCM 푸시 알림(수신·채널·토큰) — 공유 인프라
-├── user/           사용자 프로필·로그인 이력·푸시 토큰 — 공유 인프라
+├── push/           pushes 컬렉션 생성·30일 정리(대상 계산은 각 feature) — 공유 인프라
+├── user/           사용자 프로필·로그인 이력·푸시 토큰(이메일 기반 조회) — 공유 인프라
 ├── haptic/         햅틱 피드백 컨트롤러
 └── nav/            네비게이션 라우트 정의
 ```
@@ -208,6 +210,7 @@ UI (Compose) → ViewModel → XxxFirestoreRepository (인터페이스)
 | `todo-items` | `todo.TodoFirestoreRepository` | `TodoItem` (recurrence: `RecurrenceRule`, 날짜 필드는 Firestore `Timestamp`) |
 | `todo-categories` | `todo.TodoFirestoreRepository` | `TodoCategory` |
 | `tab-orders` | `common.TabOrderRepository` | 사용자별 하단 탭 순서(`List<String>`) |
+| `pushes` | `push.PushRepository` | `PushMessage` (title/body/channelId/tokens, Functions가 status/sentAt/results 기록) |
 
 ## graphify
 
