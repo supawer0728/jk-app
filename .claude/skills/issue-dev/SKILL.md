@@ -1,7 +1,7 @@
 ---
 name: issue-dev
-description: This skill should be used when the user says "issue-dev", "이슈 작업", "이슈 번호로 개발", "이슈 기반 개발", or provides a GitHub issue number to start working on. Runs the full cycle: fetch issue → create worktree → implement → test → review → draft PR.
-version: 2.0.0
+description: This skill should be used when the user says "issue-dev", "이슈 작업", "이슈 번호로 개발", "이슈 기반 개발", or provides a GitHub issue number to start working on. Runs the full cycle: fetch issue → create worktree → docs-first implement → test → review → draft PR. Enforces the docs as code 원칙(문서 우선 반영·정합성 검증).
+version: 2.1.0
 ---
 
 # Issue-Driven Development
@@ -10,6 +10,15 @@ GitHub 이슈 번호를 받아 **격리된 워크트리 생성**부터 Draft PR 
 
 각 이슈 작업을 독립된 git 워크트리에서 진행하므로, **여러 세션에서 서로 다른 이슈를
 동시에 작업**해도 작업 트리가 충돌하지 않는다.
+
+## docs as code 원칙 (이 사이클 전반에 적용)
+
+코드와 문서는 하나의 변경 단위다. 이 스킬은 다음 3원칙을 강제한다
+(체계·템플릿: [`doc/dev/README.md`](../../../doc/dev/README.md), `AGENT.md`의 "docs as code" 섹션).
+
+1. **변경 전 문서 반영**: 소스코드를 바꾸기 전에 관련 문서(DOMAIN/FEATURE/infra)를 먼저 갱신한다. (Phase 3-1)
+2. **변경 전 모순 검증**: 문서 갱신 시 기존 문서·코드와 모순이 없는지 검증한다. (Phase 2, 3-1)
+3. **PR 전 정합성 검증**: PR 작성 전 소스코드와 문서가 일치하는지 검증한다. (Phase 3-5, Phase 5)
 
 ## 입력
 
@@ -43,40 +52,55 @@ GitHub 이슈 번호를 받아 **격리된 워크트리 생성**부터 Draft PR 
 ## Phase 2: 요구사항 분석
 
 1. 이슈 본문과 **코멘트**에서 수용 기준(Acceptance Criteria), 작업 계획, 할 일, 제약 조건을 추출한다. 코멘트에 구현 가이드나 변경 파일 목록이 있으면 우선적으로 반영한다.
-2. 불명확한 부분은 **AskUserQuestion**으로 질문한다. 답변을 받은 후 다음 단계로 진행한다.
-3. 확정된 할 일 목록을 **TaskCreate**로 등록한다.
+2. **영향받는 문서를 식별**한다. 변경 대상 feature/infra의 `doc/dev/<feature>/DOMAIN.md`·`FEATURE.md`
+   또는 `doc/dev/infra/<name>.md`를 읽고, 현재 문서 내용과 이슈 요구사항 사이에 모순이 없는지 검증한다.
+   모순이 있으면 착수 전에 **AskUserQuestion**으로 사용자와 합의한다. (docs as code 원칙 2)
+3. 불명확한 부분은 **AskUserQuestion**으로 질문한다. 답변을 받은 후 다음 단계로 진행한다.
+4. 확정된 할 일 목록을 **TaskCreate**로 등록한다. 문서 갱신 항목도 별도 할 일로 포함한다.
 
 ---
 
-## Phase 3: 구현 루프
+## Phase 3: 구현 루프 (docs as code)
 
-아래 4단계를 문제가 없을 때까지 반복한다.
+아래 단계를 문제가 없을 때까지 반복한다. **문서를 코드보다 먼저 반영**하는 것이 핵심이다.
 
-### 3-1. 코드 수정
+### 3-1. 문서 우선 반영 (docs as code 원칙 1)
+
+- 코드를 바꾸기 전에 관련 문서를 먼저 갱신한다.
+  - 도메인 모델 속성·Firestore 필드 변경 → 해당 `doc/dev/<feature>/DOMAIN.md`
+  - 비즈니스 규칙·계산·상태 전이 변경 → 해당 `doc/dev/<feature>/FEATURE.md`
+  - 공유 인프라 공개 API 변경 → `doc/dev/infra/<name>.md`
+  - 새 feature/infra 추가 → `doc/template/`의 템플릿을 복사해 신규 문서 작성 + `doc/dev/README.md` 지도 갱신
+- 문서를 갱신하면서 기존 문서·코드와 **모순이 없는지 검증**한다. 모순이 있으면 먼저 사용자와 합의한다.
+- 문서 전용 이슈면 이 단계가 곧 구현이며, 3-2~3-4는 생략할 수 있다.
+
+### 3-2. 코드 수정
 
 - 변경 전 관련 코드 패턴을 반드시 먼저 파악한다 (Explore 에이전트 활용).
-- `AGENT.md`(= `CLAUDE.md`)의 코드 스타일·컨벤션을 준수한다.
+- `AGENT.md`(= `CLAUDE.md`)의 코드 스타일·컨벤션을 준수하고, **3-1에서 갱신한 문서와 일치하도록** 구현한다.
 - 변경 범위는 이슈 범위로 한정한다. 범위 외 리팩터링은 사용자에게 별도 확인 후 진행한다.
 
-### 3-2. 테스트 코드 작성
+### 3-3. 테스트 코드 작성
 
 - 변경된 비즈니스 로직에 대한 단위 테스트를 작성한다 (`app/src/test`).
 - 기기 연결이 필요한 경우에만 계측 테스트(`app/src/androidTest`)를 사용한다.
 
-### 3-3. 테스트 검증
+### 3-4. 테스트 검증
 
 ```powershell
 .\gradlew.bat test          # JVM 단위 테스트
 .\gradlew.bat lint          # Android Lint
 ```
 
-- 실패 시 원인을 분석하고 **3-1**로 돌아간다.
+- 실패 시 원인을 분석하고 **3-2**로 돌아간다.
 - 연속 2회 이상 같은 오류가 반복되면 사용자에게 보고하고 방향을 확인한다.
+- 문서 전용 변경(코드 미변경)이면 테스트는 실질 no-op이므로 생략하고 그 사실을 기록한다.
 
-### 3-4. 코드 리뷰
+### 3-5. 코드·문서 리뷰 (docs as code 원칙 3)
 
 - `oh-my-claudecode:code-reviewer` 에이전트로 리뷰를 수행한다.
-- **High/Critical** 지적: 수정 후 **3-1**로 복귀.
+- **소스코드와 문서(DOMAIN/FEATURE/infra)가 일치하는지** 함께 검증한다(필드명·시그니처·규칙·컬렉션).
+- **High/Critical** 지적 또는 **문서-코드 불일치**: 수정 후 **3-1**로 복귀.
 - **Low/Medium** 지적: 사용자에게 보고 후 결정에 따라 처리.
 - 리뷰 통과 시 루프를 종료하고 Phase 4로 진행한다.
 
@@ -92,28 +116,10 @@ GitHub 이슈 번호를 받아 **격리된 워크트리 생성**부터 Draft PR 
 ### 중요 의사결정 (아키텍처 · 데이터 모델 · 외부 라이브러리 · 보안)
 
 1. ADR 파일을 작성한다: `doc/adr/$ISSUE_NUMBER/{kebab-case-title}.md`
-
-   ```markdown
-   # {제목}
-
-   **상태**: 결정됨
-   **날짜**: {YYYY-MM-DD}
-
-   ## 맥락
-   {결정이 필요했던 상황과 배경}
-
-   ## 결정
-   {선택한 방향}
-
-   ## 근거
-   {선택 이유}
-
-   ## 검토한 대안
-   {선택하지 않은 방안과 이유}
-
-   ## 예상 결과
-   {이 결정으로 인한 영향}
-   ```
+   - **템플릿 원본**: [`doc/template/ADR.template.md`](../../../doc/template/ADR.template.md)를 복사해 작성한다
+     (섹션: 맥락 / 결정 / 근거 / 검토한 대안 / 예상 결과, 선택적 후속 과제).
+   - ADR은 "왜"(결정 근거)를 담는 불변 스냅샷이다. 그 결정으로 지금 동작하는 규칙은
+     별도로 해당 `FEATURE.md`(무엇/어떻게)에도 반영한다(docs as code 원칙 1).
 
 2. GitHub 이슈에 해당 내용을 코멘트로 남긴다.
    ```bash
@@ -136,7 +142,11 @@ GitHub 이슈 번호를 받아 **격리된 워크트리 생성**부터 Draft PR 
 
 ## Phase 5: Draft PR 작성
 
-1. 변경 파일을 스테이징하고 커밋한다 (OMC 커밋 프로토콜 준수).
+0. **정합성 최종 검증 (docs as code 원칙 3)**: 커밋 전 변경된 소스코드와 문서
+   (DOMAIN/FEATURE/infra)가 일치하는지 확인한다. 도메인 속성·메서드 시그니처·Firestore
+   컬렉션·비즈니스 규칙이 문서와 어긋나면 커밋하지 않고 Phase 3-1로 되돌아간다.
+
+1. 변경 파일을 스테이징하고 커밋한다 (OMC 커밋 프로토콜 준수). **코드와 문서를 같은 커밋에** 담는다.
    ```bash
    git add <changed files>
    git commit -m "..."
@@ -155,6 +165,11 @@ GitHub 이슈 번호를 받아 **격리된 워크트리 생성**부터 Draft PR 
    ## 변경 요약
    - ...
 
+   ## docs as code 체크리스트
+   - [ ] 변경 내용을 관련 문서(DOMAIN/FEATURE/infra)에 반영했다
+   - [ ] 소스코드와 문서가 일치한다 (필드명·시그니처·규칙·컬렉션)
+   - [ ] 중요 결정은 doc/adr/$ISSUE_NUMBER/ 에 ADR로 남겼다 (해당 시)
+
    ## 테스트 방법
    - [ ] `.\gradlew.bat test` 통과 확인
    - [ ] `.\gradlew.bat lint` 통과 확인
@@ -166,6 +181,9 @@ GitHub 이슈 번호를 받아 **격리된 워크트리 생성**부터 Draft PR 
    EOF
    )"
    ```
+
+   > 리포지토리에 [`/.github/PULL_REQUEST_TEMPLATE.md`](../../../.github/PULL_REQUEST_TEMPLATE.md)가 있으므로,
+   > 위 `--body`의 docs as code 체크리스트는 그 템플릿과 항목을 맞춘다.
 
 4. PR URL을 사용자에게 보고한다.
 
