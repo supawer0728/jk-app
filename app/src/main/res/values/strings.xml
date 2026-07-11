@@ -114,8 +114,9 @@
     <string name="investment_filter_all_categories">전체 종목</string>
     <string name="investment_delete_confirm_title">투자 종목 삭제</string>
     <string name="investment_delete_confirm_message">%s 투자 종목을 삭제하시겠습니까?</string>
-    <string name="investment_paste_import_title">구글시트 붙여넣기</string>
-    <string name="investment_paste_import_description">구글 스프레드시트에서 복사한 표를 그대로 붙여넣으세요. 헤더에서 계좌(또는 이름)·카테고리·투자 종목·1주 가격·평가 금액(원화)·보유수량·매수금액 열만 인식하며, 그 외 열은 무시됩니다. 매수금액에 $ 표시가 있으면 통화가 USD로 인식됩니다.</string>
+    <string name="investment_import_sheet">구글시트에서 가져오기</string>
+    <string name="investment_import_sheet_title">구글시트에서 가져오기</string>
+    <string name="investment_import_sheet_loading">구글시트를 읽는 중…</string>
     <string name="investment_bulk_delete">투자 종목 일괄 삭제</string>
     <string name="investment_delete_all">전체 삭제</string>
     <string name="investment_delete_selected">선택 삭제</string>

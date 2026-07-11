@@ -35,6 +35,7 @@ import com.jkapp.finance.asset.DailyAssetViewModel
 import com.jkapp.finance.benchmark.BenchmarkSheetRepositoryImpl
 import com.jkapp.finance.benchmark.BenchmarkViewModel
 import com.jkapp.finance.investment.DailyAssetInvestmentViewModel
+import com.jkapp.finance.investment.InvestmentSheetRepositoryImpl
 import com.jkapp.haptic.HapticController
 import com.jkapp.haptic.LocalHapticController
 import com.jkapp.nav.DiaryDetailRoute
@@ -74,7 +75,7 @@ class MainActivity : ComponentActivity() {
     private val diaryViewModel: DiaryViewModel by viewModels { DiaryViewModel.factory(DriveRepositoryImpl(this), appPreferences) }
     private val todoViewModel: TodoViewModel by viewModels { TodoViewModel.factory(TodoReminderSchedulerImpl(this)) }
     private val dailyAssetViewModel: DailyAssetViewModel by viewModels { DailyAssetViewModel.factory() }
-    private val investmentViewModel: DailyAssetInvestmentViewModel by viewModels { DailyAssetInvestmentViewModel.factory() }
+    private val investmentViewModel: DailyAssetInvestmentViewModel by viewModels { DailyAssetInvestmentViewModel.factory(InvestmentSheetRepositoryImpl(this)) }
     private val benchmarkViewModel: BenchmarkViewModel by viewModels { BenchmarkViewModel.factory(BenchmarkSheetRepositoryImpl(this)) }
     private val settingsViewModel: SettingsViewModel by viewModels { SettingsViewModel.factory(appPreferences) }
     private val tabOrderViewModel: TabOrderViewModel by viewModels { TabOrderViewModel.factory() }

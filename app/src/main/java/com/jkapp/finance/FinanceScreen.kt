@@ -97,7 +97,8 @@ import com.jkapp.finance.investment.DailyAssetInvestmentViewModel
 import com.jkapp.finance.investment.INVESTMENT_OWNERS
 import com.jkapp.finance.investment.InvestmentItem
 import com.jkapp.finance.investment.InvestmentItemMetrics
-import com.jkapp.finance.investment.ParsedInvestmentRow
+import com.jkapp.finance.investment.InvestmentSheetImportBlock
+import com.jkapp.finance.investment.InvestmentSheetImportState
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.text.NumberFormat
@@ -798,11 +799,28 @@ private fun InvestmentTab(viewModel: DailyAssetInvestmentViewModel, benchmarkVie
     var formTarget by remember { mutableStateOf<InvestmentFormTarget?>(null) }
     var pendingDelete by remember { mutableStateOf<InvestmentPendingDelete?>(null) }
     var showFabMenu by remember { mutableStateOf(false) }
-    var showPasteImport by rememberSaveable { mutableStateOf(false) }
+    val sheetImport by viewModel.sheetImport.collectAsStateWithLifecycle()
     var isSelectionMode by rememberSaveable { mutableStateOf(false) }
     var selectedItems by remember { mutableStateOf<Set<InvestmentItem>>(emptySet()) }
     var showDeleteAllConfirm by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
+
+    // 시트 접근 동의(계정 선택/권한)가 필요하면 복구 인텐트를 실행하고, 동의 후 다시 가져온다(BenchmarkTab과 동일한 패턴).
+    val sheetAuthRecoveryIntent by viewModel.sheetAuthRecoveryIntent.collectAsStateWithLifecycle()
+    val sheetAuthLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        result.data?.getStringExtra(AccountManager.KEY_ACCOUNT_NAME)?.let { accountName ->
+            viewModel.onSheetAccountSelected(accountName)
+        }
+        viewModel.clearSheetAuthRecoveryIntent()
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            viewModel.importFromSheet()
+        }
+    }
+    LaunchedEffect(sheetAuthRecoveryIntent) {
+        sheetAuthRecoveryIntent?.let { sheetAuthLauncher.launch(it) }
+    }
 
     // 선택 모드에 들어가면 맨 위(첫 항목)부터 볼 수 있도록 목록을 위로 스크롤한다(BenchmarkTab과 동일한 패턴).
     LaunchedEffect(isSelectionMode) {
@@ -991,10 +1009,10 @@ private fun InvestmentTab(viewModel: DailyAssetInvestmentViewModel, benchmarkVie
                                         },
                                     )
                                     DropdownMenuItem(
-                                        text = { Text(stringResource(R.string.asset_add_paste)) },
+                                        text = { Text(stringResource(R.string.investment_import_sheet)) },
                                         onClick = {
                                             showFabMenu = false
-                                            showPasteImport = true
+                                            viewModel.importFromSheet()
                                         },
                                     )
                                 }
@@ -1056,17 +1074,30 @@ private fun InvestmentTab(viewModel: DailyAssetInvestmentViewModel, benchmarkVie
         )
     }
 
-    if (showPasteImport) {
-        InvestmentPasteImportDialog(
-            initialOwner = selectedOwner,
-            initialDate = todayDate(),
-            onDismiss = { showPasteImport = false },
-            onParse = viewModel::parsePasteText,
-            onImport = { date, owner, items ->
-                viewModel.importInvestments(date, owner, items)
-                showPasteImport = false
-            },
+    when (val importState = sheetImport) {
+        is InvestmentSheetImportState.Loading -> InvestmentSheetLoadingDialog(
+            onCancel = { viewModel.dismissSheetImport() },
         )
+        is InvestmentSheetImportState.Preview -> {
+            // 오늘 날짜(실행 시점)에 이미 저장된 (명의 → 종목 키) 목록. 미리보기에서 어떤 항목이
+            // 덮어써지는지 표시하는 데 쓴다. 문서가 {date}_{owner}로 분리되어 있어 명의별로 모은다.
+            val today = todayDate()
+            val existingKeysByOwner = remember(uiState, today) {
+                (uiState as? DailyAssetInvestmentUiState.Success)?.investments
+                    ?.filter { it.date == today }
+                    ?.associate { doc ->
+                        doc.owner to doc.investments.map { "${it.assetName}|${it.category}|${it.investmentName}" }.toSet()
+                    }
+                    ?: emptyMap()
+            }
+            InvestmentSheetImportDialog(
+                blocks = importState.blocks,
+                existingKeysByOwner = existingKeysByOwner,
+                onDismiss = { viewModel.dismissSheetImport() },
+                onImport = { viewModel.confirmSheetImport(today) },
+            )
+        }
+        InvestmentSheetImportState.Idle -> Unit
     }
 
     actionError?.let { message ->
@@ -1362,95 +1393,94 @@ private fun InvestmentFormDialog(
     }
 }
 
-// 구글시트 붙여넣기와 개별 입력이 날짜/명의를 다루는 방식이 다르다: 개별 입력은 현재 화면에
-// 표시 중인 명의 탭(selectedOwner)에 저장되지만, 붙여넣기 시트에는 명의 열이 없어 다이얼로그
-// 자체에서 명의를 선택하게 한다(요구사항: "구글시트 붙여넣기할 때 어떤 명의의 투자종목인지
-// 선택할 수 있다"). 날짜도 마찬가지로 시트에 열이 없어 다이얼로그에서 직접 고르며, 기본값은
-// 오늘 날짜다.
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun InvestmentPasteImportDialog(
-    initialOwner: String,
-    initialDate: String,
-    onDismiss: () -> Unit,
-    onParse: (text: String, owner: String) -> List<ParsedInvestmentRow>,
-    onImport: (date: String, owner: String, items: List<InvestmentItem>) -> Unit,
-) {
-    var owner by rememberSaveable { mutableStateOf(initialOwner) }
-    var ownerDropdownExpanded by remember { mutableStateOf(false) }
-    var date by rememberSaveable { mutableStateOf(initialDate) }
-    var showDatePicker by rememberSaveable { mutableStateOf(false) }
-
-    PasteImportDialog(
-        title = stringResource(R.string.investment_paste_import_title),
-        description = stringResource(R.string.investment_paste_import_description),
-        extraOptions = {
-            OutlinedTextField(
-                value = date,
-                onValueChange = {},
-                readOnly = true,
-                label = { Text(stringResource(R.string.benchmark_field_date)) },
-                trailingIcon = {
-                    IconButton(onClick = { showDatePicker = true }) {
-                        Icon(Icons.Default.DateRange, contentDescription = stringResource(R.string.asset_pick_date))
-                    }
-                },
-                modifier = Modifier.fillMaxWidth(),
-            )
-            ExposedDropdownMenuBox(
-                expanded = ownerDropdownExpanded,
-                onExpandedChange = { ownerDropdownExpanded = !ownerDropdownExpanded },
+private fun InvestmentSheetLoadingDialog(onCancel: () -> Unit) {
+    AlertDialog(
+        // 백드롭 탭으로도 취소할 수 있게 해, 응답이 늦어도 로딩에 갇히지 않도록 한다.
+        onDismissRequest = onCancel,
+        title = { Text(stringResource(R.string.investment_import_sheet_title)) },
+        text = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                OutlinedTextField(
-                    value = owner,
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text(stringResource(R.string.asset_field_owner)) },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = ownerDropdownExpanded) },
-                    modifier = Modifier
-                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
-                        .fillMaxWidth(),
+                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                Text(stringResource(R.string.investment_import_sheet_loading))
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
+        },
+    )
+}
+
+// 시트에서 읽어 파싱한 결과를 저장 전 미리보기로 보여준다. 두 명의(전지훈·권유경) 블록을 명의별
+// 섹션으로 묶어 나열하고, 확인 버튼 하나로 두 명의를 한 번에 저장한다. existingKeysByOwner에 있는
+// (명의 → 종목 키)와 겹치는 항목은 "덮어씀"으로 표시한다.
+@Composable
+private fun InvestmentSheetImportDialog(
+    blocks: List<InvestmentSheetImportBlock>,
+    existingKeysByOwner: Map<String, Set<String>>,
+    onDismiss: () -> Unit,
+    onImport: () -> Unit,
+) {
+    val totalItems = blocks.sumOf { block -> block.rows.count { it.item != null } }
+    val totalErrors = blocks.sumOf { block -> block.rows.count { it.item == null } }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.investment_import_sheet_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = stringResource(R.string.asset_paste_import_summary, totalItems, totalErrors),
+                    style = MaterialTheme.typography.bodyMedium,
                 )
-                ExposedDropdownMenu(
-                    expanded = ownerDropdownExpanded,
-                    onDismissRequest = { ownerDropdownExpanded = false },
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    INVESTMENT_OWNERS.forEach { candidate ->
-                        DropdownMenuItem(
-                            text = { Text(candidate) },
-                            onClick = {
-                                owner = candidate
-                                ownerDropdownExpanded = false
-                            },
-                        )
+                    blocks.forEach { block ->
+                        val existingKeys = existingKeysByOwner[block.owner].orEmpty()
+                        item(key = "header-${block.owner}") {
+                            Text(
+                                text = block.owner,
+                                style = MaterialTheme.typography.titleSmall,
+                                modifier = Modifier.padding(top = 4.dp),
+                            )
+                        }
+                        items(block.rows) { row ->
+                            val item = row.item
+                            if (item != null) {
+                                val willOverwrite = "${item.assetName}|${item.category}|${item.investmentName}" in existingKeys
+                                Text(
+                                    text = "${item.assetName} · ${item.investmentName} · ${item.valuationAmount.toDisplayAmount()}" +
+                                        if (willOverwrite) " · ${stringResource(R.string.benchmark_paste_import_overwrite)}" else "",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (willOverwrite) MaterialTheme.colorScheme.tertiary else Color.Unspecified,
+                                )
+                            } else {
+                                Text(
+                                    text = "⚠ ${row.error}: ${row.rawLine.take(30)}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                            }
+                        }
                     }
                 }
             }
         },
-        onDismiss = onDismiss,
-        onParse = { text -> onParse(text, owner) },
-        itemOf = { it.item },
-        errorOf = { it.error },
-        rawLineOf = { it.rawLine },
-        onImport = { items -> onImport(date, owner, items) },
-    ) { item ->
-        Text(
-            text = "${item.assetName} · ${item.investmentName} · ${item.valuationAmount.toDisplayAmount()}",
-            style = MaterialTheme.typography.bodySmall,
-        )
-    }
-
-    if (showDatePicker) {
-        IsoDatePickerDialog(
-            initialDate = date,
-            onDismiss = { showDatePicker = false },
-            onConfirm = {
-                date = it
-                showDatePicker = false
-            },
-            allowFutureDates = false,
-        )
-    }
+        confirmButton = {
+            TextButton(
+                onClick = onImport,
+                enabled = totalItems > 0,
+            ) { Text(stringResource(R.string.save)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        },
+    )
 }
 
 private sealed interface BenchmarkFormTarget {
