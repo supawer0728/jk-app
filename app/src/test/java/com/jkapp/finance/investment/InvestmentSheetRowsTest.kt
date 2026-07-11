@@ -46,6 +46,25 @@ class InvestmentSheetRowsTest {
     }
 
     @Test
+    fun `실제 원본 시트 헤더(자산이름 종목명 등)를 그대로 파싱한다`() {
+        // 원본 시트(JK-APP raw)의 실제 헤더/데이터. 회귀 방지: 계좌=자산이름, 투자 종목=종목명.
+        val header = row("자산이름", "카테고리", "종목명", "1주가격", "평가금액", "보유수량", "매수금액")
+        val data = row("IRP", "TDF", "TIGER TDF2045", "₩12,660", "₩9,419,040", "744", "₩7,306,965")
+
+        val result = parseInvestmentRows(listOf(header, data), owner = "전지훈")
+
+        val item = result.single().item!!
+        assertEquals("IRP", item.assetName)
+        assertEquals("TDF", item.category)
+        assertEquals("TIGER TDF2045", item.investmentName)
+        assertEquals(BigDecimal("12660"), item.pricePerShare)
+        assertEquals(BigDecimal("9419040"), item.valuationAmount)
+        assertEquals(BigDecimal("744"), item.quantity)
+        assertEquals(BigDecimal("7306965"), item.purchaseAmount.amount)
+        assertEquals("KRW", item.purchaseAmount.currency)
+    }
+
+    @Test
     fun `매수금액에 달러 표시가 없으면 통화가 KRW로 인식되고 계좌 이름 별칭도 인식한다`() {
         val header = row("이름", "카테고리", "투자 종목", "1주 가격", "평가 금액(원화)", "보유수량", "매수금액")
         val data = row("종합", "주식", "삼성전자", "₩70,000", "₩700,000", "10", "₩650,000")

@@ -14,10 +14,12 @@ private data class InvestmentColumn(val label: String, val aliases: Set<String>)
 // 고정 열 위치 대신 헤더 행의 이름으로 필요한 7개 열만 찾아 사용한다(BenchmarkSheetPaste와 동일한 방식).
 // 매수단가는 매수금액/보유수량으로 계산해낼 수 있어 대상에서 제외한다. 매수금액은 원화·달러
 // 표기가 섞여 있을 수 있어, 1주 가격과 마찬가지로 셀에 $ 표시가 있는지로 통화를 함께 인식한다.
+// 실제 원본 시트(JK-APP raw)의 헤더 이름은 "자산이름/카테고리/종목명/1주가격/평가금액/보유수량/매수금액"이다.
+// 시트 헤더가 바뀌더라도 견디도록 각 열에 그동안 쓰인 별칭들을 함께 등록해 이름으로 찾는다.
 private val INVESTMENT_COLUMNS = listOf(
-    InvestmentColumn("계좌", setOf("계좌", "이름")),
+    InvestmentColumn("계좌", setOf("자산이름", "계좌", "이름")),
     InvestmentColumn("카테고리", setOf("카테고리")),
-    InvestmentColumn("투자 종목", setOf("투자종목")),
+    InvestmentColumn("투자 종목", setOf("종목명", "투자종목")),
     InvestmentColumn("1주 가격", setOf("1주가격")),
     InvestmentColumn("평가 금액(원화)", setOf("평가금액(원화)", "평가금액", "평가 금액")),
     InvestmentColumn("보유수량", setOf("보유수량")),
