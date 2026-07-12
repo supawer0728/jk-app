@@ -37,7 +37,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.ScrollableTabRow
+import androidx.compose.material3.SecondaryScrollableTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -136,11 +136,14 @@ fun PortfolioScreen(
                         )
                     } else {
                         Column(modifier = Modifier.fillMaxSize()) {
-                            // 포트폴리오 탭
-                            ScrollableTabRow(
+                            // 포트폴리오 탭.
+                            // SecondaryScrollableTabRow는 탭 개수가 동적으로 변할 때 selectedTabIndex를
+                            // 내부에서 안전하게 처리한다(deprecated ScrollableTabRow는 저장 직후 목록 증가와
+                            // 선택 인덱스 갱신이 프레임 간 어긋나면 IndexOutOfBounds로 크래시했다).
+                            SecondaryScrollableTabRow(
                                 selectedTabIndex = state.portfolios.indexOfFirst {
                                     it.firestoreId == selectedPortfolio?.firestoreId
-                                }.coerceAtLeast(0),
+                                }.coerceIn(0, (state.portfolios.size - 1).coerceAtLeast(0)),
                                 edgePadding = 0.dp,
                             ) {
                                 state.portfolios.forEach { portfolio ->
