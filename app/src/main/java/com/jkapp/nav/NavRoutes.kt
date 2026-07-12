@@ -25,3 +25,6 @@ data class TodoFormRoute(val firestoreId: String? = null)
 
 @Serializable
 data object SettingsRoute
+
+@Serializable
+data object PortfolioRoute

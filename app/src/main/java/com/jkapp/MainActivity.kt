@@ -37,12 +37,15 @@ import com.jkapp.finance.benchmark.BenchmarkSheetRepositoryImpl
 import com.jkapp.finance.benchmark.BenchmarkViewModel
 import com.jkapp.finance.investment.DailyAssetInvestmentViewModel
 import com.jkapp.finance.investment.InvestmentSheetRepositoryImpl
+import com.jkapp.finance.investment.PortfolioScreen
+import com.jkapp.finance.investment.PortfolioViewModel
 import com.jkapp.haptic.HapticController
 import com.jkapp.haptic.LocalHapticController
 import com.jkapp.nav.DiaryDetailRoute
 import com.jkapp.nav.DiaryFormRoute
 import com.jkapp.nav.HomeRoute
 import com.jkapp.nav.LoginRoute
+import com.jkapp.nav.PortfolioRoute
 import com.jkapp.nav.RecordTypeManagementRoute
 import com.jkapp.nav.SettingsRoute
 import com.jkapp.nav.SplashRoute
@@ -80,6 +83,7 @@ class MainActivity : ComponentActivity() {
     private val benchmarkViewModel: BenchmarkViewModel by viewModels { BenchmarkViewModel.factory(BenchmarkSheetRepositoryImpl(this)) }
     private val settingsViewModel: SettingsViewModel by viewModels { SettingsViewModel.factory(appPreferences) }
     private val tabOrderViewModel: TabOrderViewModel by viewModels { TabOrderViewModel.factory() }
+    private val portfolioViewModel: PortfolioViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
@@ -152,6 +156,9 @@ class MainActivity : ComponentActivity() {
                                     },
                                     onNavigateToSettings = {
                                         backStack.add(SettingsRoute)
+                                    },
+                                    onNavigateToPortfolio = {
+                                        backStack.add(PortfolioRoute)
                                     }
                                 )
                             }
@@ -188,6 +195,12 @@ class MainActivity : ComponentActivity() {
                             entry<SettingsRoute> {
                                 SettingsScreen(
                                     viewModel = settingsViewModel,
+                                    onBack = { backStack.removeLastOrNull() }
+                                )
+                            }
+                            entry<PortfolioRoute> {
+                                PortfolioScreen(
+                                    viewModel = portfolioViewModel,
                                     onBack = { backStack.removeLastOrNull() }
                                 )
                             }

@@ -211,6 +211,7 @@ UI (Compose) → ViewModel → XxxFirestoreRepository (인터페이스)
 | `todo-categories` | `todo.TodoFirestoreRepository` | `TodoCategory` |
 | `tab-orders` | `common.TabOrderRepository` | 사용자별 하단 탭 순서(`List<String>`) |
 | `pushes` | `push.PushRepository` | `PushMessage` (title/body/channelId/tokens, Functions가 status/sentAt/results 기록) |
+| `portfolios` | `finance.investment.PortfolioFirestoreRepository` | `Portfolio` (name, groups: `PortfolioGroup` 목록(name/owners/accounts/categories/stockNames/targetRatio)) |
 
 ## graphify
 
