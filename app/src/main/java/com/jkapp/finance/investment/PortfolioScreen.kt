@@ -167,7 +167,9 @@ fun PortfolioScreen(
                             }
                         }
                         // 스와이프로 페이지가 정착하면 선택 포트폴리오를 갱신.
-                        LaunchedEffect(pagerState.settledPage, portfolios) {
+                        // settledPage만 키로 둔다(portfolios는 실시간 스냅샷마다 인스턴스가 바뀌어
+                        // 불필요한 재실행/선택 요동을 유발하므로 제외).
+                        LaunchedEffect(pagerState.settledPage) {
                             portfolios.getOrNull(pagerState.settledPage)?.firestoreId?.let { id ->
                                 if (id != selectedPortfolio?.firestoreId) viewModel.selectPortfolio(id)
                             }
@@ -304,7 +306,9 @@ private fun PortfolioSelectorBar(
                         }
                     },
                     onDragEnd = {
-                        if (draggingId != null) onReorder(items.mapNotNull { it.firestoreId })
+                        // 순서가 실제로 바뀐 경우에만 저장을 시도한다.
+                        val changed = items.map { it.firestoreId } != portfolios.map { it.firestoreId }
+                        if (draggingId != null && changed) onReorder(items.mapNotNull { it.firestoreId })
                         draggingId = null
                         dragOffsetX = 0f
                     },
@@ -419,7 +423,8 @@ private fun PortfolioPieChart(
                 val outerRadius = maxRadius - outerStroke / 2f
                 val ringGap = maxRadius * 0.04f
                 val innerStroke = maxRadius * 0.22f
-                val innerRadius = outerRadius - outerStroke / 2f - ringGap - innerStroke / 2f
+                val innerRadius = (outerRadius - outerStroke / 2f - ringGap - innerStroke / 2f)
+                    .coerceAtLeast(0f)
                 val center = Offset(size.width / 2f, size.height / 2f)
 
                 // 외부 링: 실제 비율

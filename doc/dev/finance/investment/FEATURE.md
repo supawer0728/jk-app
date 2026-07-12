@@ -67,8 +67,8 @@
   한다. 그렇지 않으면 저장을 차단한다. 강제 위치 `validatePortfolioGroups`.
 - **목표 비율 타입**: 정수 `Int`(0~100). 소수점 없음. 강제 위치 `PortfolioGroup.targetRatio`.
 - **파이 차트 계산**: 그룹별 평가금액 합계를 전체 분류된 종목 합계로 나눠 실제 비율을 계산하고,
-  목표 비율과 비교한다. 강제 위치 `PortfolioGroupMatcher.computePieSlices`,
-  `PortfolioViewModel.pieSlices`.
+  목표 비율과 비교한다. 강제 위치 `PortfolioGroupMatcher.computePieSlices`. 화면은 페이저의 각
+  페이지(`PortfolioScreen.PortfolioDetail`)가 자신의 포트폴리오로 슬라이스를 계산한다.
 
 ### 포트폴리오·그룹 순서 규칙
 

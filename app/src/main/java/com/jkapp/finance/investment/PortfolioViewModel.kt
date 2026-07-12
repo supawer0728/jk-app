@@ -79,14 +79,6 @@ class PortfolioViewModel(
         }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
-    // 현재 선택된 포트폴리오의 파이 차트 슬라이스 목록.
-    val pieSlices: StateFlow<List<PieSlice>> = combine(
-        selectedPortfolio, latestOwnerItemPairs,
-    ) { portfolio, pairs ->
-        if (portfolio == null) return@combine emptyList()
-        PortfolioGroupMatcher.computePieSlices(portfolio, pairs)
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
-
     init {
         viewModelScope.launch {
             portfolioRepository.getPortfolios()
