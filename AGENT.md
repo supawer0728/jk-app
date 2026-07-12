@@ -82,6 +82,7 @@ AI가 코드를 작성할 때는 아래 두 문서를 따른다.
 | `doc/dev/<feature>/FEATURE.md` | 비즈니스 규칙·계산·상태 전이·유효성·주요 플로우 |
 | `doc/dev/infra/<name>.md` | 공유 인프라(auth/drive/notification/user/common)의 책임·공개 API·의존 관계 |
 | `doc/adr/<이슈>/<slug>.md` | 중요한 결정의 근거(왜). DOMAIN/FEATURE(무엇/어떻게)와 역할을 분리한다 |
+| `doc/troubleshooting/<날짜>-<slug>.md` | 디버깅·장애·삽질의 실패 경험(증상→진단→근본 원인→해결→재발 방지). 색인·규칙은 [`doc/troubleshooting/README.md`](doc/troubleshooting/README.md) |
 
 **언제 무엇을 갱신하나**
 
@@ -91,6 +92,7 @@ AI가 코드를 작성할 때는 아래 두 문서를 따른다.
 | 비즈니스 규칙·계산·상태 전이 | 해당 feature `FEATURE.md` |
 | 공유 인프라 공개 API | `doc/dev/infra/<name>.md` |
 | 아키텍처·데이터 모델·라이브러리·보안 결정 | `doc/adr/<이슈>/` 신규 ADR ([Phase 4 참고](.claude/skills/issue-dev/SKILL.md)) |
+| 디버깅·장애·삽질을 해결했을 때 | `doc/troubleshooting/` 신규 기록 (원인 규명 직후 남긴다) |
 
 ## 기술 스택 (확정)
 
@@ -230,3 +232,8 @@ UI (Compose) → ViewModel → XxxFirestoreRepository (인터페이스)
   발급해야 한다. 테스트 사용자에 본인·배우자 계정(2개)을 추가하면 충분하다.
 - 공유 드라이브 폴더 ID는 앱 내에 하드코딩하거나 별도 설정 파일로 관리한다 (커밋 가능한 상수).
   폴더 자체의 접근 제어는 구글 드라이브 공유 설정으로 관리한다.
+- **Google 로그인 서명 지문(SHA-1)**: 앱을 서명한 키스토어(debug/release)의 SHA-1이 Firebase에
+  등록돼 있어야 Google 로그인이 동작한다. PC 교체·`debug.keystore` 재생성 후 로그인이 갑자기
+  깨지면 SHA-1 불일치를 가장 먼저 의심한다(에러 메시지가 `[16] Account reauth failed`처럼
+  엉뚱하게 나올 수 있다). 진단·해결 절차는
+  [`doc/troubleshooting/2026-07-12-google-login-sha1-mismatch.md`](doc/troubleshooting/2026-07-12-google-login-sha1-mismatch.md) 참고.
