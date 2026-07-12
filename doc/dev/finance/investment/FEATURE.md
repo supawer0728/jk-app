@@ -70,6 +70,25 @@
   목표 비율과 비교한다. 강제 위치 `PortfolioGroupMatcher.computePieSlices`,
   `PortfolioViewModel.pieSlices`.
 
+### 포트폴리오·그룹 순서 규칙
+
+- **순서는 사용자가 직접 입력하지 않는다**: `Portfolio.order`·`PortfolioGroup.order`는 화면
+  조작(재정렬)으로만 바뀌며, 폼에 순서 입력 필드는 없다.
+- **하위 호환(nullsFirst)**: 기존 데이터의 `order`는 `null`이다. 조회 시 `order`가 `null`인
+  항목이 앞, 그다음 오름차순으로 정렬한다(동률·null 다수는 안정 정렬로 기존 순서 유지). 강제 위치
+  `List<Portfolio>.sortedByOrder`/`List<PortfolioGroup>.sortedByOrder`(`compareBy(nullsFirst())`),
+  `PortfolioFirestoreRepositoryImpl.getPortfolios`.
+- **포트폴리오 재정렬(드래그&드롭·부분 업데이트)**: 상단 포트폴리오 칩을 길게 눌러 드래그하면 순서가
+  바뀐다. 드래그 중 다른 칩이 실시간으로 자리를 비켜(`animateItem`) 어디로 이동하는지 보이며, 손을
+  떼면 그 순서가 저장된다. 재정렬 결과 목록에 `order = index`를 재부여하되 **값이 실제로 바뀌는
+  문서만** `updatePortfolioOrders`로 batch 업데이트한다. 현재 전부 `null`이므로 첫 재정렬에서는 모든
+  포트폴리오에 값이 들어가고, 이후에는 이동에 영향받은 문서만 갱신된다. 강제 위치
+  `computePortfolioOrderUpdates`, `PortfolioViewModel.reorderPortfolios`, `PortfolioSelectorBar`,
+  `PortfolioFirestoreRepository.updatePortfolioOrders`.
+- **그룹 재정렬(저장 시 부여)**: 포트폴리오 추가·수정 다이얼로그에서 그룹을 길게 눌러 재정렬 모드로
+  진입하고 ▲▼로 상하 이동한다. 그룹 순서는 저장 시점에 목록 위치대로 `order = index`가 부여되어
+  포트폴리오 문서 전체(`upsertPortfolio`)와 함께 저장된다. 강제 위치 `PortfolioViewModel.savePortfolio`.
+
 ## 계산 / 파생 값
 
 - `profit = valuationAmount - purchaseAmount.amount` — 종목별 수익금. 계산 위치
@@ -130,15 +149,23 @@
    저장 후 사용자가 보던 명의를 유지한 채 오늘 날짜로 전환.
 7. **포트폴리오 화면 진입**: `InvestmentTab`의 '포트' 버튼 → `onNavigateToPortfolio()` 콜백
    → `PortfolioRoute` 전체 화면으로 전환.
-8. **포트폴리오 조회/편집**: `PortfolioScreen` → 저장된 포트폴리오 목록 → 선택 → 그룹별 파이 차트
-   (실제 비율 vs 목표 비율) 표시 → 편집 다이얼로그 → `upsertPortfolio`.
+8. **포트폴리오 조회/편집**: `PortfolioScreen` → 저장된 포트폴리오 목록(순서대로) → 상단 탭 선택
+   또는 **좌우 스와이프**(`HorizontalPager`, 탭·선택 상태 동기화)로 포트폴리오 전환 → 그룹별 파이
+   차트(실제 비율 vs 목표 비율) 표시 → 편집 다이얼로그 → `upsertPortfolio`. 파이 차트는 링 스트로크가
+   잘리지 않도록 반지름을 스트로크 두께만큼 인셋해 상하가 온전히 보이게 그린다.
+8-1. **포트폴리오 재정렬**: 상단 포트폴리오 칩을 길게 눌러 드래그 → 드롭 위치로 순서 변경(다른 칩이
+   실시간으로 비켜남) → `reorderPortfolios(orderedIds)` → 값이 바뀐 문서만 `updatePortfolioOrders`로 저장.
 9. **그룹 조건 입력**: `PortfolioGroupFormDialog`에서 소유주·계좌·카테고리·종목명을 `FilterChip`
    다중 선택으로 지정한다(`InvestmentFilterModal`과 동일 패턴). 소유주 옵션은 `INVESTMENT_OWNERS`
    고정 집합, 계좌·카테고리·종목명 옵션은 `PortfolioViewModel`이 `latestOwnerItemPairs`에서
    도출해 노출한다(`accountOptions`/`categoryOptions`/`stockNameOptions`). 카테고리·종목명은
    미선택 시 해당 축을 필터하지 않는 nullable 시맨틱을 유지한다(빈 선택 → `null` 저장).
+9-1. **그룹 재정렬**: 포트폴리오 추가·수정 다이얼로그에서 그룹을 길게 눌러 재정렬 모드로 진입 →
+   각 그룹의 ▲▼로 상하 이동(다이얼로그 로컬 목록 순서 변경) → 저장 시 목록 위치대로 그룹 `order`가
+   부여된다.
 10. **포트폴리오 저장**: 그룹 `targetRatio` 합이 100이 아니면 저장 버튼 비활성화.
-    `PortfolioViewModel.savePortfolio` → `PortfolioFirestoreRepository.upsertPortfolio`.
+    `PortfolioViewModel.savePortfolio`가 그룹에 `order = index`를 부여한 뒤
+    `PortfolioFirestoreRepository.upsertPortfolio`로 저장한다.
 
 ## 관련 결정 (ADR)
 

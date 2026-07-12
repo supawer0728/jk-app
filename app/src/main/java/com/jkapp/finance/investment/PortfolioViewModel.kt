@@ -111,7 +111,28 @@ class PortfolioViewModel(
     }
 
     /**
+     * 드래그&드롭으로 정해진 새 순서(포트폴리오 firestoreId 목록)를 반영한다.
+     *
+     * 새 순서대로 order=index를 재부여하되, 값이 실제로 바뀌는 문서만 부분 업데이트한다(최초 재정렬 시
+     * 전부 null이므로 전체가 대상, 이후엔 이동에 영향받은 문서만). 순서가 그대로면 아무 것도 쓰지 않는다.
+     */
+    fun reorderPortfolios(orderedIds: List<String>) {
+        val state = _uiState.value as? PortfolioUiState.Success ?: return
+        val byId = state.portfolios.associateBy { it.firestoreId }
+        val reordered = orderedIds.mapNotNull { byId[it] }
+        val updates = computePortfolioOrderUpdates(reordered)
+        if (updates.isEmpty()) return
+        viewModelScope.launch {
+            runCatching { portfolioRepository.updatePortfolioOrders(updates) }
+                .onFailure { e ->
+                    _actionError.value = "포트폴리오 순서 변경에 실패했습니다: ${e.localizedMessage ?: "알 수 없는 오류"}"
+                }
+        }
+    }
+
+    /**
      * 포트폴리오를 저장한다. 그룹 targetRatio 합이 100이 아니면 저장하지 않고 actionError를 설정한다.
+     * 저장 시 그룹에는 목록 위치대로 order를 부여한다(사용자가 직접 입력하지 않는 순서 값).
      */
     fun savePortfolio(portfolio: Portfolio) {
         val error = validatePortfolioGroups(portfolio.groups)
@@ -119,8 +140,11 @@ class PortfolioViewModel(
             _actionError.value = error
             return
         }
+        val toSave = portfolio.copy(
+            groups = portfolio.groups.mapIndexed { index, group -> group.copy(order = index) },
+        )
         viewModelScope.launch {
-            runCatching { portfolioRepository.upsertPortfolio(portfolio) }
+            runCatching { portfolioRepository.upsertPortfolio(toSave) }
                 .onSuccess { newId ->
                     // 저장 후 새로 생성된 문서를 자동 선택한다.
                     _selectedPortfolioId.value = newId

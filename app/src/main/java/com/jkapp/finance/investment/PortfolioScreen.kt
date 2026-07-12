@@ -1,6 +1,9 @@
 package com.jkapp.finance.investment
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,8 +19,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -25,6 +33,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -37,13 +47,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SecondaryScrollableTabRow
-import androidx.compose.material3.Tab
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -54,10 +65,13 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jkapp.common.LoadingIndicator
 import com.jkapp.finance.toDisplayAmount
@@ -70,6 +84,10 @@ private val PIE_COLORS = listOf(
     Color(0xFF9C755F), Color(0xFFBAB0AC),
 )
 
+/** 리스트에서 [from] 위치의 원소를 [to] 위치로 옮긴 새 리스트를 반환한다. */
+private fun <T> List<T>.moved(from: Int, to: Int): List<T> =
+    toMutableList().apply { add(to, removeAt(from)) }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PortfolioScreen(
@@ -78,8 +96,9 @@ fun PortfolioScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val selectedPortfolio by viewModel.selectedPortfolio.collectAsStateWithLifecycle()
-    val pieSlices by viewModel.pieSlices.collectAsStateWithLifecycle()
     val actionError by viewModel.actionError.collectAsStateWithLifecycle()
+    // 파이 차트 계산 원본 — 페이지(포트폴리오)마다 자신의 슬라이스를 이 값으로 계산한다.
+    val ownerItemPairs by viewModel.latestOwnerItemPairs.collectAsStateWithLifecycle()
     // 그룹 조건 입력 칩 선택지 — 최신 날짜 전체 명의 데이터에서 도출.
     val accountOptions by viewModel.accountOptions.collectAsStateWithLifecycle()
     val categoryOptions by viewModel.categoryOptions.collectAsStateWithLifecycle()
@@ -127,7 +146,8 @@ fun PortfolioScreen(
                     modifier = Modifier.align(Alignment.Center).padding(16.dp),
                 )
                 is PortfolioUiState.Success -> {
-                    if (state.portfolios.isEmpty()) {
+                    val portfolios = state.portfolios // order 기준으로 이미 정렬됨
+                    if (portfolios.isEmpty()) {
                         Text(
                             text = "포트폴리오가 없습니다. + 버튼으로 추가하세요.",
                             style = MaterialTheme.typography.bodyMedium,
@@ -135,56 +155,38 @@ fun PortfolioScreen(
                             modifier = Modifier.align(Alignment.Center).padding(16.dp),
                         )
                     } else {
-                        Column(modifier = Modifier.fillMaxSize()) {
-                            // 포트폴리오 탭.
-                            // SecondaryScrollableTabRow는 탭 개수가 동적으로 변할 때 selectedTabIndex를
-                            // 내부에서 안전하게 처리한다(deprecated ScrollableTabRow는 저장 직후 목록 증가와
-                            // 선택 인덱스 갱신이 프레임 간 어긋나면 IndexOutOfBounds로 크래시했다).
-                            SecondaryScrollableTabRow(
-                                selectedTabIndex = state.portfolios.indexOfFirst {
-                                    it.firestoreId == selectedPortfolio?.firestoreId
-                                }.coerceIn(0, (state.portfolios.size - 1).coerceAtLeast(0)),
-                                edgePadding = 0.dp,
-                            ) {
-                                state.portfolios.forEach { portfolio ->
-                                    Tab(
-                                        selected = portfolio.firestoreId == selectedPortfolio?.firestoreId,
-                                        onClick = { portfolio.firestoreId?.let { viewModel.selectPortfolio(it) } },
-                                        text = {
-                                            Text(
-                                                portfolio.name,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                            )
-                                        },
-                                    )
-                                }
-                            }
+                        val selectedIndex = portfolios
+                            .indexOfFirst { it.firestoreId == selectedPortfolio?.firestoreId }
+                            .coerceIn(0, portfolios.lastIndex)
+                        val pagerState = rememberPagerState(initialPage = selectedIndex) { portfolios.size }
 
-                            selectedPortfolio?.let { portfolio ->
-                                LazyColumn(
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentPadding = PaddingValues(16.dp),
-                                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                                ) {
-                                    item {
-                                        PortfolioPieChart(
-                                            slices = pieSlices,
-                                            modifier = Modifier.fillMaxWidth(),
-                                        )
-                                    }
-                                    item {
-                                        PortfolioGroupLegend(slices = pieSlices)
-                                    }
-                                    if (portfolio.groups.isEmpty()) {
-                                        item {
-                                            Text(
-                                                text = "그룹이 없습니다. 포트폴리오를 수정해 그룹을 추가하세요.",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
-                                        }
-                                    }
+                        // 탭 선택/재정렬로 선택 인덱스가 바뀌면 페이저를 그 페이지로 이동.
+                        LaunchedEffect(selectedIndex) {
+                            if (pagerState.currentPage != selectedIndex) {
+                                pagerState.animateScrollToPage(selectedIndex)
+                            }
+                        }
+                        // 스와이프로 페이지가 정착하면 선택 포트폴리오를 갱신.
+                        LaunchedEffect(pagerState.settledPage, portfolios) {
+                            portfolios.getOrNull(pagerState.settledPage)?.firestoreId?.let { id ->
+                                if (id != selectedPortfolio?.firestoreId) viewModel.selectPortfolio(id)
+                            }
+                        }
+
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            PortfolioSelectorBar(
+                                portfolios = portfolios,
+                                selectedId = selectedPortfolio?.firestoreId,
+                                onSelect = { viewModel.selectPortfolio(it) },
+                                onReorder = { orderedIds -> viewModel.reorderPortfolios(orderedIds) },
+                            )
+
+                            HorizontalPager(
+                                state = pagerState,
+                                modifier = Modifier.fillMaxSize(),
+                            ) { page ->
+                                portfolios.getOrNull(page)?.let { portfolio ->
+                                    PortfolioDetail(portfolio = portfolio, ownerItemPairs = ownerItemPairs)
                                 }
                             }
                         }
@@ -240,6 +242,142 @@ fun PortfolioScreen(
     }
 }
 
+/**
+ * 상단 포트폴리오 선택 바. 칩을 탭하면 선택, **길게 눌러 드래그하면 순서를 바꾼다**.
+ *
+ * 드래그하는 동안 다른 칩들이 실시간으로 자리를 비켜(`animateItem`) 어디로 이동하는지 보이며,
+ * 손을 떼면 그 순서를 [onReorder]로 저장한다. 순서 계산은 `LazyRow`의 layoutInfo(각 칩의 절대
+ * 위치·크기)로 하되, 드래그 아이템은 손가락을 따라 `graphicsLayer.translationX`로 이동한다.
+ */
+@Composable
+private fun PortfolioSelectorBar(
+    portfolios: List<Portfolio>,
+    selectedId: String?,
+    onSelect: (String) -> Unit,
+    onReorder: (List<String>) -> Unit,
+) {
+    val listState = rememberLazyListState()
+    // 드래그 중 실시간으로 재배열되는 로컬 목록. 드래그 중이 아니면 상위 목록과 동기화한다.
+    var items by remember { mutableStateOf(portfolios) }
+    var draggingId by remember { mutableStateOf<String?>(null) }
+    var dragOffsetX by remember { mutableFloatStateOf(0f) }
+
+    LaunchedEffect(portfolios) {
+        if (draggingId == null) items = portfolios
+    }
+
+    fun visibleInfoFor(id: String?) =
+        listState.layoutInfo.visibleItemsInfo.firstOrNull { (it.key as? String) == id }
+
+    LazyRow(
+        state = listState,
+        modifier = Modifier
+            .fillMaxWidth()
+            .pointerInput(portfolios) {
+                detectDragGesturesAfterLongPress(
+                    onDragStart = { offset ->
+                        val hit = listState.layoutInfo.visibleItemsInfo.firstOrNull { info ->
+                            offset.x.toInt() in info.offset..(info.offset + info.size)
+                        }
+                        draggingId = hit?.key as? String
+                        dragOffsetX = 0f
+                    },
+                    onDrag = { change, amount ->
+                        change.consume()
+                        val id = draggingId ?: return@detectDragGesturesAfterLongPress
+                        dragOffsetX += amount.x
+                        val dragged = visibleInfoFor(id) ?: return@detectDragGesturesAfterLongPress
+                        val draggedCenter = dragged.offset + dragged.size / 2f + dragOffsetX
+                        val target = listState.layoutInfo.visibleItemsInfo.firstOrNull { info ->
+                            (info.key as? String) != id &&
+                                draggedCenter.toInt() in info.offset..(info.offset + info.size)
+                        }
+                        if (target != null) {
+                            val from = items.indexOfFirst { it.firestoreId == id }
+                            val to = items.indexOfFirst { it.firestoreId == (target.key as? String) }
+                            if (from >= 0 && to >= 0 && from != to) {
+                                items = items.moved(from, to)
+                                // 재배열로 드래그 칩의 홈 슬롯이 target 위치로 바뀌므로, 시각적 점프를
+                                // 막기 위해 그만큼 오프셋을 보정한다(표준 재정렬 레시피).
+                                dragOffsetX += (dragged.offset - target.offset)
+                            }
+                        }
+                    },
+                    onDragEnd = {
+                        if (draggingId != null) onReorder(items.mapNotNull { it.firestoreId })
+                        draggingId = null
+                        dragOffsetX = 0f
+                    },
+                    onDragCancel = {
+                        draggingId = null
+                        dragOffsetX = 0f
+                        items = portfolios
+                    },
+                )
+            },
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        items(items, key = { it.firestoreId ?: it.name }) { portfolio ->
+            val isDragging = portfolio.firestoreId == draggingId
+            val selected = portfolio.firestoreId == selectedId
+            Surface(
+                color = if (selected) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.surfaceVariant,
+                contentColor = if (selected) MaterialTheme.colorScheme.onPrimary
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier
+                    .animateItem()
+                    .zIndex(if (isDragging) 1f else 0f)
+                    .graphicsLayer { if (isDragging) translationX = dragOffsetX }
+                    .clickable { portfolio.firestoreId?.let(onSelect) },
+            ) {
+                Text(
+                    text = portfolio.name,
+                    style = MaterialTheme.typography.labelLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+            }
+        }
+    }
+}
+
+/** 한 포트폴리오의 상세(파이 차트 + 그룹 범례). 페이저의 각 페이지가 이걸 그린다. */
+@Composable
+private fun PortfolioDetail(
+    portfolio: Portfolio,
+    ownerItemPairs: List<Pair<String, InvestmentItem>>,
+) {
+    val slices = remember(portfolio, ownerItemPairs) {
+        PortfolioGroupMatcher.computePieSlices(portfolio, ownerItemPairs)
+    }
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        item {
+            PortfolioPieChart(slices = slices, modifier = Modifier.fillMaxWidth())
+        }
+        item {
+            PortfolioGroupLegend(slices = slices)
+        }
+        if (portfolio.groups.isEmpty()) {
+            item {
+                Text(
+                    text = "그룹이 없습니다. 포트폴리오를 수정해 그룹을 추가하세요.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun PortfolioPieChart(
     slices: List<PieSlice>,
@@ -247,7 +385,7 @@ private fun PortfolioPieChart(
 ) {
     if (slices.isEmpty() || slices.all { it.actualRatioPct == BigDecimal.ZERO }) {
         Box(
-            modifier = modifier.height(220.dp),
+            modifier = modifier.height(240.dp),
             contentAlignment = Alignment.Center,
         ) {
             Text(
@@ -269,14 +407,19 @@ private fun PortfolioPieChart(
     Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         // 실제 비율 파이 차트 (외부 링) + 목표 비율 파이 차트 (내부 링)
         Box(
-            modifier = Modifier.size(220.dp),
+            modifier = Modifier.size(240.dp),
             contentAlignment = Alignment.Center,
         ) {
             Canvas(modifier = Modifier.fillMaxSize()) {
-                val outerRadius = size.minDimension / 2f
-                val outerStroke = outerRadius * 0.38f
-                val innerRadius = outerRadius * 0.55f
-                val innerStroke = outerRadius * 0.28f
+                // 링 스트로크는 arc 경로 반지름을 기준으로 양쪽으로 stroke/2씩 걸쳐 그려진다.
+                // 따라서 반지름을 stroke/2만큼 안으로 넣어야 링의 바깥 가장자리가 박스를 넘어
+                // 상하좌우가 잘리지 않는다.
+                val maxRadius = size.minDimension / 2f
+                val outerStroke = maxRadius * 0.30f
+                val outerRadius = maxRadius - outerStroke / 2f
+                val ringGap = maxRadius * 0.04f
+                val innerStroke = maxRadius * 0.22f
+                val innerRadius = outerRadius - outerStroke / 2f - ringGap - innerStroke / 2f
                 val center = Offset(size.width / 2f, size.height / 2f)
 
                 // 외부 링: 실제 비율
@@ -394,6 +537,8 @@ private fun PortfolioFormDialog(
     var name by rememberSaveable { mutableStateOf(initial.name) }
     var groups by remember { mutableStateOf(initial.groups) }
     var showGroupForm by remember { mutableStateOf<Pair<Int, PortfolioGroup>?>(null) } // index(-1=신규), group
+    // 그룹을 길게 눌러 진입하는 재정렬 모드. 진입 시 각 그룹에 ▲▼ 이동 버튼이 표시된다.
+    var groupReorderMode by remember { mutableStateOf(false) }
 
     val ratioError = validatePortfolioGroups(groups)
     val isValid = name.isNotBlank() && ratioError == null
@@ -416,9 +561,13 @@ private fun PortfolioFormDialog(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text("그룹 목록", style = MaterialTheme.typography.titleSmall)
-                    TextButton(onClick = {
-                        showGroupForm = -1 to PortfolioGroup(name = "")
-                    }) { Text("+ 그룹 추가") }
+                    if (groupReorderMode) {
+                        TextButton(onClick = { groupReorderMode = false }) { Text("완료") }
+                    } else {
+                        TextButton(onClick = {
+                            showGroupForm = -1 to PortfolioGroup(name = "")
+                        }) { Text("+ 그룹 추가") }
+                    }
                 }
                 if (groups.isEmpty()) {
                     Text(
@@ -439,7 +588,13 @@ private fun PortfolioFormDialog(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Column(modifier = Modifier.weight(1f)) {
+                                // 이름 영역을 길게 누르면 재정렬 모드로 진입한다.
+                                Column(
+                                    modifier = Modifier.weight(1f).combinedClickable(
+                                        onClick = {},
+                                        onLongClick = { groupReorderMode = true },
+                                    ),
+                                ) {
                                     Text(group.name, style = MaterialTheme.typography.bodyMedium)
                                     Text(
                                         "목표 ${group.targetRatio}%",
@@ -447,14 +602,29 @@ private fun PortfolioFormDialog(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
-                                IconButton(onClick = { showGroupForm = idx to group }) {
-                                    Icon(Icons.Default.Edit, contentDescription = "그룹 수정")
-                                }
-                                IconButton(onClick = {
-                                    groups = groups.toMutableList().also { it.removeAt(idx) }
-                                }) {
-                                    Icon(Icons.Default.Delete, contentDescription = "그룹 삭제",
-                                        tint = MaterialTheme.colorScheme.error)
+                                if (groupReorderMode) {
+                                    IconButton(
+                                        onClick = { if (idx > 0) groups = groups.moved(idx, idx - 1) },
+                                        enabled = idx > 0,
+                                    ) {
+                                        Icon(Icons.Default.KeyboardArrowUp, contentDescription = "위로 이동")
+                                    }
+                                    IconButton(
+                                        onClick = { if (idx < groups.lastIndex) groups = groups.moved(idx, idx + 1) },
+                                        enabled = idx < groups.lastIndex,
+                                    ) {
+                                        Icon(Icons.Default.KeyboardArrowDown, contentDescription = "아래로 이동")
+                                    }
+                                } else {
+                                    IconButton(onClick = { showGroupForm = idx to group }) {
+                                        Icon(Icons.Default.Edit, contentDescription = "그룹 수정")
+                                    }
+                                    IconButton(onClick = {
+                                        groups = groups.toMutableList().also { it.removeAt(idx) }
+                                    }) {
+                                        Icon(Icons.Default.Delete, contentDescription = "그룹 삭제",
+                                            tint = MaterialTheme.colorScheme.error)
+                                    }
                                 }
                             }
                         }

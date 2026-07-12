@@ -79,6 +79,7 @@
 | `firestoreId` | `String?` | Firestore 문서 ID. 신규 생성 전에는 `null` |
 | `name` | `String` | 포트폴리오 이름 |
 | `groups` | `List<PortfolioGroup>` | 그룹 목록. 각 그룹은 조건+목표 비율을 정의 |
+| `order` | `Int?` | 표시 순서. 사용자가 직접 입력하지 않는다. 하위 호환을 위해 nullable이며 정렬은 nullsFirst(null이 앞). 재정렬 시에만 값이 부여된다 |
 
 ### PortfolioGroup
 
@@ -92,6 +93,7 @@
 | `categories` | `List<String>?` | 포함할 카테고리 목록. `null` 또는 빈 리스트이면 필터 없음 |
 | `stockNames` | `List<String>?` | 포함할 종목명(`investmentName`) 목록. `null` 또는 빈 리스트이면 필터 없음 |
 | `targetRatio` | `Int` | 목표 비율(%). 0 이상 100 이하 정수 |
+| `order` | `Int?` | 그룹 표시 순서. 사용자가 직접 입력하지 않는다. 하위 호환을 위해 nullable이며 정렬은 nullsFirst. 포트폴리오 저장 시 목록 위치(index)로 부여된다 |
 
 > 그룹 매칭 규칙:
 > - 축 내 OR: `owners`에 해당 명의가 하나라도 있으면 통과 (비어 있으면 전체 통과)
@@ -132,8 +134,9 @@
 
 | 메서드 | 시그니처 | 설명 |
 |--------|----------|------|
-| `getPortfolios` | `(): Flow<List<Portfolio>>` | 전체 포트폴리오 실시간 구독 |
+| `getPortfolios` | `(): Flow<List<Portfolio>>` | 전체 포트폴리오 실시간 구독. `order` nullsFirst로 정렬해 반환하며, 각 포트폴리오의 `groups`도 `order` nullsFirst로 정렬한다 |
 | `upsertPortfolio` | `(Portfolio): String` | 포트폴리오 생성 또는 전체 교체(`set`). 저장한 문서 ID 반환(신규는 자동 생성 ID) |
+| `updatePortfolioOrders` | `(orders: Map<String, Int>): Unit` | 여러 포트폴리오의 `order` 필드만 batch로 부분 업데이트(firestoreId → order). 재정렬 시 값이 실제로 바뀐 문서만 전달받는다 |
 | `deletePortfolio` | `(firestoreId: String): Unit` | 포트폴리오 삭제 |
 
 `InvestmentSheetRepository`가 노출하는 동작.
@@ -154,6 +157,7 @@
 | (문서 ID) | `firestoreId` | Firestore 자동 생성 |
 | `name` | `name` | 포트폴리오 이름 문자열 |
 | `groups` | `groups` | 맵 배열. 각 원소는 아래 그룹 필드 |
+| `order` | `order` | 정수(Long) 또는 없음. 없으면(구 데이터) `null`로 읽어 nullsFirst 정렬. `updatePortfolioOrders`가 이 필드만 부분 업데이트 |
 
 `groups` 배열의 각 원소(PortfolioGroup) 필드:
 
@@ -165,6 +169,7 @@
 | `categories` | `categories` | 문자열 배열. 없으면 `null`로 저장 |
 | `stockNames` | `stockNames` | 문자열 배열. 없으면 `null`로 저장 |
 | `targetRatio` | `targetRatio` | 정수(Long). `0` 이상 `100` 이하 |
+| `order` | `order` | 정수(Long) 또는 없음. 없으면(구 데이터) `null`로 읽어 nullsFirst 정렬. 포트폴리오 저장 시 목록 위치로 부여 |
 
 ## 타 도메인과의 연관성
 
