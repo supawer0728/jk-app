@@ -9,6 +9,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.jkapp.auth.AuthRepository
 import com.jkapp.auth.FirebaseAuthRepository
+import com.jkapp.common.todayDate
 import java.math.BigDecimal
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -25,7 +26,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 
-// 투자종목 등록/수정 폼과 명의 탭이 함께 참조하는 고정 명의 목록 (DailyAsset의 ASSET_OWNERS와 달리 "공동"은 없다).
+// 투자종목 등록/수정 폼에서 참조하는 고정 명의 목록 (DailyAsset의 ASSET_OWNERS와 달리 "공동"은 없다).
 internal val INVESTMENT_OWNERS = listOf("전지훈", "권유경")
 
 class DailyAssetInvestmentViewModel(
@@ -51,95 +52,91 @@ class DailyAssetInvestmentViewModel(
     private val _actionError = MutableStateFlow<String?>(null)
     val actionError: StateFlow<String?> = _actionError.asStateFlow()
 
-    private val _selectedOwner = MutableStateFlow(INVESTMENT_OWNERS.first())
-    val selectedOwner: StateFlow<String> = _selectedOwner.asStateFlow()
+    // 다중 선택 필터. 빈 Set은 "전체(제한 없음)".
+    private val _filter = MutableStateFlow(InvestmentFilter())
+    val filter: StateFlow<InvestmentFilter> = _filter.asStateFlow()
 
-    fun selectOwner(owner: String) {
-        _selectedOwner.value = owner
+    fun applyFilter(filter: InvestmentFilter) {
+        _filter.value = filter
     }
 
-    private val _selectedDate = MutableStateFlow<String?>(null)
-    val selectedDate: StateFlow<String?> = _selectedDate.asStateFlow()
-
-    fun selectDate(date: String) {
-        _selectedDate.value = date
+    fun clearFilter() {
+        _filter.value = InvestmentFilter()
     }
 
-    // 문서가 {date}_{owner} 단위로 분리되어 있으므로, 명의별로 데이터가 존재하는 날짜가 다를 수 있다.
-    // 선택된 명의를 기준으로 필터링해, 날짜 네비게이터가 그 명의의 날짜만 보여주도록 한다.
-    val availableDates: StateFlow<List<String>> = combine(uiState, selectedOwner) { state, owner ->
-        (state as? DailyAssetInvestmentUiState.Success)?.investments
-            ?.filter { it.owner == owner }
-            ?.map { it.date }
-            ?.sortedDescending()
-            ?: emptyList()
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    // 오늘 이하 전체 명의 데이터 중 가장 최신 날짜 1개. 날짜 네비게이터·명의 탭을 대체한다.
+    val latestDate: StateFlow<String?> = uiState
+        .map { state ->
+            if (state !is DailyAssetInvestmentUiState.Success) return@map null
+            val today = todayDate()
+            state.investments.filter { it.date <= today }.mapNotNull { it.date.takeIf { d -> d.isNotBlank() } }.maxOrNull()
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
-    // selectedDate가 null이거나(초기 상태) 명의 전환으로 더 이상 유효하지 않게 되면(이슈 #37과 동일한
-    // 패턴) 해당 명의의 가장 최신 날짜로 보정한다. 아직 데이터가 없는 새 날짜를 고른 경우는 그대로 둔다.
-    val currentInvestment: StateFlow<DailyAssetInvestment?> = combine(
-        uiState, selectedDate, selectedOwner,
-    ) { state, date, owner ->
-        if (state !is DailyAssetInvestmentUiState.Success) return@combine null
-        val resolvedDate = date ?: state.investments.filter { it.owner == owner }.map { it.date }.maxOrNull()
-        resolvedDate?.let { d -> state.investments.find { it.date == d && it.owner == owner } }
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
-
-    // 계좌(assetName)/카테고리 필터. 앱을 재시작하면 잊어도 되는 휘발성 필터라 SavedStateHandle 없는
-    // 평범한 MutableStateFlow로 두며(DailyAssetViewModel의 _selectedOwners와 동일한 패턴), selectbox
-    // 동작이라 각각 하나만 고를 수 있고 null은 "필터 없음(전체 표시)"을 의미한다.
-    private val _selectedAssetNameFilter = MutableStateFlow<String?>(null)
-    val selectedAssetNameFilter: StateFlow<String?> = _selectedAssetNameFilter.asStateFlow()
-
-    fun selectAssetNameFilter(assetName: String?) {
-        _selectedAssetNameFilter.value = assetName
-    }
-
-    private val _selectedCategoryFilter = MutableStateFlow<String?>(null)
-    val selectedCategoryFilter: StateFlow<String?> = _selectedCategoryFilter.asStateFlow()
-
-    fun selectCategoryFilter(category: String?) {
-        _selectedCategoryFilter.value = category
-    }
-
-    // 필터 selectbox에 노출할 선택지는 필터링 전 currentInvestment 기준이라, 필터를 고른 뒤에도
-    // 다른 선택지가 계속 보인다(선택지 목록 자체가 필터링되어 줄어들지 않음).
-    val assetNameFilterOptions: StateFlow<List<String>> = currentInvestment
-        .map { it?.investments.orEmpty().map { item -> item.assetName }.distinct().sorted() }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
-
-    val categoryFilterOptions: StateFlow<List<String>> = currentInvestment
-        .map { it?.investments.orEmpty().map { item -> item.category }.distinct().sorted() }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
-
-    // 종목별 수익금(평가금액 - 매수금액)은 데이터가 실제로 바뀔 때만 계산되어 캐시된다. 컴포저블의
-    // remember에 두면 탭을 오갈 때마다 컴포지션이 새로 생성되면서 매번 재계산되므로(이슈 #37과 동일한
-    // 문제), 벤치마크 탭(rowMetrics)과 같은 방식으로 뷰모델 StateFlow로 옮긴다.
-    val investmentRowMetrics: StateFlow<List<InvestmentItemMetrics>> = combine(
-        currentInvestment, _selectedAssetNameFilter, _selectedCategoryFilter,
-    ) { investment, assetName, category ->
-        investment?.investments.orEmpty()
-            .filter { (assetName == null || it.assetName == assetName) && (category == null || it.category == category) }
-            .withProfitMetrics()
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
-
-    // 종목이 많아지면 계좌(assetName) 단위로 묶어 봐야 해서, 화면에서 매번 다시 묶지 않도록
-    // 여기서 한 번만 그룹화해 캐시한다(rowMetrics와 같은 이유). 헤더 순서가 매번 들쭉날쭉하지
-    // 않도록 계좌 이름 기준으로 정렬한다.
-    val groupedInvestmentRowMetrics: StateFlow<Map<String, List<InvestmentItemMetrics>>> = investmentRowMetrics
-        .map { metrics -> metrics.groupBy { it.item.assetName }.toSortedMap() }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
-
-    // 명의와 상관없이 같은 날짜의 모든 투자 종목 평가금액 합계. Benchmark.currentAmount는 명의
-    // 구분 없는 전체 포트폴리오 금액이라, 명의별로 필터링된 currentInvestment 대신 여기서 다시 계산한다.
-    val selectedDateTotalValuationAmount: StateFlow<BigDecimal?> = combine(
-        uiState, selectedDate,
+    // latestDate 기준 전체 명의 (owner, InvestmentItem) 쌍 목록. 필터 선택지 원본.
+    val latestOwnerItemPairs: StateFlow<List<Pair<String, InvestmentItem>>> = combine(
+        uiState, latestDate,
     ) { state, date ->
-        if (state !is DailyAssetInvestmentUiState.Success || date == null) return@combine null
-        state.investments.filter { it.date == date }
-            .flatMap { it.investments }
-            .sumOf { it.valuationAmount }
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+        if (state !is DailyAssetInvestmentUiState.Success || date == null) return@combine emptyList()
+        state.investments
+            .filter { it.date == date }
+            .flatMap { doc -> doc.investments.map { item -> doc.owner to item } }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    // 필터 모달 선택지 — 필터링 전 latestDate 전체 데이터 기준(선택지 자체가 필터로 줄어들지 않음).
+    val ownerFilterOptions: StateFlow<List<String>> = latestOwnerItemPairs
+        .map { pairs -> pairs.map { it.first }.distinct().sorted() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val accountFilterOptions: StateFlow<List<String>> = latestOwnerItemPairs
+        .map { pairs -> pairs.map { it.second.assetName }.distinct().sorted() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val categoryFilterOptions: StateFlow<List<String>> = latestOwnerItemPairs
+        .map { pairs -> pairs.map { it.second.category }.distinct().sorted() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val stockNameFilterOptions: StateFlow<List<String>> = latestOwnerItemPairs
+        .map { pairs -> pairs.map { it.second.investmentName }.distinct().sorted() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    // 필터 적용 후 표시할 (owner, InvestmentItem) 쌍 목록.
+    private val filteredOwnerItemPairs: StateFlow<List<Pair<String, InvestmentItem>>> = combine(
+        latestOwnerItemPairs, _filter,
+    ) { pairs, filter ->
+        if (filter.isEmpty) pairs
+        else pairs.filter { (owner, item) -> filter.matches(owner, item) }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    // 종목별 수익금(평가금액 - 매수금액)은 데이터가 실제로 바뀔 때만 계산되어 캐시된다.
+    val investmentRowMetrics: StateFlow<List<InvestmentItemMetrics>> = filteredOwnerItemPairs
+        .map { pairs -> pairs.map { it.second }.withProfitMetrics() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    // 계좌(assetName) 단위로 묶어 화면에서 매번 다시 묶지 않도록 여기서 한 번만 그룹화해 캐시한다.
+    // 명의 탭을 제거하고 전체 명의를 통합 표시하므로, 화면에서 수정·삭제 시 owner를 알 수 있도록
+    // (owner, InvestmentItemMetrics) 쌍으로 그룹화한다.
+    val groupedInvestmentRowMetrics: StateFlow<Map<String, List<Pair<String, InvestmentItemMetrics>>>> =
+        filteredOwnerItemPairs
+            .map { pairs ->
+                pairs.map { (owner, item) ->
+                    owner to InvestmentItemMetrics(item = item, profit = item.valuationAmount - item.purchaseAmount.amount)
+                }.groupBy { it.second.item.assetName }.toSortedMap()
+            }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
+    // 필터 적용 후 표시 중인 전체 (owner, InvestmentItem) 쌍. "전체 삭제"가 현재 화면의 종목들을
+    // owner별로 삭제하는 데 쓴다.
+    val filteredOwnerItemsForDelete: StateFlow<List<Pair<String, InvestmentItem>>> = filteredOwnerItemPairs
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    // latestDate 기준 모든 명의 종목 평가금액 합계. 벤치마크(전체 포트폴리오 금액) 비교용.
+    val latestDateTotalValuationAmount: StateFlow<BigDecimal?> = latestOwnerItemPairs
+        .map { pairs ->
+            if (pairs.isEmpty()) null
+            else pairs.sumOf { it.second.valuationAmount }
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     private var dataJob: Job? = null
     private var sheetImportJob: Job? = null
@@ -163,16 +160,6 @@ class DailyAssetInvestmentViewModel(
                 email?.let { sheetRepository.setAccount(it) }
             }
         }
-        // 사용자가 고른 날짜가 현재 명의의 목록에 없어졌으면(명의 전환, 데이터 삭제 등) 가장 최신
-        // 날짜로 대체한다. availableDates가 바뀔 때만 반응해야, 아직 데이터가 없는 새 날짜를 고르는
-        // 동작이 곧바로 최신 날짜로 되돌려지지 않는다.
-        viewModelScope.launch {
-            availableDates.collect { dates ->
-                if (_selectedDate.value == null || _selectedDate.value !in dates) {
-                    _selectedDate.value = dates.firstOrNull()
-                }
-            }
-        }
     }
 
     override fun onCleared() {
@@ -190,7 +177,6 @@ class DailyAssetInvestmentViewModel(
             check(items.none { it.isSameInvestmentKey(item) }) { "이미 같은 계좌·카테고리·투자종목 조합이 존재합니다" }
             items + item
         }
-        selectDate(date)
     }
 
     // target과 완전히 일치하는 항목을 찾아 교체한다(리스트 index 대신 항목 내용으로 식별).
@@ -229,7 +215,6 @@ class DailyAssetInvestmentViewModel(
         sheetImportJob = viewModelScope.launch {
             _sheetImport.value = InvestmentSheetImportState.Loading
             // 응답이 지나치게 늦으면(네트워크/토큰 지연) 로딩에 갇히지 않도록 타임아웃을 둔다.
-            // withTimeoutOrNull은 초과 시 예외 대신 null을 돌려주므로 취소(CancellationException)와 구분된다.
             runCatching { withTimeoutOrNull(SHEET_IMPORT_TIMEOUT_MS) { sheetRepository.readInvestmentBlocks() } }
                 .onSuccess { blocks ->
                     if (blocks == null) {
@@ -247,7 +232,6 @@ class DailyAssetInvestmentViewModel(
                     _sheetImport.value = InvestmentSheetImportState.Preview(importBlocks)
                 }
                 .onFailure { e ->
-                    // 사용자가 로딩을 취소하면 조용히 종료한다(상태는 dismissSheetImport가 이미 정리).
                     if (e is CancellationException) return@onFailure
                     _sheetImport.value = InvestmentSheetImportState.Idle
                     when (e) {
@@ -269,18 +253,11 @@ class DailyAssetInvestmentViewModel(
     }
 
     // 미리보기에서 확인한 명의별 종목을 실행 시점 날짜(date)로 저장하고 미리보기를 닫는다.
-    // 명의별 문서가 분리되어 있으므로 블록마다 importInvestments를 호출한다(각각 upsert/merge).
     fun confirmSheetImport(date: String) {
         val preview = _sheetImport.value as? InvestmentSheetImportState.Preview ?: return
-        // importInvestments는 저장 후 해당 명의/날짜로 화면을 전환하지만, 두 명의를 함께 저장하는
-        // 여기서는 마지막 블록 명의로 탭이 튀는 게 자연스럽지 않다(빈 블록이 섞이면 비결정적이기도 하다).
-        // 사용자가 보고 있던 명의를 유지한 채 오늘 날짜만 보여주도록, 저장 후 선택 상태를 명시적으로 되돌린다.
-        val targetOwner = _selectedOwner.value
         preview.blocks.forEach { block ->
             importInvestments(date, block.owner, block.rows.mapNotNull { it.item })
         }
-        selectOwner(targetOwner)
-        selectDate(date)
         _sheetImport.value = InvestmentSheetImportState.Idle
     }
 
@@ -313,9 +290,6 @@ class DailyAssetInvestmentViewModel(
             }
             merged
         }
-        // 붙여넣기 다이얼로그에서 고른 날짜/명의로 화면을 전환해, 저장한 내용이 바로 보이게 한다.
-        selectOwner(owner)
-        selectDate(date)
     }
 
     fun consumeActionError() {

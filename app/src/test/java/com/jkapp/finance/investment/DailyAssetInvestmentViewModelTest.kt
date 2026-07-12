@@ -74,7 +74,7 @@ class DailyAssetInvestmentViewModelTest {
     }
 
     @Test
-    fun `selectedOwner 기본값은 전지훈이고 availableDates는 해당 명의의 날짜만 반환한다`() = runTest {
+    fun `latestDate는 오늘 이하 전체 명의 통틀어 가장 최신 날짜를 반환한다`() = runTest {
         fakeRepository.setDailyAssetInvestments(
             listOf(
                 DailyAssetInvestment(date = "2026-07-01", owner = "전지훈", investments = listOf(makeItem())),
@@ -83,39 +83,45 @@ class DailyAssetInvestmentViewModelTest {
         )
         advanceUntilIdle()
 
-        assertEquals("전지훈", viewModel.selectedOwner.value)
-        assertEquals(listOf("2026-07-01"), viewModel.availableDates.value)
-        assertEquals("2026-07-01", viewModel.selectedDate.value)
+        // 명의 구분 없이 전체 통틀어 가장 최신 날짜(2026-07-02).
+        assertEquals("2026-07-02", viewModel.latestDate.value)
     }
 
     @Test
-    fun `selectOwner로 명의를 전환하면 availableDates와 selectedDate가 해당 명의 기준으로 갱신된다`() = runTest {
+    fun `latestDate는 오늘보다 미래인 날짜는 제외한다`() = runTest {
+        // 오늘은 2026-07-12 (테스트 환경 currentDate). 2026-08-01은 미래라 제외되어야 한다.
         fakeRepository.setDailyAssetInvestments(
             listOf(
-                DailyAssetInvestment(date = "2026-07-01", owner = "전지훈", investments = listOf(makeItem())),
-                DailyAssetInvestment(date = "2026-07-02", owner = "권유경", investments = listOf(makeItem())),
+                DailyAssetInvestment(date = "2026-07-05", owner = "전지훈", investments = listOf(makeItem())),
+                DailyAssetInvestment(date = "2099-08-01", owner = "권유경", investments = listOf(makeItem())),
             )
         )
         advanceUntilIdle()
 
-        viewModel.selectOwner("권유경")
-        advanceUntilIdle()
-
-        assertEquals(listOf("2026-07-02"), viewModel.availableDates.value)
-        assertEquals("2026-07-02", viewModel.selectedDate.value)
+        assertEquals("2026-07-05", viewModel.latestDate.value)
     }
 
     @Test
-    fun `currentInvestment는 선택된 날짜와 명의에 해당하는 문서를 반환한다`() = runTest {
-        val target = DailyAssetInvestment(date = "2026-07-01", owner = "전지훈", investments = listOf(makeItem()))
-        fakeRepository.setDailyAssetInvestments(listOf(target))
+    fun `latestOwnerItemPairs는 최신 날짜의 전체 명의 종목을 owner와 함께 병합한다`() = runTest {
+        fakeRepository.setDailyAssetInvestments(
+            listOf(
+                DailyAssetInvestment(date = "2026-07-02", owner = "전지훈", investments = listOf(makeItem(investmentName = "삼성전자"))),
+                DailyAssetInvestment(date = "2026-07-02", owner = "권유경", investments = listOf(makeItem(investmentName = "네이버"))),
+                // 최신 날짜(2026-07-02)가 아닌 문서는 제외된다.
+                DailyAssetInvestment(date = "2026-07-01", owner = "전지훈", investments = listOf(makeItem(investmentName = "카카오"))),
+            )
+        )
         advanceUntilIdle()
 
-        assertEquals(target, viewModel.currentInvestment.value)
+        val pairs = viewModel.latestOwnerItemPairs.value
+        assertEquals(
+            setOf("전지훈" to "삼성전자", "권유경" to "네이버"),
+            pairs.map { it.first to it.second.investmentName }.toSet(),
+        )
     }
 
     @Test
-    fun `investmentRowMetrics는 currentInvestment의 종목별 수익금을 계산한다`() = runTest {
+    fun `investmentRowMetrics는 최신 날짜 전체 명의 종목의 수익금을 계산한다`() = runTest {
         fakeRepository.setDailyAssetInvestments(
             listOf(
                 DailyAssetInvestment(
@@ -131,6 +137,61 @@ class DailyAssetInvestmentViewModelTest {
     }
 
     @Test
+    fun `applyFilter는 축 간 AND, 축 내 OR로 표시 종목을 거른다`() = runTest {
+        fakeRepository.setDailyAssetInvestments(
+            listOf(
+                DailyAssetInvestment(
+                    date = "2026-07-02", owner = "전지훈",
+                    investments = listOf(
+                        makeItem(investmentName = "삼성전자"),
+                        makeItem(investmentName = "네이버"),
+                    ),
+                ),
+                DailyAssetInvestment(
+                    date = "2026-07-02", owner = "권유경",
+                    investments = listOf(makeItem(investmentName = "카카오")),
+                ),
+            )
+        )
+        advanceUntilIdle()
+
+        // 소유주=전지훈 AND 종목명∈{삼성전자} → 삼성전자만 남는다.
+        viewModel.applyFilter(
+            InvestmentFilter(owners = setOf("전지훈"), stockNames = setOf("삼성전자"))
+        )
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf("삼성전자"),
+            viewModel.investmentRowMetrics.value.map { it.item.investmentName },
+        )
+    }
+
+    @Test
+    fun `필터 선택지는 필터 적용 여부와 무관하게 최신 날짜 전체 데이터 기준이다`() = runTest {
+        fakeRepository.setDailyAssetInvestments(
+            listOf(
+                DailyAssetInvestment(
+                    date = "2026-07-02", owner = "전지훈",
+                    investments = listOf(makeItem(investmentName = "삼성전자")),
+                ),
+                DailyAssetInvestment(
+                    date = "2026-07-02", owner = "권유경",
+                    investments = listOf(makeItem(investmentName = "네이버")),
+                ),
+            )
+        )
+        advanceUntilIdle()
+
+        viewModel.applyFilter(InvestmentFilter(owners = setOf("전지훈")))
+        advanceUntilIdle()
+
+        // 필터를 걸어도 선택지 목록은 줄어들지 않는다(전체 명의 기준).
+        assertEquals(listOf("권유경", "전지훈"), viewModel.ownerFilterOptions.value)
+        assertEquals(listOf("네이버", "삼성전자"), viewModel.stockNameFilterOptions.value)
+    }
+
+    @Test
     fun `addInvestment는 새 날짜+명의에 대해 문서를 새로 생성한다`() = runTest {
         advanceUntilIdle()
 
@@ -143,17 +204,17 @@ class DailyAssetInvestmentViewModelTest {
     }
 
     @Test
-    fun `addInvestment는 저장 후 방금 고른 날짜로 화면을 전환한다`() = runTest {
+    fun `addInvestment로 더 최신 날짜에 저장하면 latestDate가 그 날짜로 갱신된다`() = runTest {
         fakeRepository.setDailyAssetInvestments(
             listOf(DailyAssetInvestment(date = "2026-07-01", owner = "전지훈", investments = listOf(makeItem())))
         )
         advanceUntilIdle()
-        assertEquals("2026-07-01", viewModel.selectedDate.value)
+        assertEquals("2026-07-01", viewModel.latestDate.value)
 
         viewModel.addInvestment("2026-07-10", "전지훈", makeItem(investmentName = "카카오"))
         advanceUntilIdle()
 
-        assertEquals("2026-07-10", viewModel.selectedDate.value)
+        assertEquals("2026-07-10", viewModel.latestDate.value)
     }
 
     @Test
@@ -233,31 +294,11 @@ class DailyAssetInvestmentViewModelTest {
     }
 
     @Test
-    fun `데이터가 없는 명의로 전환하면 selectedDate는 null이 된다`() = runTest {
-        fakeRepository.setDailyAssetInvestments(
-            listOf(DailyAssetInvestment(date = "2026-07-01", owner = "전지훈", investments = listOf(makeItem())))
-        )
+    fun `데이터가 없으면 latestDate는 null이다`() = runTest {
+        fakeRepository.setDailyAssetInvestments(emptyList())
         advanceUntilIdle()
 
-        viewModel.selectOwner("권유경")
-        advanceUntilIdle()
-
-        assertEquals(emptyList<String>(), viewModel.availableDates.value)
-        assertNull(viewModel.selectedDate.value)
-    }
-
-    @Test
-    fun `아직 데이터가 없는 새 날짜를 선택하면 최신 날짜로 되돌려지지 않는다`() = runTest {
-        fakeRepository.setDailyAssetInvestments(
-            listOf(DailyAssetInvestment(date = "2026-07-01", owner = "전지훈", investments = listOf(makeItem())))
-        )
-        advanceUntilIdle()
-
-        viewModel.selectDate("2026-07-10")
-        advanceUntilIdle()
-
-        assertEquals("2026-07-10", viewModel.selectedDate.value)
-        assertNull(viewModel.currentInvestment.value)
+        assertNull(viewModel.latestDate.value)
     }
 
     @Test
@@ -335,7 +376,7 @@ class DailyAssetInvestmentViewModelTest {
     }
 
     @Test
-    fun `importInvestments는 새 문서에 여러 종목을 한 번에 추가하고 선택된 명의를 붙여넣은 명의로 전환한다`() = runTest {
+    fun `importInvestments는 새 문서에 여러 종목을 한 번에 추가한다`() = runTest {
         advanceUntilIdle()
 
         viewModel.importInvestments("2026-07-04", "권유경", listOf(makeItem(investmentName = "카카오"), makeItem(investmentName = "삼성전자")))
@@ -344,8 +385,6 @@ class DailyAssetInvestmentViewModelTest {
         val state = viewModel.uiState.value as DailyAssetInvestmentUiState.Success
         val doc = state.investments.find { it.date == "2026-07-04" && it.owner == "권유경" }
         assertEquals(setOf("카카오", "삼성전자"), doc?.investments?.map { it.investmentName }?.toSet())
-        assertEquals("권유경", viewModel.selectedOwner.value)
-        assertEquals("2026-07-04", viewModel.selectedDate.value)
     }
 
     @Test
@@ -568,10 +607,9 @@ class DailyAssetInvestmentViewModelTest {
     }
 
     @Test
-    fun `confirmSheetImport는 보고 있던 명의 탭을 유지하고 날짜를 오늘로 맞춘다`() = runTest {
+    fun `confirmSheetImport는 두 명의 블록을 모두 오늘 날짜 문서로 저장한다`() = runTest {
         advanceUntilIdle()
         val today = todayDate()
-        viewModel.selectOwner("권유경")
         fakeSheetRepository.blocks = listOf(
             sheetBlock("전지훈", "삼성전자"),
             sheetBlock("권유경", "네이버"),
@@ -582,9 +620,17 @@ class DailyAssetInvestmentViewModelTest {
         viewModel.confirmSheetImport(today)
         advanceUntilIdle()
 
-        // 마지막 블록(권유경)으로 튀지 않고 사용자가 보고 있던 명의를 그대로 유지한다.
-        assertEquals("권유경", viewModel.selectedOwner.value)
-        assertEquals(today, viewModel.selectedDate.value)
+        val state = viewModel.uiState.value as DailyAssetInvestmentUiState.Success
+        assertEquals(
+            listOf("삼성전자"),
+            state.investments.single { it.date == today && it.owner == "전지훈" }.investments.map { it.investmentName },
+        )
+        assertEquals(
+            listOf("네이버"),
+            state.investments.single { it.date == today && it.owner == "권유경" }.investments.map { it.investmentName },
+        )
+        // 명의 탭이 제거되어 latestDate는 오늘 날짜가 된다.
+        assertEquals(today, viewModel.latestDate.value)
     }
 
     @Test

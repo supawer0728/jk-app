@@ -96,6 +96,7 @@ import com.jkapp.finance.investment.CurrencyAmount
 import com.jkapp.finance.investment.DailyAssetInvestmentUiState
 import com.jkapp.finance.investment.DailyAssetInvestmentViewModel
 import com.jkapp.finance.investment.INVESTMENT_OWNERS
+import com.jkapp.finance.investment.InvestmentFilterModal
 import com.jkapp.finance.investment.InvestmentItem
 import com.jkapp.finance.investment.InvestmentItemMetrics
 import com.jkapp.finance.investment.InvestmentSheetImportBlock
@@ -117,6 +118,7 @@ fun FinanceScreen(
     viewModel: DailyAssetViewModel,
     investmentViewModel: DailyAssetInvestmentViewModel,
     benchmarkViewModel: BenchmarkViewModel,
+    onNavigateToPortfolio: () -> Unit = {},
 ) {
     var selectedTab by rememberSaveable { mutableStateOf(AssetTab.DAILY_ASSET) }
 
@@ -133,7 +135,11 @@ fun FinanceScreen(
         Box(modifier = Modifier.fillMaxSize()) {
             when (selectedTab) {
                 AssetTab.DAILY_ASSET -> DailyAssetTab(viewModel = viewModel)
-                AssetTab.INVESTMENT -> InvestmentTab(viewModel = investmentViewModel, benchmarkViewModel = benchmarkViewModel)
+                AssetTab.INVESTMENT -> InvestmentTab(
+                    viewModel = investmentViewModel,
+                    benchmarkViewModel = benchmarkViewModel,
+                    onNavigateToPortfolio = onNavigateToPortfolio,
+                )
                 AssetTab.BENCHMARK -> BenchmarkTab(viewModel = benchmarkViewModel)
             }
         }
@@ -444,42 +450,6 @@ private fun OwnerFilterRow(
                 contentDescription = stringResource(R.string.asset_toggle_show_hidden),
                 tint = if (showHidden) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
             )
-        }
-    }
-}
-
-// 계좌(assetName)/카테고리를 각각 하나만 고를 수 있는 selectbox 버튼. FAB들과 같은 줄에 두려고
-// 세로 공간을 차지하지 않는 버튼+드롭다운 형태로 두며, 화면 하단에 있어 공간이 부족하면
-// DropdownMenu가 자동으로 버튼 위쪽으로 펼쳐진다.
-@Composable
-private fun InvestmentFilterSelectButton(
-    label: String,
-    allLabel: String,
-    options: List<String>,
-    onSelect: (String?) -> Unit,
-) {
-    var expanded by remember { mutableStateOf(false) }
-    Box {
-        FilledTonalButton(onClick = { expanded = true }) {
-            Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            DropdownMenuItem(
-                text = { Text(allLabel) },
-                onClick = {
-                    onSelect(null)
-                    expanded = false
-                },
-            )
-            options.forEach { option ->
-                DropdownMenuItem(
-                    text = { Text(option) },
-                    onClick = {
-                        onSelect(option)
-                        expanded = false
-                    },
-                )
-            }
         }
     }
 }
@@ -845,39 +815,47 @@ private data class InvestmentPendingDelete(val date: String, val owner: String, 
 
 private sealed interface InvestmentFormTarget {
     data object New : InvestmentFormTarget
-    data class Edit(val target: InvestmentItem) : InvestmentFormTarget
+    // owner는 편집 대상 종목이 실제로 속한 명의다. 행이 이미 가진 owner를 그대로 스레딩해,
+    // 동일 값 종목이 여러 명의에 걸쳐 있어도 잘못된 명의 문서를 대상으로 삼지 않게 한다.
+    data class Edit(val owner: String, val target: InvestmentItem) : InvestmentFormTarget
 }
 
 private val INVESTMENT_CURRENCIES = listOf("KRW", "USD")
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun InvestmentTab(viewModel: DailyAssetInvestmentViewModel, benchmarkViewModel: BenchmarkViewModel) {
+private fun InvestmentTab(
+    viewModel: DailyAssetInvestmentViewModel,
+    benchmarkViewModel: BenchmarkViewModel,
+    onNavigateToPortfolio: () -> Unit,
+) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val actionError by viewModel.actionError.collectAsStateWithLifecycle()
     // 아래 파생 State들은 DailyAssetInvestmentViewModel에서 데이터가 실제로 바뀔 때만 계산되어
     // 캐시된다. 여기서 remember로 다시 계산하면 탭을 오갈 때마다 컴포지션이 새로 생성되면서 매번
     // 재계산되므로(이슈 #37), 뷰모델의 StateFlow를 그대로 구독한다.
-    val availableDates by viewModel.availableDates.collectAsStateWithLifecycle()
-    val selectedDate by viewModel.selectedDate.collectAsStateWithLifecycle()
-    val selectedOwner by viewModel.selectedOwner.collectAsStateWithLifecycle()
+    val latestDate by viewModel.latestDate.collectAsStateWithLifecycle()
     val rowMetrics by viewModel.investmentRowMetrics.collectAsStateWithLifecycle()
     val groupedRowMetrics by viewModel.groupedInvestmentRowMetrics.collectAsStateWithLifecycle()
-    val currentInvestment by viewModel.currentInvestment.collectAsStateWithLifecycle()
-    val selectedAssetNameFilter by viewModel.selectedAssetNameFilter.collectAsStateWithLifecycle()
-    val selectedCategoryFilter by viewModel.selectedCategoryFilter.collectAsStateWithLifecycle()
-    val assetNameFilterOptions by viewModel.assetNameFilterOptions.collectAsStateWithLifecycle()
+    val latestOwnerItemPairs by viewModel.latestOwnerItemPairs.collectAsStateWithLifecycle()
+    val filteredOwnerItemsForDelete by viewModel.filteredOwnerItemsForDelete.collectAsStateWithLifecycle()
+    val filter by viewModel.filter.collectAsStateWithLifecycle()
+    val ownerFilterOptions by viewModel.ownerFilterOptions.collectAsStateWithLifecycle()
+    val accountFilterOptions by viewModel.accountFilterOptions.collectAsStateWithLifecycle()
     val categoryFilterOptions by viewModel.categoryFilterOptions.collectAsStateWithLifecycle()
-    val selectedDateTotalValuationAmount by viewModel.selectedDateTotalValuationAmount.collectAsStateWithLifecycle()
+    val stockNameFilterOptions by viewModel.stockNameFilterOptions.collectAsStateWithLifecycle()
+    val latestDateTotalValuationAmount by viewModel.latestDateTotalValuationAmount.collectAsStateWithLifecycle()
     val benchmarkUiState by benchmarkViewModel.uiState.collectAsStateWithLifecycle()
 
-    var showDatePicker by rememberSaveable { mutableStateOf(false) }
     // InvestmentItem은 Parcelable/Serializable이 아니므로 rememberSaveable로 저장할 수 없다(회전 시 초기화됨).
     var formTarget by remember { mutableStateOf<InvestmentFormTarget?>(null) }
     var pendingDelete by remember { mutableStateOf<InvestmentPendingDelete?>(null) }
     var showFabMenu by remember { mutableStateOf(false) }
+    var showFilterModal by remember { mutableStateOf(false) }
     val sheetImport by viewModel.sheetImport.collectAsStateWithLifecycle()
     var isSelectionMode by rememberSaveable { mutableStateOf(false) }
-    var selectedItems by remember { mutableStateOf<Set<InvestmentItem>>(emptySet()) }
+    // 선택 항목은 (owner, item) 쌍으로 관리한다(같은 종목명이라도 명의별로 다른 문서라 owner가 필요).
+    var selectedItems by remember { mutableStateOf<Set<Pair<String, InvestmentItem>>>(emptySet()) }
     var showDeleteAllConfirm by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
 
@@ -908,9 +886,9 @@ private fun InvestmentTab(viewModel: DailyAssetInvestmentViewModel, benchmarkVie
         selectedItems = emptySet()
     }
 
-    // 명의나 날짜를 바꾸면 화면에 보이는 목록 자체가 바뀌므로, 선택 모드에서 체크해 둔 항목이
+    // 필터나 날짜를 바꾸면 화면에 보이는 목록 자체가 바뀌므로, 선택 모드에서 체크해 둔 항목이
     // 더 이상 보이는 목록과 무관해진다(엉뚱한 항목 삭제 방지). 전환 시 선택 모드를 초기화한다.
-    LaunchedEffect(selectedOwner, selectedDate) {
+    LaunchedEffect(filter, latestDate) {
         exitSelectionMode()
     }
 
@@ -919,10 +897,10 @@ private fun InvestmentTab(viewModel: DailyAssetInvestmentViewModel, benchmarkVie
 
     // 탭 진입 시 1회만 비교하면 되므로, 투자 종목/벤치마크 데이터가 모두 준비된 최초 시점에만
     // 검사하고 이후 데이터가 갱신되어도 다시 검사하지 않는다(hasCheckedValuationMismatch로 1회성 보장).
-    LaunchedEffect(selectedDate, selectedDateTotalValuationAmount, benchmarkUiState) {
+    LaunchedEffect(latestDate, latestDateTotalValuationAmount, benchmarkUiState) {
         if (hasCheckedValuationMismatch) return@LaunchedEffect
-        val date = selectedDate ?: return@LaunchedEffect
-        val total = selectedDateTotalValuationAmount ?: return@LaunchedEffect
+        val date = latestDate ?: return@LaunchedEffect
+        val total = latestDateTotalValuationAmount ?: return@LaunchedEffect
         val benchmarkState = benchmarkUiState as? BenchmarkUiState.Success ?: return@LaunchedEffect
         hasCheckedValuationMismatch = true
         val benchmark = benchmarkState.benchmarks.find { it.date == date } ?: return@LaunchedEffect
@@ -955,22 +933,25 @@ private fun InvestmentTab(viewModel: DailyAssetInvestmentViewModel, benchmarkVie
             }
             is DailyAssetInvestmentUiState.Success -> {
                 Column(modifier = Modifier.fillMaxSize()) {
-                    DateNavigatorBar(
-                        selectedDate = selectedDate,
-                        availableDates = availableDates,
-                        onSelectDate = viewModel::selectDate,
-                        onPickNewDate = { showDatePicker = true },
-                    )
-                    InvestmentOwnerTabRow(
-                        owners = INVESTMENT_OWNERS,
-                        selectedOwner = selectedOwner,
-                        onSelect = viewModel::selectOwner,
-                    )
+                    // 날짜 네비게이터·명의 탭은 제거하고, 자동 결정된 최신 날짜를 라벨로만 보여준다.
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = latestDate ?: stringResource(R.string.asset_no_date),
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                        Text(
+                            text = "전체 명의",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     if (rowMetrics.isEmpty()) {
-                        // 필터 때문에 결과가 비었는지, 애초에 해당 명의·날짜에 데이터가 없는지 구분해 안내한다
-                        // (DailyAssetTab의 emptyByFilter와 동일한 패턴).
-                        val emptyByFilter = (selectedAssetNameFilter != null || selectedCategoryFilter != null) &&
-                            !currentInvestment?.investments.isNullOrEmpty()
+                        // 필터 때문에 결과가 비었는지, 애초에 해당 날짜에 데이터가 없는지 구분해 안내한다.
+                        val emptyByFilter = !filter.isEmpty && latestOwnerItemPairs.isNotEmpty()
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Text(
                                 text = stringResource(if (emptyByFilter) R.string.investment_empty_filtered else R.string.investment_empty),
@@ -986,31 +967,33 @@ private fun InvestmentTab(viewModel: DailyAssetInvestmentViewModel, benchmarkVie
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             // 종목이 많아지면 한눈에 보기 어려우므로 계좌(assetName) 단위로 묶어서 보여준다.
-                            groupedRowMetrics.forEach { (assetName, metrics) ->
+                            groupedRowMetrics.forEach { (assetName, ownerMetrics) ->
                                 item(key = "header-$assetName") {
                                     Text(assetName, style = MaterialTheme.typography.titleSmall)
                                 }
-                                // LazyColumn의 key는 Bundle에 저장 가능한 타입만 허용되는데(String/Int/Long/
-                                // Parcelable 등), InvestmentItem은 일반 data class라 그대로 key로 쓰면 크래시가
-                                // 난다(SaveableStateHolder). importInvestments의 uniq 키와 동일한 필드 조합으로
-                                // 안정적인 String 키를 만든다.
-                                items(metrics, key = { "${it.item.assetName}|${it.item.category}|${it.item.investmentName}" }) { entry ->
+                                // LazyColumn key는 Bundle 저장 가능 타입만 허용된다. owner+종목 키 조합으로
+                                // 안정적인 String 키를 만든다(명의 통합 표시라 owner를 키에 포함).
+                                items(
+                                    ownerMetrics,
+                                    key = { (owner, m) -> "$owner|${m.item.assetName}|${m.item.category}|${m.item.investmentName}" },
+                                ) { (owner, entry) ->
+                                    val pair = owner to entry.item
                                     InvestmentListItem(
                                         entry = entry,
                                         isSelectionMode = isSelectionMode,
-                                        isSelected = entry.item in selectedItems,
+                                        isSelected = pair in selectedItems,
                                         onToggleSelected = {
-                                            selectedItems = if (entry.item in selectedItems) {
-                                                selectedItems - entry.item
+                                            selectedItems = if (pair in selectedItems) {
+                                                selectedItems - pair
                                             } else {
-                                                selectedItems + entry.item
+                                                selectedItems + pair
                                             }
                                         },
-                                        onEditRequest = { formTarget = InvestmentFormTarget.Edit(entry.item) },
+                                        onEditRequest = { formTarget = InvestmentFormTarget.Edit(owner = owner, target = entry.item) },
                                         onDeleteRequest = {
-                                            val date = selectedDate
+                                            val date = latestDate
                                             if (date != null) {
-                                                pendingDelete = InvestmentPendingDelete(date = date, owner = selectedOwner, target = entry.item)
+                                                pendingDelete = InvestmentPendingDelete(date = date, owner = owner, target = entry.item)
                                             }
                                         },
                                     )
@@ -1036,9 +1019,12 @@ private fun InvestmentTab(viewModel: DailyAssetInvestmentViewModel, benchmarkVie
                         ) { Text(stringResource(R.string.investment_delete_all)) }
                         Button(
                             onClick = {
-                                val date = selectedDate
+                                val date = latestDate
                                 if (date != null) {
-                                    viewModel.deleteInvestments(date, selectedOwner, selectedItems.toList())
+                                    // 명의별로 나눠 삭제한다(문서가 {date}_{owner}로 분리되어 있음).
+                                    selectedItems.groupBy { it.first }.forEach { (owner, pairs) ->
+                                        viewModel.deleteInvestments(date, owner, pairs.map { it.second })
+                                    }
                                 }
                                 exitSelectionMode()
                             },
@@ -1058,18 +1044,13 @@ private fun InvestmentTab(viewModel: DailyAssetInvestmentViewModel, benchmarkVie
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            InvestmentFilterSelectButton(
-                                label = selectedAssetNameFilter ?: stringResource(R.string.investment_filter_all_asset_names),
-                                allLabel = stringResource(R.string.investment_filter_all_asset_names),
-                                options = assetNameFilterOptions,
-                                onSelect = viewModel::selectAssetNameFilter,
-                            )
-                            InvestmentFilterSelectButton(
-                                label = selectedCategoryFilter ?: stringResource(R.string.investment_filter_all_categories),
-                                allLabel = stringResource(R.string.investment_filter_all_categories),
-                                options = categoryFilterOptions,
-                                onSelect = viewModel::selectCategoryFilter,
-                            )
+                            FilledTonalButton(onClick = { showFilterModal = true }) {
+                                val label = if (filter.isEmpty) "필터" else "필터 적용됨"
+                                Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            FilledTonalButton(onClick = onNavigateToPortfolio) {
+                                Text("포트", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             Box {
@@ -1119,31 +1100,38 @@ private fun InvestmentTab(viewModel: DailyAssetInvestmentViewModel, benchmarkVie
         }
     }
 
-    if (showDatePicker) {
-        IsoDatePickerDialog(
-            initialDate = selectedDate,
-            onDismiss = { showDatePicker = false },
-            onConfirm = { date ->
-                viewModel.selectDate(date)
-                showDatePicker = false
+    if (showFilterModal) {
+        InvestmentFilterModal(
+            currentFilter = filter,
+            ownerOptions = ownerFilterOptions,
+            accountOptions = accountFilterOptions,
+            categoryOptions = categoryFilterOptions,
+            stockNameOptions = stockNameFilterOptions,
+            onApply = {
+                viewModel.applyFilter(it)
+                showFilterModal = false
             },
-            allowFutureDates = false,
+            onDismiss = { showFilterModal = false },
         )
     }
 
     formTarget?.let { target ->
         // 신규 입력은 기본 날짜를 오늘로 하고 사용자가 DatePicker로 바꿀 수 있다. 수정은 항목이
-        // 이미 속한 날짜(현재 화면에 표시 중인 날짜)를 그대로 쓰고 바꿀 수 없다(문서 이동 미지원).
+        // 이미 속한 날짜(현재 화면에 표시 중인 최신 날짜)를 그대로 쓰고 바꿀 수 없다(문서 이동 미지원).
         val editTarget = target as? InvestmentFormTarget.Edit
-        val initialDate = if (editTarget != null) selectedDate ?: todayDate() else todayDate()
+        val initialDate = if (editTarget != null) latestDate ?: todayDate() else todayDate()
+        // 수정 시 owner는 행이 이미 가진 명의(editTarget.owner)를 그대로 쓰고(폼에서 명의는 잠금),
+        // 신규 입력은 폼에서 명의를 고르게 한다.
         InvestmentFormDialog(
             initial = editTarget?.target,
             initialDate = initialDate,
+            initialOwner = editTarget?.owner,
             onDismiss = { formTarget = null },
-            onSave = { date, item ->
+            onSave = { date, owner, item ->
                 when (target) {
-                    is InvestmentFormTarget.Edit -> viewModel.updateInvestment(date, selectedOwner, target.target, item)
-                    InvestmentFormTarget.New -> viewModel.addInvestment(date, selectedOwner, item)
+                    // 편집은 대상 종목이 속한 명의(target.owner)를 대상으로 삼는다(폼 owner는 잠겨 있어 동일).
+                    is InvestmentFormTarget.Edit -> viewModel.updateInvestment(date, target.owner, target.target, item)
+                    InvestmentFormTarget.New -> viewModel.addInvestment(date, owner, item)
                 }
                 formTarget = null
             },
@@ -1216,11 +1204,12 @@ private fun InvestmentTab(viewModel: DailyAssetInvestmentViewModel, benchmarkVie
             text = { Text(stringResource(R.string.investment_delete_all_confirm_message)) },
             confirmButton = {
                 TextButton(onClick = {
-                    val date = selectedDate
+                    val date = latestDate
                     if (date != null) {
-                        // 필터와 무관하게 해당 명의·날짜의 모든 투자 종목을 삭제한다(rowMetrics는 필터가
-                        // 적용된 목록이라 여기서 쓰면 화면에 보이지 않는 항목이 남는다).
-                        viewModel.deleteInvestments(date, selectedOwner, currentInvestment?.investments.orEmpty())
+                        // 현재 필터가 적용된 화면 상의 모든 종목을 명의별로 나눠 삭제한다.
+                        filteredOwnerItemsForDelete.groupBy { it.first }.forEach { (owner, pairs) ->
+                            viewModel.deleteInvestments(date, owner, pairs.map { it.second })
+                        }
                     }
                     showDeleteAllConfirm = false
                     exitSelectionMode()
@@ -1234,19 +1223,6 @@ private fun InvestmentTab(viewModel: DailyAssetInvestmentViewModel, benchmarkVie
                 }
             }
         )
-    }
-}
-
-@Composable
-private fun InvestmentOwnerTabRow(owners: List<String>, selectedOwner: String, onSelect: (String) -> Unit) {
-    SecondaryTabRow(selectedTabIndex = owners.indexOf(selectedOwner).coerceAtLeast(0)) {
-        owners.forEach { owner ->
-            Tab(
-                selected = owner == selectedOwner,
-                onClick = { onSelect(owner) },
-                text = { Text(owner) },
-            )
-        }
     }
 }
 
@@ -1331,11 +1307,14 @@ private fun InvestmentItem.derivedPurchasePricePerShareDisplay(): String {
 private fun InvestmentFormDialog(
     initial: InvestmentItem?,
     initialDate: String,
+    initialOwner: String?,
     onDismiss: () -> Unit,
-    onSave: (date: String, item: InvestmentItem) -> Unit,
+    onSave: (date: String, owner: String, item: InvestmentItem) -> Unit,
 ) {
     var date by rememberSaveable { mutableStateOf(initialDate) }
     var showDatePicker by rememberSaveable { mutableStateOf(false) }
+    var owner by rememberSaveable { mutableStateOf(initialOwner ?: INVESTMENT_OWNERS.first()) }
+    var ownerDropdownExpanded by remember { mutableStateOf(false) }
     var assetName by rememberSaveable { mutableStateOf(initial?.assetName ?: "") }
     var category by rememberSaveable { mutableStateOf(initial?.category ?: "") }
     var investmentName by rememberSaveable { mutableStateOf(initial?.investmentName ?: "") }
@@ -1376,6 +1355,37 @@ private fun InvestmentFormDialog(
                     },
                     modifier = Modifier.fillMaxWidth(),
                 )
+                // 명의는 문서 ID({date}_{owner})의 일부라 수정 중에는 바꿀 수 없다.
+                ExposedDropdownMenuBox(
+                    expanded = ownerDropdownExpanded,
+                    onExpandedChange = { if (initial == null) ownerDropdownExpanded = !ownerDropdownExpanded },
+                ) {
+                    OutlinedTextField(
+                        value = owner,
+                        onValueChange = {},
+                        readOnly = true,
+                        enabled = initial == null,
+                        label = { Text(stringResource(R.string.asset_field_owner)) },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = ownerDropdownExpanded) },
+                        modifier = Modifier
+                            .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                            .fillMaxWidth(),
+                    )
+                    ExposedDropdownMenu(
+                        expanded = ownerDropdownExpanded,
+                        onDismissRequest = { ownerDropdownExpanded = false },
+                    ) {
+                        INVESTMENT_OWNERS.forEach { candidate ->
+                            DropdownMenuItem(
+                                text = { Text(candidate) },
+                                onClick = {
+                                    owner = candidate
+                                    ownerDropdownExpanded = false
+                                },
+                            )
+                        }
+                    }
+                }
                 OutlinedTextField(
                     value = assetName,
                     onValueChange = { assetName = it },
@@ -1437,6 +1447,7 @@ private fun InvestmentFormDialog(
                 onClick = {
                     onSave(
                         date,
+                        owner,
                         InvestmentItem(
                             assetName = assetName.trim(),
                             category = category.trim(),

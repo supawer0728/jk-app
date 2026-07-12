@@ -110,8 +110,6 @@
     <string name="investment_field_profit">수익금</string>
     <string name="investment_empty">투자 종목이 없습니다</string>
     <string name="investment_empty_filtered">선택한 계좌·카테고리에 해당하는 투자 종목이 없습니다</string>
-    <string name="investment_filter_all_asset_names">전체 계좌</string>
-    <string name="investment_filter_all_categories">전체 종목</string>
     <string name="investment_delete_confirm_title">투자 종목 삭제</string>
     <string name="investment_delete_confirm_message">%s 투자 종목을 삭제하시겠습니까?</string>
     <string name="investment_import_sheet">구글시트에서 가져오기</string>

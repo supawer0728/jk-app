@@ -88,6 +88,7 @@ fun MainScreen(
     onNavigateToRecordTypeManagement: () -> Unit,
     onNavigateToTodoForm: (String?) -> Unit,
     onNavigateToSettings: () -> Unit,
+    onNavigateToPortfolio: () -> Unit,
 ) {
     val user by viewModel.user.collectAsStateWithLifecycle()
     val currentUser = user ?: return
@@ -271,6 +272,7 @@ fun MainScreen(
                     viewModel = dailyAssetViewModel,
                     investmentViewModel = investmentViewModel,
                     benchmarkViewModel = benchmarkViewModel,
+                    onNavigateToPortfolio = onNavigateToPortfolio,
                 )
                 MainTab.DIARY -> DiaryScreen(
                     viewModel = diaryViewModel,
