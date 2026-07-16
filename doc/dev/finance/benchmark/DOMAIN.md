@@ -45,8 +45,8 @@ KOSPI/S&P500/나스닥처럼 순수 가격 시리즈에 대해 공통으로 계�
 | `principal` | `BigDecimal` | 누적 원금. 날짜 오름차순으로 `additionalInvestment`를 누적한 합 |
 | `profit` | `BigDecimal` | 수익금 = `currentAmount - principal` |
 | `returnRatePercent` | `BigDecimal?` | 누적 원금 대비 수익률(%). 원금이 0이면 `null` |
-| `returnRateChangePercent` | `BigDecimal?` | 수익률의 직전 날짜 대비 변화(%p). 계산 불가하면 `null` |
-| `assetMdd` | `BigDecimal?` | 수익률 시리즈 기준 고점 대비 하락폭(%p, 0 이하). 계산 불가하면 `null` |
+| `returnRateChangePercent` | `BigDecimal?` | TWR 기간수익률 `rₜ = (오늘 currentAmount − 직전 currentAmount − 오늘 additionalInvestment) / 직전 currentAmount × 100`. 최초 행은 `null`. 직전 `currentAmount`가 0이면 `0.00` | 
+| `assetMdd` | `BigDecimal?` | TWR 성과지수(`Iₜ = ∏(1 + rₜ/100)`) 기준 고점 대비 하락폭(%, 0 이하, 나눗셈 기반). 최초 행은 `null` |
 | `kospi` | `IndexMetrics` | KOSPI 파생 지표 |
 | `snp500` | `IndexMetrics` | S&P500 파생 지표 |
 | `nasdaq` | `IndexMetrics` | 나스닥 파생 지표 |
