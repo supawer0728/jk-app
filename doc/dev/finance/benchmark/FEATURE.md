@@ -38,9 +38,17 @@
 - **누적 원금** `principal` — 날짜 오름차순으로 `additionalInvestment`를 누적한 합.
 - **수익금** `profit = currentAmount − principal`.
 - **자산 수익률** `returnRatePercent = percentChange(principal, currentAmount)` — 원금 0이면 `null`.
-- **수익률 변화** `returnRateChangePercent = 이번 수익률 − 직전 수익률` (%p) — 둘 중 하나라도 없으면 `null`.
-- **자산 MDD** `assetMdd = 이번 수익률 − 지금까지의 수익률 고점` (%p, 0 이하).
-- **지수 지표(`IndexMetrics`, KOSPI/S&P500/나스닥 각각)**:
+- **자산 기간수익률** `rₜ = (오늘 currentAmount − 직전 currentAmount − 오늘 additionalInvestment) / 직전 currentAmount × 100`
+  — TWR(시간가중수익률) 계산의 기본 단위. 직전 `currentAmount`가 0이면 `rₜ = 0`으로 간주(성과지수 연속성 유지).
+  **최초 행은 직전값 없으므로 `rₜ` 미정의 → `returnRateChangePercent`·`assetMdd` 모두 `null`.**
+- **자산 상승률** `returnRateChangePercent = rₜ` — 직전 행이 없으면(최초 행) `null`.
+  추가투자만 있고 시장 변동 없는 날(`currentAmount = 직전 currentAmount + additionalInvestment`)은 정확히 `0.00%`.
+- **TWR 성과지수** `Iₜ = I₀ × ∏(1 + rₜ / 100)` — I₀ = 1. 내부 계산 변수이며 공개 필드로 노출하지 않는다.
+  각 기간수익률 rₜ는 소수 2자리로 반올림한 값을 팩터(`1 + rₜ/100`)로 사용하며(화면 표시 rₜ와 성과지수·MDD가
+  같은 값 기반이라 사용자 검산 가능), 성과지수 누적 곱 연산 자체는 중간 반올림 없이 `BigDecimal` 고정밀도로 수행한다.
+- **자산 MDD** `assetMdd = (Iₜ − 지금까지 Iₜ 고점) / 고점 × 100` (%, 0 이하). 최초 행은 `null`.
+  최종 결과만 소수 2자리 `HALF_UP` 반올림. 기존 %p 뺄셈 방식이 아닌 % 나눗셈으로 계산한다.
+- **지수 지표(`IndexMetrics`, KOSPI/S&P500/나스닥 각각)** — `computeIndexMetrics` 함수 담당, 변경 금지:
   - `returnRatePercent = percentChange(첫 값, 현재 값)` — 최초 항목은 0.
   - `changePercent = percentChange(직전 값, 현재 값)` — 직전 항목 없으면 `null`.
   - `mdd = percentChange(지금까지의 고점, 현재 값)` — 고점 0이면 `null`.

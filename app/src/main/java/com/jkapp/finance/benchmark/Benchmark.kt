@@ -33,9 +33,10 @@ data class BenchmarkRowMetrics(
     val profit: BigDecimal,
     // 누적 원금 대비 수익률(%). 원금이 0이면 계산할 수 없으므로 null.
     val returnRatePercent: BigDecimal?,
-    // 수익률의 직전 날짜 대비 변화(%p). 직전 항목이 없거나 둘 중 하나라도 계산 불가하면 null.
+    // TWR 기간수익률 rₜ = (오늘 currentAmount − 직전 currentAmount − 오늘 additionalInvestment) / 직전 currentAmount × 100 (%).
+    // 최초 행은 직전값이 없으므로 null. 직전 currentAmount가 0이면 0으로 간주한다.
     val returnRateChangePercent: BigDecimal?,
-    // 수익률 시리즈를 기준으로 계산한, 지금까지의 고점 대비 하락폭(%p, 0 이하). 계산 불가하면 null.
+    // TWR 성과지수(Iₜ = ∏(1 + rₜ/100)) 기준 고점 대비 하락폭(%, 0 이하, 나눗셈 기반). 최초 행은 null.
     val assetMdd: BigDecimal?,
     val kospi: IndexMetrics,
     val snp500: IndexMetrics,
@@ -75,8 +76,10 @@ fun List<Benchmark>.withRowMetrics(): List<BenchmarkRowMetrics> {
     val nasdaqMetrics = computeIndexMetrics(chronological.map { it.nasdaq })
 
     var cumulativePrincipal = BigDecimal.ZERO
-    var previousReturnRate: BigDecimal? = null
-    var returnRatePeak: BigDecimal? = null
+    var previousAmount: BigDecimal? = null
+    // TWR 성과지수: I₀ = 1, Iₜ = I₀ × ∏(1 + rₜ/100). 내부 계산 변수.
+    var performanceIndex = BigDecimal.ONE
+    var performanceIndexPeak = BigDecimal.ONE
 
     return chronological.mapIndexed { index, benchmark ->
         cumulativePrincipal += benchmark.additionalInvestment
@@ -84,18 +87,39 @@ fun List<Benchmark>.withRowMetrics(): List<BenchmarkRowMetrics> {
         val profit = benchmark.currentAmount - principal
         val returnRate = percentChange(principal, benchmark.currentAmount)
 
-        val returnRateChange = if (returnRate != null && previousReturnRate != null) {
-            (returnRate - previousReturnRate).setScale(2, RoundingMode.HALF_UP)
+        // 최초 행(index == 0)은 직전값이 없어 기간수익률·MDD를 정의할 수 없다.
+        // previousAmount는 다음 행으로 값을 넘기는 캐리 용도로만 쓴다.
+        val prev = previousAmount
+        val (returnRateChange, assetMdd) = if (index == 0 || prev == null) {
+            Pair(null, null)
         } else {
-            null
-        }
-        previousReturnRate = returnRate
+            // 기간수익률 rₜ: 직전 currentAmount가 0이면 0으로 간주.
+            // 표시용 값이므로 percentChange와 동일하게 나눗셈 scale 4 → 최종 2자리로 반올림한다.
+            val periodReturn = if (prev.signum() == 0) {
+                BigDecimal.ZERO.setScale(2)
+            } else {
+                (benchmark.currentAmount - prev - benchmark.additionalInvestment)
+                    .divide(prev, 4, RoundingMode.HALF_UP)
+                    .multiply(BigDecimal(100))
+                    .setScale(2, RoundingMode.HALF_UP)
+            }
 
-        val assetMdd = returnRate?.let { rate ->
-            val peak = returnRatePeak?.max(rate) ?: rate
-            returnRatePeak = peak
-            (rate - peak).setScale(2, RoundingMode.HALF_UP)
+            // TWR 성과지수 누적 곱: 팩터에는 2자리로 반올림한 rₜ를 쓰되(화면 표시값과 검산 일치),
+            // 곱 연산 자체는 중간 반올림 없이 고정밀도로 수행한다. 누적 곱 정밀도 유지를 위해 나눗셈 scale은 10.
+            val factor = BigDecimal.ONE + periodReturn.divide(BigDecimal(100), 10, RoundingMode.HALF_UP)
+            performanceIndex = performanceIndex.multiply(factor)
+            performanceIndexPeak = performanceIndexPeak.max(performanceIndex)
+
+            // 자산 MDD: (Iₜ − 고점) / 고점 × 100 (나눗셈 기반, 최종 2자리 반올림)
+            val mdd = (performanceIndex - performanceIndexPeak)
+                .divide(performanceIndexPeak, 4, RoundingMode.HALF_UP)
+                .multiply(BigDecimal(100))
+                .setScale(2, RoundingMode.HALF_UP)
+
+            Pair(periodReturn, mdd)
         }
+
+        previousAmount = benchmark.currentAmount
 
         BenchmarkRowMetrics(
             benchmark = benchmark,
