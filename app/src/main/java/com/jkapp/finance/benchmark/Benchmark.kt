@@ -43,12 +43,15 @@ data class BenchmarkRowMetrics(
     val nasdaq: IndexMetrics,
 )
 
+private val PERCENT_SCALE = BigDecimal(100)
+private const val TWR_DIVIDE_SCALE = 10
+
 // from 대비 to의 변화율(%). from이 0이면 계산할 수 없으므로 null.
 private fun percentChange(from: BigDecimal, to: BigDecimal): BigDecimal? {
     if (from.signum() == 0) return null
     return (to - from)
         .divide(from, 4, RoundingMode.HALF_UP)
-        .multiply(BigDecimal(100))
+        .multiply(PERCENT_SCALE)
         .setScale(2, RoundingMode.HALF_UP)
 }
 
@@ -100,20 +103,20 @@ fun List<Benchmark>.withRowMetrics(): List<BenchmarkRowMetrics> {
             } else {
                 (benchmark.currentAmount - prev - benchmark.additionalInvestment)
                     .divide(prev, 4, RoundingMode.HALF_UP)
-                    .multiply(BigDecimal(100))
+                    .multiply(PERCENT_SCALE)
                     .setScale(2, RoundingMode.HALF_UP)
             }
 
             // TWR 성과지수 누적 곱: 팩터에는 2자리로 반올림한 rₜ를 쓰되(화면 표시값과 검산 일치),
             // 곱 연산 자체는 중간 반올림 없이 고정밀도로 수행한다. 누적 곱 정밀도 유지를 위해 나눗셈 scale은 10.
-            val factor = BigDecimal.ONE + periodReturn.divide(BigDecimal(100), 10, RoundingMode.HALF_UP)
+            val factor = BigDecimal.ONE + periodReturn.divide(PERCENT_SCALE, TWR_DIVIDE_SCALE, RoundingMode.HALF_UP)
             performanceIndex = performanceIndex.multiply(factor)
             performanceIndexPeak = performanceIndexPeak.max(performanceIndex)
 
             // 자산 MDD: (Iₜ − 고점) / 고점 × 100 (나눗셈 기반, 최종 2자리 반올림)
             val mdd = (performanceIndex - performanceIndexPeak)
                 .divide(performanceIndexPeak, 4, RoundingMode.HALF_UP)
-                .multiply(BigDecimal(100))
+                .multiply(PERCENT_SCALE)
                 .setScale(2, RoundingMode.HALF_UP)
 
             Pair(periodReturn, mdd)

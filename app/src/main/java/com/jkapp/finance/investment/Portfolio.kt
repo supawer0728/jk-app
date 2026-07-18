@@ -22,13 +22,15 @@ data class PortfolioGroup(
     val order: Int? = null,
 )
 
+private const val TARGET_RATIO_TOTAL = 100
+
 /**
  * 포트폴리오 저장 전 유효성 검증. 모든 그룹의 targetRatio 합이 정확히 100이어야 한다.
  * @return null이면 유효, 그 외 오류 메시지.
  */
 fun validatePortfolioGroups(groups: List<PortfolioGroup>): String? {
     val sum = groups.sumOf { it.targetRatio }
-    return if (sum == 100) null else "그룹 목표 비율 합계가 ${sum}%입니다. 정확히 100%가 되어야 저장할 수 있습니다."
+    return if (sum == TARGET_RATIO_TOTAL) null else "그룹 목표 비율 합계가 ${sum}%입니다. 정확히 100%가 되어야 저장할 수 있습니다."
 }
 
 /** 포트폴리오를 `order` 기준 nullsFirst(null이 앞, 이후 오름차순, 동률은 안정 정렬)로 정렬한다. */

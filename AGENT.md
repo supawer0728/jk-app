@@ -58,7 +58,7 @@ AI가 코드를 작성할 때는 아래 두 문서를 따른다.
 
 **핵심 요약**
 
-- 들여쓰기: 4 스페이스 / 줄 길이: 100자 / 중괄호: K&R 스타일
+- 들여쓰기: 4 스페이스 / 줄 길이: 180자 / 중괄호: K&R 스타일
 - 명명: 클래스 PascalCase / 함수·변수 camelCase / 상수 UPPER_SNAKE_CASE
 - `@Composable` (Unit 반환): PascalCase 명사
 - 약어는 일반 단어처럼 처리 (`XmlHttpRequest`, `newCustomerId`)

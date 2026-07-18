@@ -20,11 +20,9 @@ data class InvestmentFilter(
      *
      * 빈 Set인 축은 모든 값을 통과시킨다.
      */
-    fun matches(owner: String, item: InvestmentItem): Boolean {
-        if (owners.isNotEmpty() && owner !in owners) return false
-        if (accounts.isNotEmpty() && item.assetName !in accounts) return false
-        if (categories.isNotEmpty() && item.category !in categories) return false
-        if (stockNames.isNotEmpty() && item.investmentName !in stockNames) return false
-        return true
-    }
+    fun matches(owner: String, item: InvestmentItem): Boolean =
+        (owners.isEmpty() || owner in owners) &&
+            (accounts.isEmpty() || item.assetName in accounts) &&
+            (categories.isEmpty() || item.category in categories) &&
+            (stockNames.isEmpty() || item.investmentName in stockNames)
 }
