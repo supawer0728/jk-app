@@ -55,6 +55,10 @@
 
 ## 후속 과제 (이번 범위 밖)
 
+- **detekt 위반 정리(줄 길이 정책·baseline)**: 여기서 미룬 "적극 리팩토링" 중
+  누적된 detekt 위반 정리는 이슈 #96에서 다뤘다. `MaxLineLength`를 180으로 완화하고
+  baseline 재생성 대신 소수 위반만 코드로 수정하는 방침을 택했다. 근거는
+  [`../96/detekt-maxline-relax-and-partial-fix.md`](../96/detekt-maxline-relax-and-partial-fix.md) 참고.
 - **detekt-formatting(ktlint) 룰셋**: `Indentation`, `ImportOrdering`, `NoWildcardImports`
   등 포맷 규칙은 ktlint 기반 `detekt-formatting` 으로 강제할 수 있으나, 기존 코드에서
   다수의 baseline 항목이 추가로 생겨 노이즈가 커진다. 이번에는 도입을 보류하고 IDE/
