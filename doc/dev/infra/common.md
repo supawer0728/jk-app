@@ -21,9 +21,9 @@
 | `Task<T>.await()`, `Query.snapshotFlow`, `DocumentReference.snapshotFlow` | 확장 함수 | Firestore Task/리스너를 코루틴·`Flow`로 감싸는 공통 골격 (`FirestoreExtensions.kt`) |
 | `TabOrderRepository` / `TabOrderRepositoryImpl` | 인터페이스/클래스 | `observeTabOrder(uid): Flow<List<String>?>`, `saveTabOrder(uid, tabNames)` |
 | `TabOrderViewModel` | `ViewModel` | `tabOrder: StateFlow<List<MainTab>>` — 현재 적용 순서. `editTabOrder: StateFlow<List<MainTab>?>` — 편집 중 임시 순서(null이면 편집 비활성). `loadTabOrder(uid)`, `moveTab(from, to)`, `beginEdit()`, `applyEdit()`, `cancelEdit()`. `mergeTabOrder`로 신규/삭제 탭 정합성 유지. `applyEdit`는 dirty 판정(원본과 순서가 다를 때만) 후 Firestore 저장 |
-| `MainTab` | enum | `HOME`/`ASSET`/`DIARY`/`TODO`/`CALENDAR` (라벨만, 아이콘 제거). 콘텐츠 탭 5개. `MAIN_TAB_ROW_SIZE` 상수는 제거됨. 하단 탭은 각 항목 폭을 화면 폭의 1/`VISIBLE_TAB_COUNT`(=5)로 고정해 항상 정확히 5개가 보이고, 나머지(로그아웃·설정)는 가로 스크롤로 접근한다 |
+| `MainTab` | enum | `HOME`/`ASSET`/`DIARY`/`TODO`/`CALENDAR` (라벨만, 아이콘 제거). 콘텐츠 탭 5개. `HOME`은 하단바 왼쪽에 아이콘으로 고정 노출되고 탭 순서 재배치 대상이 아니다(항상 선두). 나머지 4개(ASSET/DIARY/TODO/CALENDAR)만 재배치 대상 |
 | `BottomTabItem` | sealed interface | 하단 탭 항목 타입. `Content(tab: MainTab)` — 콘텐츠 탭(선택 상태 있음), `Action.Logout` — 로그아웃 액션(선택 상태 없음, 확인 다이얼로그 경유), `Action.Settings` — 설정 액션(선택 상태 없음, 설정 화면 이동) |
-| `MainScreen`, `HomeTabScreen`, `LoginScreen`, `SplashScreen` | `@Composable` | 앱 셸·진입 화면. GNB(TopAppBar) 제거, 하단 탭은 텍스트 전용·구분선·선택 강조로 표시하며 각 항목 폭이 화면 폭의 1/5로 고정돼 정확히 5개가 보이고 나머지는 가로 스크롤. `TabOrderPanel` 제거됨 |
+| `MainScreen`, `HomeTabScreen`, `LoginScreen`, `SplashScreen` | `@Composable` | 앱 셸·진입 화면. GNB(TopAppBar) 제거. 하단바 3구역: **왼쪽 고정** 홈 아이콘(`Icons.Default.Home`, 선택 시 primary 강조) + **가운데 가로 스크롤** 영역(홈 제외 콘텐츠 탭 텍스트 + 로그아웃 텍스트, 구분선·선택 강조. 각 항목은 가운데 영역 폭의 1/`VISIBLE_SCROLL_TAB_COUNT`(=4) 고정폭이라 4개가 딱 보이고 나머지(로그아웃)는 가로 스크롤로 접근) + **오른쪽 고정** 설정 아이콘(`Icons.Default.Settings`). 양 끝 고정 셀은 배경을 하단바 기본색보다 조금 짙게(`PINNED_TAB_COLOR_LIGHT`/`DARK`). 전체 하단바에 `navigationBarsPadding` 적용. `TabOrderPanel` 제거됨 |
 | `JkappTheme` | `@Composable` | Material3 테마(다크/다이나믹 컬러). `theme/` 하위 Color·Type 포함 |
 | `toComposeColorOrNull()`, `Long.formatFileSize()`, `LoadingIndicator` | 확장/`@Composable` | 공용 유틸(`Extensions.kt`) |
 | `DateUtils`, `IsoDatePickerDialog`, `IsoDateTimePickerDialog` | 유틸/`@Composable` | 날짜 포맷·ISO 날짜 선택 다이얼로그 |
