@@ -67,24 +67,6 @@ import java.util.Locale
 
 private val ExtraStoreKey = ExtraStore.Key<List<String>>()
 
-// 수익률 %축이 데이터에 눌리지 않도록 자동 감지된 min/max 위·아래로 10%씩 여백을 두고,
-// 0선이 항상 보이도록 범위에 0을 포함한다. 데이터 기반이므로 실제 값을 잘라내지 않는다.
-private object PercentRangeProvider : CartesianLayerRangeProvider {
-    override fun getMinY(minY: Double, maxY: Double, extraStore: ExtraStore): Double {
-        val lo = minOf(minY, 0.0)
-        val hi = maxOf(maxY, 0.0)
-        val padding = (hi - lo).takeIf { it > 0.0 }?.times(0.1) ?: 1.0
-        return lo - padding
-    }
-
-    override fun getMaxY(minY: Double, maxY: Double, extraStore: ExtraStore): Double {
-        val lo = minOf(minY, 0.0)
-        val hi = maxOf(maxY, 0.0)
-        val padding = (hi - lo).takeIf { it > 0.0 }?.times(0.1) ?: 1.0
-        return hi + padding
-    }
-}
-
 // 수익률/MDD 차트 전체화면. 진입 시 가로모드 고정, 뒤로가기 시 원래 방향 복원.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -106,8 +88,9 @@ fun BenchmarkChartScreen(
 
     val allRows by viewModel.rowMetrics.collectAsStateWithLifecycle()
     var selectedPeriod by remember { mutableStateOf(ChartPeriod.ALL) }
+    // 기간 필터로 슬라이싱한 뒤, x축이 최신 날짜(왼쪽) → 과거(오른쪽)가 되도록 역순으로 뒤집는다.
     val filteredRows = remember(allRows, selectedPeriod) {
-        BenchmarkChartUtils.filterByPeriod(allRows, selectedPeriod)
+        BenchmarkChartUtils.filterByPeriod(allRows, selectedPeriod).asReversed()
     }
 
     val title = when (chartType) {
@@ -198,6 +181,21 @@ private fun BenchmarkReturnChart(rows: List<BenchmarkRowMetrics>, modifier: Modi
     val snpReturnValues = rows.map { it.snp500.returnRatePercent.toDouble() }
     val nasdaqReturnValues = rows.map { it.nasdaq.returnRatePercent.toDouble() }
 
+    // 좌·우 세로축 눈금을 8개로 맞춰 정렬한다.
+    // - 왼쪽(수익률 %): 최댓값을 50% 단위로 올림, 손실이 있으면 50% 단위로 내림한 값을 바닥으로.
+    // - 오른쪽(현재금액): 0을 바닥으로, 막대가 넘지 않는 "깔끔한" 상단값을 계산.
+    val allReturns = assetReturnValues + kospiReturnValues + snpReturnValues + nasdaqReturnValues
+    val percentMax = BenchmarkChartUtils.percentAxisMax(allReturns.maxOrNull() ?: 0.0)
+    val percentMin = BenchmarkChartUtils.percentAxisMin(allReturns.minOrNull() ?: 0.0)
+    val amountMax = BenchmarkChartUtils.amountAxisMax(amountValues.maxOrNull() ?: 0.0)
+
+    val percentRangeProvider = remember(percentMin, percentMax) {
+        CartesianLayerRangeProvider.fixed(minY = percentMin, maxY = percentMax)
+    }
+    val amountRangeProvider = remember(amountMax) {
+        CartesianLayerRangeProvider.fixed(minY = 0.0, maxY = amountMax)
+    }
+
     val modelProducer = remember { CartesianChartModelProducer() }
     LaunchedEffect(rows) {
         modelProducer.runTransaction {
@@ -229,6 +227,8 @@ private fun BenchmarkReturnChart(rows: List<BenchmarkRowMetrics>, modifier: Modi
             columnProvider = ColumnCartesianLayer.ColumnProvider.series(amountColumn),
             // 단일 시리즈이므로 병합 의미가 없다. 명시적으로 Grouped를 지정해 의도를 드러낸다.
             mergeMode = { ColumnCartesianLayer.MergeMode.Grouped() },
+            // 현재금액 축 상단을 데이터 이상의 깔끔한 값으로 고정한다.
+            rangeProvider = amountRangeProvider,
             verticalAxisPosition = Axis.Position.Vertical.End,
         ),
         rememberLineCartesianLayer(
@@ -246,12 +246,19 @@ private fun BenchmarkReturnChart(rows: List<BenchmarkRowMetrics>, modifier: Modi
                     fill = LineCartesianLayer.LineFill.single(Fill(SolidColor(colorNasdaq)))
                 ),
             ),
-            // %선이 왼쪽 축에서 눌리지 않도록 데이터 기반으로 여백을 준다(MEDIUM-4).
-            rangeProvider = PercentRangeProvider,
+            // 수익률 축을 50% 단위로 고정한다.
+            rangeProvider = percentRangeProvider,
             verticalAxisPosition = Axis.Position.Vertical.Start,
         ),
-        startAxis = VerticalAxis.rememberStart(valueFormatter = percentFormatter),
-        endAxis = VerticalAxis.rememberEnd(valueFormatter = amountFormatter),
+        // 좌·우 세로축 모두 눈금 8개로 맞춰 가로 격자선을 정렬한다.
+        startAxis = VerticalAxis.rememberStart(
+            valueFormatter = percentFormatter,
+            itemPlacer = VerticalAxis.ItemPlacer.count({ BenchmarkChartUtils.AXIS_TICK_COUNT }),
+        ),
+        endAxis = VerticalAxis.rememberEnd(
+            valueFormatter = amountFormatter,
+            itemPlacer = VerticalAxis.ItemPlacer.count({ BenchmarkChartUtils.AXIS_TICK_COUNT }),
+        ),
         bottomAxis = HorizontalAxis.rememberBottom(valueFormatter = dateFormatter),
     )
 

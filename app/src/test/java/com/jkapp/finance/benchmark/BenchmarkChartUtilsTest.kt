@@ -138,4 +138,46 @@ class BenchmarkChartUtilsTest {
         assertEquals("1g", BenchmarkChartUtils.formatAmount(BigDecimal("1000000000")))
         assertEquals("1.2g", BenchmarkChartUtils.formatAmount(BigDecimal("1200000000")))
     }
+
+    // ── percentAxisMax / percentAxisMin ──────────────────────────────
+
+    @Test
+    fun `percentAxisMax는 50 단위로 올림한다`() {
+        assertEquals(150.0, BenchmarkChartUtils.percentAxisMax(123.0), 0.0)
+        assertEquals(150.0, BenchmarkChartUtils.percentAxisMax(150.0), 0.0)
+        assertEquals(100.0, BenchmarkChartUtils.percentAxisMax(51.0), 0.0)
+    }
+
+    @Test
+    fun `percentAxisMax는 0 이하일 때 최소 50을 보장한다`() {
+        assertEquals(50.0, BenchmarkChartUtils.percentAxisMax(0.0), 0.0)
+        assertEquals(50.0, BenchmarkChartUtils.percentAxisMax(-5.0), 0.0)
+        assertEquals(50.0, BenchmarkChartUtils.percentAxisMax(10.0), 0.0)
+    }
+
+    @Test
+    fun `percentAxisMin은 손실이 없으면 0, 있으면 50 단위로 내림한다`() {
+        assertEquals(0.0, BenchmarkChartUtils.percentAxisMin(30.0), 0.0)
+        assertEquals(0.0, BenchmarkChartUtils.percentAxisMin(0.0), 0.0)
+        assertEquals(-50.0, BenchmarkChartUtils.percentAxisMin(-10.0), 0.0)
+        assertEquals(-50.0, BenchmarkChartUtils.percentAxisMin(-50.0), 0.0)
+        assertEquals(-100.0, BenchmarkChartUtils.percentAxisMin(-51.0), 0.0)
+    }
+
+    // ── amountAxisMax ────────────────────────────────────────────────
+
+    @Test
+    fun `amountAxisMax는 데이터 최댓값 이상을 보장한다`() {
+        assertTrue(BenchmarkChartUtils.amountAxisMax(1_234_567.0) >= 1_234_567.0)
+        assertTrue(BenchmarkChartUtils.amountAxisMax(750_000.0) >= 750_000.0)
+        assertTrue(BenchmarkChartUtils.amountAxisMax(99.0) >= 99.0)
+    }
+
+    @Test
+    fun `amountAxisMax는 7구간 나눗셈이 깔끔한 값이 되도록 상단을 계산한다`() {
+        // rawStep = 1_000_000/7 ≈ 142857 → nice step 200000 → top 1_400_000
+        assertEquals(1_400_000.0, BenchmarkChartUtils.amountAxisMax(1_000_000.0), 0.0)
+        // rawStep = 700_000/7 = 100000 → nice step 100000 → top 700_000 (데이터와 동일)
+        assertEquals(700_000.0, BenchmarkChartUtils.amountAxisMax(700_000.0), 0.0)
+    }
 }
