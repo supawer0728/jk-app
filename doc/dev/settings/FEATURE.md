@@ -20,6 +20,12 @@ Firestore(`users/{uid}.preference`)에 저장된다. 탭 순서는 별도 화면
 - **햅틱 슬라이더 저장 타이밍**: 드래그 중에는 로컬 상태(`sliderPosition`)로만 즉시 반영하고,
   손을 뗄 때(`onValueChangeFinished`)만 DataStore에 저장한다. 매 프레임 비동기 저장으로 엄지
   위치가 어긋나 보이는 문제를 피한다. 강제 위치 `SettingsScreen`.
+- **햅틱 슬라이더 드래그 중 실시간 진동 피드백**: 슬라이더 드래그 중 정수 단계(0~`MAX_HAPTIC_INTENSITY`)가
+  변경될 때마다 그 단계 강도로 즉시 진동한다. **저장은 손을 뗄 때**, **진동 피드백은 드래그 중
+  정수 단계가 바뀐 시점**으로 타이밍이 분리된다. 강도 0(끄기)에서는 진동하지 않는다.
+  같은 정수 단계 내 미세 이동(예: 3.1 → 3.9)에서는 중복 진동이 발생하지 않는다(정수
+  단계가 실제로 바뀐 경우에만). 강제 위치 `SettingsScreen`(`onValueChange` 내 단계 변경 감지),
+  `HapticController.tick(intensity: Int)`. → 이슈 #103
 - **알림음은 소리 모드에서만 노출**: `notificationMode.hasSound`가 참일 때만 알림음 드롭다운을
   표시한다. 강제 위치 `SettingsScreen`.
 - **로그아웃 시 기본값 표시**: uid가 없으면 Firestore 대신 `UserPreference()` 기본값을 방출하고,
@@ -59,8 +65,12 @@ Firestore(`users/{uid}.preference`)에 저장된다. 탭 순서는 별도 화면
    최대 폭으로 정렬되어 우측 컨트롤이 세로로 맞춰진다.
 2. **기기 로컬 설정 변경**(다크모드/알림 방식/알림음): 드롭다운 선택 →
    `SettingsViewModel.setXxx` → `AppPreferences.setXxx`(DataStore 저장) → StateFlow 재방출.
-3. **햅틱 강도 변경**: 슬라이더 조작 → 손 뗌(`onValueChangeFinished`) →
-   `SettingsViewModel.setHapticIntensity` → `AppPreferences.setHapticIntensity`(DataStore).
+3. **햅틱 강도 변경**:
+   - **드래그 중 실시간 피드백**: 슬라이더 드래그 → 정수 단계 변경 감지(`onValueChange` 내
+     `hapticStepChanged(sliderPosition, newValue)`) → `HapticController.tick(intensity = newValue.toInt())`
+     호출(강도 0이면 무진동, 같은 단계 내 미세 이동은 무시).
+   - **저장**: 손 뗌(`onValueChangeFinished`) → `SettingsViewModel.setHapticIntensity` →
+     `AppPreferences.setHapticIntensity`(DataStore).
 4. **언어/시간대 변경**: 드롭다운 선택 → `SettingsViewModel.setLanguage`/`setTimeZone` →
    `updatePreference`(uid 필요) → `UserRepository.updatePreference`로 Firestore
    `users/{uid}.preference` merge → `preference` 구독이 새 값을 밀어줌.

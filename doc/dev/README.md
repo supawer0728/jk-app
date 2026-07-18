@@ -65,6 +65,7 @@ doc/
 | functions | [functions.md](infra/functions.md) | Cloud Functions(Python) — `pushes` 문서 감지 후 FCM 발송 전담 |
 | user | [user.md](infra/user.md) | 사용자 프로필·로그인 이력·푸시 토큰(이메일 기반 조회 포함) |
 | common | [common.md](infra/common.md) | 앱 환경설정(DataStore)·하단 탭 순서·공용 화면/유틸 |
+| haptic | [haptic.md](infra/haptic.md) | 햅틱(진동) 피드백 — `HapticController`·`LocalHapticController` |
 
 ## 문서 갱신 규칙
 

@@ -44,6 +44,8 @@ import com.jkapp.common.DarkModeSetting
 import com.jkapp.common.MAX_HAPTIC_INTENSITY
 import com.jkapp.common.NotificationMode
 import com.jkapp.common.NotificationSound
+import com.jkapp.haptic.LocalHapticController
+import com.jkapp.haptic.hapticStepChanged
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,6 +55,7 @@ fun SettingsScreen(
     onNavigateToTabOrderEdit: () -> Unit = {},
     onSignOut: () -> Unit = {},
 ) {
+    val hapticController = LocalHapticController.current
     val darkModeSetting by viewModel.darkModeSetting.collectAsStateWithLifecycle()
     val hapticIntensity by viewModel.hapticIntensity.collectAsStateWithLifecycle()
     val preference by viewModel.preference.collectAsStateWithLifecycle()
@@ -137,7 +140,13 @@ fun SettingsScreen(
                     )
                     Slider(
                         value = sliderPosition,
-                        onValueChange = { sliderPosition = it },
+                        onValueChange = { newValue ->
+                            // 대입 전에 이전/새 위치값을 비교해 정수 단계 변경 시에만 진동한다.
+                            if (hapticStepChanged(sliderPosition, newValue)) {
+                                hapticController?.tick(newValue.toInt())
+                            }
+                            sliderPosition = newValue
+                        },
                         onValueChangeFinished = { viewModel.setHapticIntensity(sliderPosition.toInt()) },
                         valueRange = 0f..MAX_HAPTIC_INTENSITY.toFloat(),
                         steps = MAX_HAPTIC_INTENSITY - 1,
