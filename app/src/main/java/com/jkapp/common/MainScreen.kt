@@ -87,6 +87,7 @@ fun MainScreen(
     onNavigateToAdd: () -> Unit,
     onNavigateToRecordTypeManagement: () -> Unit,
     onNavigateToTodoForm: (String?) -> Unit,
+    onNavigateToTodoSubForm: (String) -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToPortfolio: () -> Unit,
 ) {
@@ -283,6 +284,7 @@ fun MainScreen(
                 MainTab.TODO -> TodoScreen(
                     viewModel = todoViewModel,
                     onNavigateToForm = onNavigateToTodoForm,
+                    onNavigateToSubForm = onNavigateToTodoSubForm,
                 )
                 MainTab.CALENDAR -> CalendarTabScreen()
             }

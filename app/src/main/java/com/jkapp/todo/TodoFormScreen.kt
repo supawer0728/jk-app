@@ -167,7 +167,10 @@ fun TodoFormScreen(
     viewModel: TodoViewModel,
     firestoreId: String?,
     onBack: () -> Unit,
+    // non-null이면 자식(SUB) 추가 모드. 제목·담당자·메모만 입력하고 addSubTodoItem으로 저장한다.
+    subParentId: String? = null,
 ) {
+    val isSubMode = subParentId != null
     val isEditMode = firestoreId != null
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val success = uiState as? TodoUiState.Success
@@ -252,7 +255,15 @@ fun TodoFormScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(stringResource(if (isEditMode) R.string.todo_form_edit_title else R.string.todo_form_add_title))
+                    Text(
+                        stringResource(
+                            when {
+                                isSubMode -> R.string.todo_form_add_sub_title
+                                isEditMode -> R.string.todo_form_edit_title
+                                else -> R.string.todo_form_add_title
+                            }
+                        )
+                    )
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -280,24 +291,34 @@ fun TodoFormScreen(
 
             AssigneeSelector(selected = assignee, onSelect = { assignee = it })
 
-            OutlinedButton(
-                onClick = { detailsExpanded = !detailsExpanded },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    stringResource(
-                        if (detailsExpanded) R.string.todo_form_collapse_details
-                        else R.string.todo_form_expand_details
-                    ),
-                    modifier = Modifier.weight(1f)
+            // 자식(SUB) 모드에서는 메모만 노출하고, 마감일시·우선순위·반복·리마인더 상세 항목은 숨긴다(1-depth 고정, 이슈 #88).
+            if (isSubMode) {
+                OutlinedTextField(
+                    value = memo,
+                    onValueChange = { memo = it },
+                    label = { Text(stringResource(R.string.todo_field_memo)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 3
                 )
-                Icon(
-                    imageVector = if (detailsExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    contentDescription = null,
-                )
-            }
+            } else {
+                OutlinedButton(
+                    onClick = { detailsExpanded = !detailsExpanded },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        stringResource(
+                            if (detailsExpanded) R.string.todo_form_collapse_details
+                            else R.string.todo_form_expand_details
+                        ),
+                        modifier = Modifier.weight(1f)
+                    )
+                    Icon(
+                        imageVector = if (detailsExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = null,
+                    )
+                }
 
-            if (detailsExpanded) {
+                if (detailsExpanded) {
                 OutlinedTextField(
                     value = memo,
                     onValueChange = { memo = it },
@@ -404,11 +425,23 @@ fun TodoFormScreen(
                         }
                     }
                 }
+                }
             }
 
             Spacer(modifier = Modifier.height(8.dp))
             Button(
                 onClick = {
+                    if (subParentId != null) {
+                        // 자식(SUB): 제목·담당자·메모만. type=SUB·mainTodoId는 Repository가 주입한다.
+                        val sub = TodoItem(
+                            title = title.trim(),
+                            memo = memo.trim(),
+                            assignee = assignee,
+                            status = TodoStatus.NOT_STARTED,
+                        )
+                        viewModel.addSubTodoItem(subParentId, sub)
+                        return@Button
+                    }
                     val item = TodoItem(
                         firestoreId = firestoreId,
                         title = title.trim(),

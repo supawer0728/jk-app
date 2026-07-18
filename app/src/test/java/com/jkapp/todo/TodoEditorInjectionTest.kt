@@ -4,6 +4,7 @@ import com.google.android.gms.tasks.OnSuccessListener
 import com.google.android.gms.tasks.Task
 import com.google.firebase.firestore.CollectionReference
 import com.google.firebase.firestore.DocumentReference
+import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.jkapp.push.FakePushRepository
 import com.jkapp.user.FakeUserRepository
@@ -97,5 +98,47 @@ class TodoEditorInjectionTest {
         repository.updateTodoItem(TodoItem(firestoreId = "todo-1", title = "빨래"))
 
         assertEquals("uid-editor", dataSlot.captured["lastEditedByUid"])
+    }
+
+    // 이슈 #88: 완료(DONE) 부모에 자식을 추가하면 부모가 IN_PROGRESS로 자동 되돌아간다. 이 자동
+    // 되돌림은 사용자 편집이 아니므로 부모의 lastEditedByUid를 자식 편집자로 덮지 않고 보존해야 한다.
+    @Test
+    fun `addSubTodoItem의 완료 부모 되돌림은 부모 lastEditedByUid를 보존한다`() = runTest {
+        val parentUpdateSlot = slot<Map<String, Any?>>()
+        val subDataSlot = slot<Map<String, Any?>>()
+
+        // 부모 조회 snapshot: DONE 상태 + 기존 편집자 "uid-original".
+        val parentSnapshot = mockk<DocumentSnapshot>(relaxed = true)
+        every { parentSnapshot.id } returns "p-1"
+        every { parentSnapshot.getString("title") } returns "장보기"
+        every { parentSnapshot.getString("status") } returns TodoStatus.DONE.name
+        every { parentSnapshot.getString("lastEditedByUid") } returns "uid-original"
+
+        val parentRef = mockk<DocumentReference>()
+        every { parentRef.get() } returns taskReturning(parentSnapshot)
+        every { parentRef.update(capture(parentUpdateSlot)) } returns taskReturning(null)
+
+        val addedRef = mockk<DocumentReference>()
+        every { addedRef.id } returns "sub-id"
+
+        val collectionRef = mockk<CollectionReference>()
+        every { collectionRef.document("p-1") } returns parentRef
+        every { collectionRef.add(capture(subDataSlot)) } returns taskReturning(addedRef)
+        val db = mockk<FirebaseFirestore>()
+        every { db.collection("todo-items") } returns collectionRef
+
+        val repository = TodoFirestoreRepositoryImpl(
+            db = db,
+            currentUidProvider = { "uid-child-editor" },
+            userRepository = FakeUserRepository(),
+            pushRepository = FakePushRepository(),
+        )
+
+        repository.addSubTodoItem("p-1", TodoItem(title = "우유"), notify = false)
+
+        // 부모 되돌림은 기존 편집자 보존, 자식은 현재 편집자로 기록.
+        assertEquals("uid-original", parentUpdateSlot.captured["lastEditedByUid"])
+        assertEquals("IN_PROGRESS", parentUpdateSlot.captured["status"])
+        assertEquals("uid-child-editor", subDataSlot.captured["lastEditedByUid"])
     }
 }

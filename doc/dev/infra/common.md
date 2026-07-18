@@ -25,6 +25,8 @@
 | `JkappTheme` | `@Composable` | Material3 테마(다크/다이나믹 컬러). `theme/` 하위 Color·Type 포함 |
 | `toComposeColorOrNull()`, `Long.formatFileSize()`, `LoadingIndicator` | 확장/`@Composable` | 공용 유틸(`Extensions.kt`) |
 | `DateUtils`, `IsoDatePickerDialog`, `IsoDateTimePickerDialog` | 유틸/`@Composable` | 날짜 포맷·ISO 날짜 선택 다이얼로그 |
+| `MultiDeleteState<T>` | 클래스 | 다중선택 삭제 상태 홀더. `isSelectionMode`, `selectedIds: Set<T>`, `toggle(id)`, `exit()` 노출. 투자종목·벤치마크·TODO 세 화면이 공유 |
+| `MultiDeleteBar` | `@Composable` | 선택 모드 하단 바. "선택 삭제"·"취소" 버튼만 포함. '전체 삭제'는 각 화면 고유로 남긴다 |
 
 ## 데이터 / 저장소
 

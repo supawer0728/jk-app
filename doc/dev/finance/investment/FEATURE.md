@@ -140,6 +140,9 @@
    → `mutateInvestments`가 뮤텍스 하에 현재 목록에 추가 후 upsert → 저장한 날짜로 화면 전환.
 4. **수정/삭제**: 폼/삭제 UI → `updateInvestment`/`deleteInvestment`/`deleteInvestments`
    → `mutateInvestments`(내용 기준으로 대상 식별) → upsert 또는 (빈 목록이면) 문서 삭제.
+4-1. **다중선택 삭제 공통화(이슈 #88)**: 선택 모드의 상태 관리(`isSelectionMode`, `selectedItems`)와
+   하단 "선택 삭제"·"취소" 바는 `com.jkapp.common.MultiDeleteState`·`MultiDeleteBar`로 대체한다.
+   '전체 삭제' 버튼은 투자종목 화면 고유로 남긴다. 강제 위치 `InvestmentTab`(`FinanceScreen.kt`).
 5. **시트에서 가져오기**: 버튼 → `importFromSheet` → `Loading` → `readInvestmentBlocks`
    (30초 타임아웃) → 명의별 블록을 `parseInvestmentRows`로 파싱 → `Preview` 상태로 미리보기 표시
    (성공/오류 혼재). 접근 동의 필요 시 `InvestmentSheetAuthException`의 복구 인텐트를

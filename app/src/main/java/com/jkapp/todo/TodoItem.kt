@@ -5,6 +5,10 @@ import java.time.ZoneOffset
 
 data class TodoItem(
     val firestoreId: String? = null,
+    // 항목 종류. MAIN이 기본값이며, 자식 항목은 SUB. 레거시 문서(type 필드 없음)는 MAIN으로 처리한다.
+    val type: TodoType = TodoType.MAIN,
+    // 자식(SUB) 항목일 때 부모 문서 ID. MAIN이면 null.
+    val mainTodoId: String? = null,
     val title: String,
     val memo: String = "",
     val status: TodoStatus = TodoStatus.NOT_STARTED,
