@@ -22,8 +22,11 @@ class HapticController(context: Context) {
     var intensity: Int = MAX_HAPTIC_INTENSITY / 2
 
     fun tick() {
-        if (intensity <= 0) return
-        val amplitude = (intensity * 255 / MAX_HAPTIC_INTENSITY).coerceIn(1, 255)
+        tick(intensity)
+    }
+
+    fun tick(intensity: Int) {
+        val amplitude = hapticAmplitude(intensity) ?: return
         vibrator.vibrate(VibrationEffect.createOneShot(TICK_DURATION_MS, amplitude))
     }
 
