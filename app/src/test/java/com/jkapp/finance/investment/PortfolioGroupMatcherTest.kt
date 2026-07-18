@@ -158,12 +158,12 @@ class PortfolioGroupMatcherTest {
         val slices = PortfolioGroupMatcher.computePieSlices(portfolio, pairs)
 
         // 분모 = 300 + 100 = 400 (미분류 1000 제외)
-        val 국내 = slices.single { it.groupName == "국내" }
-        val 해외 = slices.single { it.groupName == "해외" }
-        assertEquals(BigDecimal("75.0"), 국내.actualRatioPct)
-        assertEquals(BigDecimal("25.0"), 해외.actualRatioPct)
-        assertEquals(BigDecimal("60"), 국내.targetRatioPct)
-        assertEquals(BigDecimal("40"), 해외.targetRatioPct)
+        val domesticSlice = slices.single { it.groupName == "국내" }
+        val overseasSlice = slices.single { it.groupName == "해외" }
+        assertEquals(BigDecimal("75.0"), domesticSlice.actualRatioPct)
+        assertEquals(BigDecimal("25.0"), overseasSlice.actualRatioPct)
+        assertEquals(BigDecimal("60"), domesticSlice.targetRatioPct)
+        assertEquals(BigDecimal("40"), overseasSlice.targetRatioPct)
     }
 
     @Test

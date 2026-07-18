@@ -1,5 +1,5 @@
 # detekt 룰셋 — jkapp
-# doc/CODE_STYLE.md, doc/CODE_CONVENTION.md 기준에 맞춰 조정한다.
+# doc/CODE_STYLE.md (줄 길이 최대 180자), doc/CODE_CONVENTION.md 기준에 맞춰 조정한다.
 # buildUponDefaultConfig = true 이므로 여기서는 기본값과 다르게 둘 규칙만 명시한다.
 
 build:
@@ -52,7 +52,7 @@ style:
   active: true
   MaxLineLength:
     active: true
-    maxLineLength: 100
+    maxLineLength: 180
     excludePackageStatements: true
     excludeImportStatements: true
     excludeCommentStatements: true

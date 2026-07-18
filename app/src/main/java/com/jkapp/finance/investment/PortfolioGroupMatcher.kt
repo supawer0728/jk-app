@@ -2,6 +2,8 @@ package com.jkapp.finance.investment
 
 import java.math.BigDecimal
 
+private val PERCENT_SCALE = BigDecimal(100)
+
 /**
  * 포트폴리오 그룹 매칭·합산 로직. 모두 순수 함수로 구성하여 단위 테스트가 쉽다.
  */
@@ -15,13 +17,11 @@ object PortfolioGroupMatcher {
      * - 축 내 OR: 각 축에서 값이 리스트에 포함되면 통과.
      * - null 또는 빈 리스트인 축은 "제한 없음(전체 통과)"으로 처리.
      */
-    fun matches(group: PortfolioGroup, owner: String, item: InvestmentItem): Boolean {
-        if (group.owners.isNotEmpty() && owner !in group.owners) return false
-        if (group.accounts.isNotEmpty() && item.assetName !in group.accounts) return false
-        if (!group.categories.isNullOrEmpty() && item.category !in group.categories) return false
-        if (!group.stockNames.isNullOrEmpty() && item.investmentName !in group.stockNames) return false
-        return true
-    }
+    fun matches(group: PortfolioGroup, owner: String, item: InvestmentItem): Boolean =
+        (group.owners.isEmpty() || owner in group.owners) &&
+            (group.accounts.isEmpty() || item.assetName in group.accounts) &&
+            (group.categories.isNullOrEmpty() || item.category in group.categories) &&
+            (group.stockNames.isNullOrEmpty() || item.investmentName in group.stockNames)
 
     /**
      * [portfolio]의 그룹별 평가금액(원화) 합계를 계산한다.
@@ -69,7 +69,7 @@ object PortfolioGroupMatcher {
         return portfolio.groups.map { group ->
             val amount = groupAmounts[group.name] ?: BigDecimal.ZERO
             val actualRatio = if (totalClassified > BigDecimal.ZERO) {
-                amount.multiply(BigDecimal(100))
+                amount.multiply(PERCENT_SCALE)
                     .divide(totalClassified, 1, java.math.RoundingMode.HALF_UP)
             } else {
                 BigDecimal.ZERO
