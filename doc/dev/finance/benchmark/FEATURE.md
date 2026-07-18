@@ -81,8 +81,26 @@
 5. **다중선택 삭제 공통화(이슈 #88)**: 선택 모드의 상태 관리(`isSelectionMode`, `selectedDates`)와
    하단 "선택 삭제"·"취소" 바는 `com.jkapp.common.MultiDeleteState`·`MultiDeleteBar`로 대체한다.
    '전체 삭제' 버튼은 벤치마크 화면 고유로 남긴다. 강제 위치 `BenchmarkTab`(`FinanceScreen.kt`).
+6. **차트 보기(이슈 #98)**: 벤치마크 탭 우하단 FAB 그룹의 차트 버튼 클릭 → 수익률/MDD 선택 드롭다운 →
+   `BenchmarkChartRoute(chartType)` 라우트로 전체화면 진입.
+   - **기간 필터**: 프리셋 4종(최근 3개월/6개월/1년/전체). 기준일은 **데이터 최신 날짜**에서 역산한다
+     (오늘 날짜가 아님). `BenchmarkChartUtils.filterByPeriod` 순수 함수로 슬라이싱.
+   - **수익률 차트(이중 축)**: 막대(`Benchmark.currentAmount`, 오른쪽 Y축, K/M/G 단위 축약) +
+     선 4종(자산 `BenchmarkRowMetrics.returnRatePercent`, KOSPI/S&P500/나스닥 `IndexMetrics.returnRatePercent`,
+     왼쪽 Y축 %). 차트는 `BenchmarkViewModel.rowMetrics`를 기간 필터로 슬라이싱해 소비하며
+     **새 계산 없음**. null 값(최초 행 `returnRatePercent` 등)은 해당 포인트를 0으로 대체.
+   - **MDD 차트(영역 4종)**: 자산 `assetMdd`, KOSPI/S&P500/나스닥 `IndexMetrics.mdd`.
+     범례 표기는 `자산`/`KOSPI`/`S&P500`/`나스닥`(MDD 접미어 생략). null 값(최초 행 `assetMdd`,
+     고점 0인 지수 `mdd`)은 해당 포인트를 0으로 대체.
+   - **K/M/G 단위 축약**: 오른쪽 Y축 금액 레이블에 적용. `BenchmarkChartUtils.formatAmount` 순수 함수.
+     1,000 미만 → 그대로, 1,000 이상 → K, 1,000,000 이상 → M, 1,000,000,000 이상 → G.
+   - **가로모드**: 차트 화면 진입 시 landscape 자동 고정, 뒤로가기 시 원래 방향 복원
+     (`DisposableEffect` + `activity.requestedOrientation`).
+   - 차트 라이브러리: Vico 3.2.3 (`compose-m3`). 결정 근거 → ADR #98.
 
 ## 관련 결정 (ADR)
 
 - [`doc/adr/73/google-sheets-api-readonly.md`](../../../adr/73/google-sheets-api-readonly.md) — 벤치마크 시트 연동에
   Google Sheets API v4(읽기 전용) 사용, Drive 인증 스택 재사용
+- [`doc/adr/98/vico-chart-library.md`](../../../adr/98/vico-chart-library.md) — 벤치마크 차트에
+  Vico 3.x(`compose-m3`) 도입, 이중 Y축 및 영역 차트 지원

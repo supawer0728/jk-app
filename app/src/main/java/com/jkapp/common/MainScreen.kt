@@ -65,6 +65,7 @@ import com.jkapp.finance.benchmark.BenchmarkViewModel
 import com.jkapp.finance.toDisplayAmount
 import com.jkapp.finance.investment.DailyAssetInvestmentViewModel
 import com.jkapp.haptic.LocalHapticController
+import com.jkapp.nav.BenchmarkChartType
 import com.jkapp.todo.TodoScreen
 import com.jkapp.todo.TodoViewModel
 import java.math.BigDecimal
@@ -90,6 +91,7 @@ fun MainScreen(
     onNavigateToTodoSubForm: (String) -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToPortfolio: () -> Unit,
+    onNavigateToChart: (chartType: BenchmarkChartType) -> Unit = {},
 ) {
     val user by viewModel.user.collectAsStateWithLifecycle()
     val currentUser = user ?: return
@@ -274,6 +276,7 @@ fun MainScreen(
                     investmentViewModel = investmentViewModel,
                     benchmarkViewModel = benchmarkViewModel,
                     onNavigateToPortfolio = onNavigateToPortfolio,
+                    onNavigateToChart = onNavigateToChart,
                 )
                 MainTab.DIARY -> DiaryScreen(
                     viewModel = diaryViewModel,

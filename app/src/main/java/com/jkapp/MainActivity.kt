@@ -33,6 +33,7 @@ import com.jkapp.diary.RecordTypeManagementScreen
 import com.jkapp.drive.DriveRepositoryImpl
 import com.jkapp.finance.asset.AssetSheetRepositoryImpl
 import com.jkapp.finance.asset.DailyAssetViewModel
+import com.jkapp.finance.benchmark.BenchmarkChartScreen
 import com.jkapp.finance.benchmark.BenchmarkSheetRepositoryImpl
 import com.jkapp.finance.benchmark.BenchmarkViewModel
 import com.jkapp.finance.investment.DailyAssetInvestmentViewModel
@@ -41,6 +42,8 @@ import com.jkapp.finance.investment.PortfolioScreen
 import com.jkapp.finance.investment.PortfolioViewModel
 import com.jkapp.haptic.HapticController
 import com.jkapp.haptic.LocalHapticController
+import com.jkapp.nav.BenchmarkChartRoute
+import com.jkapp.nav.BenchmarkChartType
 import com.jkapp.nav.DiaryDetailRoute
 import com.jkapp.nav.DiaryFormRoute
 import com.jkapp.nav.HomeRoute
@@ -162,6 +165,9 @@ class MainActivity : ComponentActivity() {
                                     },
                                     onNavigateToPortfolio = {
                                         backStack.add(PortfolioRoute)
+                                    },
+                                    onNavigateToChart = { chartType ->
+                                        backStack.add(BenchmarkChartRoute(chartType.name))
                                     }
                                 )
                             }
@@ -205,6 +211,13 @@ class MainActivity : ComponentActivity() {
                             entry<PortfolioRoute> {
                                 PortfolioScreen(
                                     viewModel = portfolioViewModel,
+                                    onBack = { backStack.removeLastOrNull() }
+                                )
+                            }
+                            entry<BenchmarkChartRoute> { route ->
+                                BenchmarkChartScreen(
+                                    viewModel = benchmarkViewModel,
+                                    chartType = enumValueOf<BenchmarkChartType>(route.chartType),
                                     onBack = { backStack.removeLastOrNull() }
                                 )
                             }

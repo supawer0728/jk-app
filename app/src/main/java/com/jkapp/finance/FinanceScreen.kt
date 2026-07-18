@@ -27,6 +27,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.ShowChart
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
@@ -103,6 +104,7 @@ import com.jkapp.finance.investment.InvestmentItem
 import com.jkapp.finance.investment.InvestmentItemMetrics
 import com.jkapp.finance.investment.InvestmentSheetImportBlock
 import com.jkapp.finance.investment.InvestmentSheetImportState
+import com.jkapp.nav.BenchmarkChartType
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.text.NumberFormat
@@ -121,6 +123,7 @@ fun FinanceScreen(
     investmentViewModel: DailyAssetInvestmentViewModel,
     benchmarkViewModel: BenchmarkViewModel,
     onNavigateToPortfolio: () -> Unit = {},
+    onNavigateToChart: (chartType: BenchmarkChartType) -> Unit = {},
 ) {
     var selectedTab by rememberSaveable { mutableStateOf(AssetTab.DAILY_ASSET) }
 
@@ -142,7 +145,10 @@ fun FinanceScreen(
                     benchmarkViewModel = benchmarkViewModel,
                     onNavigateToPortfolio = onNavigateToPortfolio,
                 )
-                AssetTab.BENCHMARK -> BenchmarkTab(viewModel = benchmarkViewModel)
+                AssetTab.BENCHMARK -> BenchmarkTab(
+                    viewModel = benchmarkViewModel,
+                    onNavigateToChart = onNavigateToChart,
+                )
             }
         }
     }
@@ -1572,7 +1578,10 @@ private val BENCHMARK_ACTION_COLUMN_WIDTH = 88.dp
 private val BENCHMARK_CHECKBOX_COLUMN_WIDTH = 40.dp
 
 @Composable
-private fun BenchmarkTab(viewModel: BenchmarkViewModel) {
+private fun BenchmarkTab(
+    viewModel: BenchmarkViewModel,
+    onNavigateToChart: (chartType: BenchmarkChartType) -> Unit = {},
+) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val actionError by viewModel.actionError.collectAsStateWithLifecycle()
     // 20개 열의 파생 지표는 뷰모델(BenchmarkViewModel.rowMetrics)에서 데이터가 실제로 바뀔 때만
@@ -1583,6 +1592,7 @@ private fun BenchmarkTab(viewModel: BenchmarkViewModel) {
     var formTarget by remember { mutableStateOf<BenchmarkFormTarget?>(null) }
     var pendingDelete by remember { mutableStateOf<Benchmark?>(null) }
     var showFabMenu by remember { mutableStateOf(false) }
+    var showChartMenu by remember { mutableStateOf(false) }
     val sheetImport by viewModel.sheetImport.collectAsStateWithLifecycle()
     val multiDeleteState = remember { MultiDeleteState<String>() }
     var showDeleteAllConfirm by remember { mutableStateOf(false) }
@@ -1730,6 +1740,27 @@ private fun BenchmarkTab(viewModel: BenchmarkViewModel) {
                                 }
                             }
                             if (entries.isNotEmpty()) {
+                                Box {
+                                    FloatingActionButton(onClick = { showChartMenu = true }) {
+                                        Icon(Icons.AutoMirrored.Filled.ShowChart, contentDescription = stringResource(R.string.benchmark_chart))
+                                    }
+                                    DropdownMenu(expanded = showChartMenu, onDismissRequest = { showChartMenu = false }) {
+                                        DropdownMenuItem(
+                                            text = { Text(stringResource(R.string.benchmark_chart_return)) },
+                                            onClick = {
+                                                showChartMenu = false
+                                                onNavigateToChart(BenchmarkChartType.RETURN)
+                                            },
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text(stringResource(R.string.benchmark_chart_mdd)) },
+                                            onClick = {
+                                                showChartMenu = false
+                                                onNavigateToChart(BenchmarkChartType.MDD)
+                                            },
+                                        )
+                                    }
+                                }
                                 FloatingActionButton(onClick = { multiDeleteState.enter() }) {
                                     Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.benchmark_bulk_delete))
                                 }

@@ -156,6 +156,17 @@
     <string name="benchmark_delete_all_confirm_message">벤치마크 항목을 모두 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.</string>
     <string name="benchmark_delete_confirm_title">벤치마크 삭제</string>
     <string name="benchmark_delete_confirm_message">%s 벤치마크를 삭제하시겠습니까?</string>
+    <string name="benchmark_chart">차트</string>
+    <string name="benchmark_chart_return">수익률 차트</string>
+    <string name="benchmark_chart_mdd">MDD 차트</string>
+    <string name="benchmark_chart_period_3m">최근 3개월</string>
+    <string name="benchmark_chart_period_6m">최근 6개월</string>
+    <string name="benchmark_chart_period_1y">최근 1년</string>
+    <string name="benchmark_chart_period_all">전체</string>
+    <string name="benchmark_chart_legend_asset">자산</string>
+    <string name="benchmark_chart_legend_kospi">KOSPI</string>
+    <string name="benchmark_chart_legend_snp500">S&amp;P500</string>
+    <string name="benchmark_chart_legend_nasdaq">나스닥</string>
     <!-- Notification -->
     <string name="notification_channel_todo_assignment_name">할 일 배정</string>
     <string name="notification_channel_todo_assignment_description">할 일이 배정되었을 때 알려줍니다</string>
