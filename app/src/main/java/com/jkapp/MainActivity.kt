@@ -209,6 +209,7 @@ class MainActivity : ComponentActivity() {
                                     viewModel = settingsViewModel,
                                     onBack = { backStack.removeLastOrNull() },
                                     onNavigateToTabOrderEdit = { backStack.add(TabOrderEditRoute) },
+                                    onSignOut = { authViewModel.signOut() },
                                 )
                             }
                             entry<TabOrderEditRoute> {

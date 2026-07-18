@@ -5,7 +5,6 @@ import androidx.activity.compose.LocalActivity
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -18,7 +17,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
@@ -74,13 +72,13 @@ private val PINNED_TAB_COLOR_DARK = Color(0xFF241C3D)
 private val TAB_BAR_HEIGHT = 48.dp
 private val TAB_DIVIDER_WIDTH = 1.dp
 private val PINNED_TAB_HORIZONTAL_PADDING = 16.dp
-// 고정폭 스크롤 탭 셀 내부의 텍스트 좌우 여백. 셀 폭이 좁은 소형 화면에서도 라벨이 최대한
+// 고정폭 탭 셀 내부의 텍스트 좌우 여백. 셀 폭이 좁은 소형 화면에서도 라벨이 최대한
 // 보이도록 작게 둔다(넘치면 말줄임 처리).
-private val SCROLL_TAB_HORIZONTAL_PADDING = 4.dp
+private val CENTER_TAB_HORIZONTAL_PADDING = 4.dp
 
-// 홈·설정 아이콘 사이(가운데 스크롤 영역)에 한 번에 보이는 탭 개수. 각 탭 폭 = 가운데 영역
-// 폭 / VISIBLE_SCROLL_TAB_COUNT로 고정해 4개가 딱 보이고, 나머지(로그아웃)는 가로 스크롤로 접근한다.
-private const val VISIBLE_SCROLL_TAB_COUNT = 4
+// 홈·설정 아이콘 사이(가운데 영역)에 표시되는 콘텐츠 탭 개수. 각 탭 폭 = 가운데 영역
+// 폭 / CENTER_TAB_COUNT로 고정해 4개(자산관리·육묘일기·TODO·캘린더)가 스크롤 없이 딱 맞는다.
+private const val CENTER_TAB_COUNT = 4
 
 @Composable
 fun MainScreen(
@@ -112,7 +110,6 @@ fun MainScreen(
 
     var selectedTab by rememberSaveable { mutableStateOf(MainTab.HOME) }
     var showExitConfirm by remember { mutableStateOf(false) }
-    var showSignOutConfirm by remember { mutableStateOf(false) }
     val activity = LocalActivity.current
     val haptic = LocalHapticController.current
 
@@ -141,35 +138,12 @@ fun MainScreen(
         )
     }
 
-    if (showSignOutConfirm) {
-        AlertDialog(
-            onDismissRequest = { showSignOutConfirm = false },
-            title = { Text(stringResource(R.string.sign_out_confirm_title)) },
-            text = { Text(stringResource(R.string.sign_out_confirm_message)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    showSignOutConfirm = false
-                    viewModel.signOut()
-                }) {
-                    Text(stringResource(R.string.sign_out))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showSignOutConfirm = false }) {
-                    Text(stringResource(R.string.cancel))
-                }
-            }
-        )
-    }
-
     val darkTheme = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val tabBarColor = if (darkTheme) TAB_BAR_COLOR_DARK else TAB_BAR_COLOR_LIGHT
     val pinnedTabColor = if (darkTheme) PINNED_TAB_COLOR_DARK else PINNED_TAB_COLOR_LIGHT
 
-    // 가운데 가로 스크롤 영역에 노출할 항목: 홈을 제외한 콘텐츠 탭(순서 반영) + 로그아웃(액션).
-    val scrollableTabs: List<BottomTabItem> =
-        tabOrder.filterNot { it == MainTab.HOME }.map { BottomTabItem.Content(it) } +
-            BottomTabItem.Action.Logout
+    // 가운데 영역에 노출할 콘텐츠 탭: 홈을 제외한 나머지(순서 반영). 로그아웃은 설정 화면으로 이동했다.
+    val centerTabs: List<MainTab> = tabOrder.filterNot { it == MainTab.HOME }
 
     Scaffold(
         bottomBar = {
@@ -201,33 +175,20 @@ fun MainScreen(
                             selectedTab = MainTab.HOME
                         },
                     )
-                    // 가운데 영역 폭을 VISIBLE_SCROLL_TAB_COUNT로 나눠 각 탭 폭을 고정한다.
-                    // 홈·설정 아이콘 사이에 4개가 딱 보이고 나머지(로그아웃)는 가로 스크롤로 접근한다.
+                    // 가운데 영역 폭을 CENTER_TAB_COUNT로 나눠 각 콘텐츠 탭 폭을 고정한다.
+                    // 홈·설정 아이콘 사이에 4개가 스크롤 없이 딱 맞는다.
                     BoxWithConstraints(modifier = Modifier.weight(1f)) {
-                        val scrollTabWidth = maxWidth / VISIBLE_SCROLL_TAB_COUNT
-                        Row(
-                            modifier = Modifier.horizontalScroll(rememberScrollState()),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            scrollableTabs.forEachIndexed { index, item ->
-                                ScrollableTextTab(
-                                    width = scrollTabWidth,
+                        val centerTabWidth = maxWidth / CENTER_TAB_COUNT
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            centerTabs.forEachIndexed { index, tab ->
+                                CenterTextTab(
+                                    width = centerTabWidth,
                                     showDivider = index > 0,
-                                    label = when (item) {
-                                        is BottomTabItem.Content -> stringResource(item.tab.labelRes)
-                                        is BottomTabItem.Action.Logout -> stringResource(R.string.sign_out)
-                                        is BottomTabItem.Action.Settings -> stringResource(R.string.settings)
-                                    },
-                                    selected = item is BottomTabItem.Content && selectedTab == item.tab,
+                                    label = stringResource(tab.labelRes),
+                                    selected = selectedTab == tab,
                                     onClick = {
-                                        when (item) {
-                                            is BottomTabItem.Content -> {
-                                                haptic?.tick()
-                                                selectedTab = item.tab
-                                            }
-                                            is BottomTabItem.Action.Logout -> showSignOutConfirm = true
-                                            is BottomTabItem.Action.Settings -> onNavigateToSettings()
-                                        }
+                                        haptic?.tick()
+                                        selectedTab = tab
                                     },
                                 )
                             }
@@ -297,11 +258,11 @@ private fun PinnedIconTab(
     }
 }
 
-// 가운데 가로 스크롤 영역의 텍스트 탭 한 칸. 폭은 가운데 영역 폭/VISIBLE_SCROLL_TAB_COUNT로
-// 고정된다. 구분선은 셀 폭을 잠식하지 않도록 셀 내부 왼쪽 경계에 겹쳐 그려(4개 폭 합이 정확히
-// 가운데 영역 폭이 되도록) 앞선 항목과의 경계를 표시하고, 선택된 콘텐츠 탭은 Bold + primary로 강조한다.
+// 가운데 영역의 텍스트 탭 한 칸. 폭은 가운데 영역 폭/CENTER_TAB_COUNT로 고정된다. 구분선은
+// 셀 폭을 잠식하지 않도록 셀 내부 왼쪽 경계에 겹쳐 그려(4개 폭 합이 정확히 가운데 영역 폭이
+// 되도록) 앞선 항목과의 경계를 표시하고, 선택된 콘텐츠 탭은 Bold + primary로 강조한다.
 @Composable
-private fun ScrollableTextTab(
+private fun CenterTextTab(
     width: Dp,
     showDivider: Boolean,
     label: String,
@@ -332,7 +293,7 @@ private fun ScrollableTextTab(
             textAlign = TextAlign.Center,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(horizontal = SCROLL_TAB_HORIZONTAL_PADDING),
+            modifier = Modifier.padding(horizontal = CENTER_TAB_HORIZONTAL_PADDING),
         )
     }
 }

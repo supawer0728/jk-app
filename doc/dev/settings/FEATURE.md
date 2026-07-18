@@ -31,6 +31,14 @@ Firestore(`users/{uid}.preference`)에 저장된다. 탭 순서는 별도 화면
 - **저장소 장애 내성**: DataStore가 `IOException`을 방출하면 읽기는 빈 설정(기본값)으로 대체하고
   쓰기는 무시해 크래시를 막는다. Firestore preference 구독 오류는 로그 후 기본값을 방출한다.
   강제 위치 `AppPreferences.safePreferencesData`/각 setter, `SettingsViewModel.preference.catch`.
+- **로그아웃은 설정 화면 항목**: 로그아웃은 하단 탭이 아니라 설정 화면 목록의 항목이다. 누르면
+  확인 다이얼로그("정말 로그아웃하시겠습니까?")를 띄우고, 확인 시에만 `AuthViewModel.signOut()`을
+  호출한다(취소 시 무동작). `SettingsScreen`은 `onSignOut` 콜백으로 주입받아 호출한다. → ADR/100 후속
+- **설정 항목 좌측 라벨 고정폭 정렬**: 모든 설정 항목 행의 좌측 라벨은 동일한 고정폭으로 맞춰
+  우측 컨트롤(드롭다운·슬라이더·이동 화살표)이 세로로 정렬된다. 고정폭은 하드코딩이 아니라
+  `SubcomposeLayout`으로 모든 라벨을 measure해 얻은 **최대 폭**을 적용한다. 강제 위치
+  `SettingsScreen`(`AlignedLabelSettings`/라벨 폭 측정 레이아웃). 로그아웃은 버튼 형태라 라벨 정렬
+  대상에서 제외한다.
 
 ## 유효성 검증
 
@@ -47,7 +55,8 @@ Firestore(`users/{uid}.preference`)에 저장된다. 탭 순서는 별도 화면
 
 1. **설정 화면 진입**: `SettingsScreen`이 `SettingsViewModel`의 StateFlow들을 구독 →
    DataStore 4개 값 + Firestore `preference`(로그인 시 `users/{uid}` 실시간 구독)를 표시.
-   목록 하단에 **탭 순서 변경** 항목이 있다.
+   목록 하단에 **탭 순서 변경**과 **로그아웃** 항목이 있다. 각 설정 항목의 좌측 라벨은
+   최대 폭으로 정렬되어 우측 컨트롤이 세로로 맞춰진다.
 2. **기기 로컬 설정 변경**(다크모드/알림 방식/알림음): 드롭다운 선택 →
    `SettingsViewModel.setXxx` → `AppPreferences.setXxx`(DataStore 저장) → StateFlow 재방출.
 3. **햅틱 강도 변경**: 슬라이더 조작 → 손 뗌(`onValueChangeFinished`) →
@@ -63,8 +72,9 @@ Firestore(`users/{uid}.preference`)에 저장된다. 탭 순서는 별도 화면
    - 편집 중 Firestore 스냅샷 도착은 무시(사용자 드래그 순서 보호). → ADR/100
    - **재배열 대상은 홈을 제외한 콘텐츠 탭(자산관리·육묘일기·TODO·캘린더)뿐**이다. 홈은
      하단바 왼쪽에 고정되므로 재배치 화면 목록에 나타나지 않고, 저장 시 항상
-     `[HOME] + 재배치된 나머지` 순서로 저장되어 선두를 유지한다. 액션 탭(로그아웃·설정)도
-     재배치 대상이 아니다.
+     `[HOME] + 재배치된 나머지` 순서로 저장되어 선두를 유지한다.
+6. **로그아웃**: 설정 목록의 '로그아웃' 항목 탭 → 확인 다이얼로그("정말 로그아웃하시겠습니까?")
+   → **확인** 시 `onSignOut()`(→ `AuthViewModel.signOut()`) 호출, **취소** 시 무동작.
 
 ## 관련 결정 (ADR)
 
