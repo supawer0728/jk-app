@@ -156,9 +156,11 @@ class TodoViewModelTest {
         viewModel.advanceStatus(item)
         advanceUntilIdle()
 
-        val updated = fakeRepository.lastUpdatedItem
-        assertEquals(TodoStatus.DONE, updated?.status)
-        assertEquals(true, updated?.isCompleted)
+        // 완료 확정은 completeTodoItem 경로를 탄다(cascade·무알림 강제).
+        assertEquals("id-1", fakeRepository.lastCompletedItemId)
+        val stored = fakeRepository.itemById("id-1")
+        assertEquals(TodoStatus.DONE, stored?.status)
+        assertEquals(true, stored?.isCompleted)
         assertEquals(1, fakeScheduler.cancelled.size)
         assertTrue(fakeScheduler.scheduled.isEmpty())
     }
@@ -176,7 +178,8 @@ class TodoViewModelTest {
         viewModel.advanceStatus(item)
         advanceUntilIdle()
 
-        assertEquals(TodoStatus.DONE, fakeRepository.lastUpdatedItem?.status)
+        assertEquals("id-1", fakeRepository.lastCompletedItemId)
+        assertEquals(TodoStatus.DONE, fakeRepository.itemById("id-1")?.status)
         assertTrue(fakeScheduler.scheduled.isEmpty())
         assertEquals(1, fakeScheduler.cancelled.size)
     }
@@ -196,11 +199,13 @@ class TodoViewModelTest {
         viewModel.advanceStatus(item)
         advanceUntilIdle()
 
-        val updated = fakeRepository.lastUpdatedItem
-        assertEquals(false, updated?.isCompleted)
-        assertEquals(TodoStatus.NOT_STARTED, updated?.status)
-        assertEquals(dueAt.plusSeconds(24 * 60 * 60), updated?.dueAt)
-        assertEquals(listOf(dueAt), updated?.completionHistory)
+        // 반복 완료도 completeTodoItem 경로를 탄다.
+        assertEquals("id-1", fakeRepository.lastCompletedItemId)
+        val stored = fakeRepository.itemById("id-1")
+        assertEquals(false, stored?.isCompleted)
+        assertEquals(TodoStatus.NOT_STARTED, stored?.status)
+        assertEquals(dueAt.plusSeconds(24 * 60 * 60), stored?.dueAt)
+        assertEquals(listOf(dueAt), stored?.completionHistory)
         assertEquals(1, fakeScheduler.scheduled.size)
         assertEquals(1, fakeScheduler.cancelled.size)
     }
@@ -351,6 +356,215 @@ class TodoViewModelTest {
         assertEquals(1, fakeScheduler.cancelled.size)
     }
 
+    // --- 자식(SUB) 항목 (이슈 #88) ---
+
+    @Test
+    fun `visibleItems는 SUB 항목을 목록에 노출하지 않는다`() = runTest {
+        val parent = makeItem("부모", status = TodoStatus.NOT_STARTED, firestoreId = "p-1")
+        val sub = makeSub("자식", firestoreId = "s-1", parentId = "p-1")
+        fakeRepository.setItems(listOf(parent, sub))
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+
+        viewModel.setStatusFilter(TodoStatusFilter.ALL)
+        advanceUntilIdle()
+
+        assertEquals(listOf(parent), viewModel.visibleItems.value)
+    }
+
+    @Test
+    fun `addSubTodoItem은 repository의 자식 추가를 호출한다`() = runTest {
+        val parent = makeItem("부모", firestoreId = "p-1")
+        fakeRepository.setItems(listOf(parent))
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+
+        viewModel.addSubTodoItem("p-1", makeItem("새 자식"))
+        advanceUntilIdle()
+
+        assertEquals("p-1", fakeRepository.lastAddedSubParentId)
+        assertEquals("새 자식", fakeRepository.lastAddedSubItem?.title)
+        assertTrue(viewModel.saveCompleted.value)
+    }
+
+    @Test
+    fun `advanceSubStatus는 자식을 진행중으로 바꾸고 미진행 부모를 진행중으로 전이시킨다`() = runTest {
+        val parent = makeItem("부모", status = TodoStatus.NOT_STARTED, firestoreId = "p-1")
+        val sub = makeSub(
+            "자식", status = TodoStatus.NOT_STARTED, firestoreId = "s-1", parentId = "p-1",
+        )
+        fakeRepository.setItems(listOf(parent, sub))
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+
+        viewModel.advanceSubStatus(sub)
+        advanceUntilIdle()
+
+        // 마지막 업데이트는 부모 전이(IN_PROGRESS).
+        val updatedParent = fakeRepository.getTodoItemOnce("p-1")
+        assertEquals(TodoStatus.IN_PROGRESS, updatedParent?.status)
+        val updatedSub = fakeRepository.getTodoItemOnce("s-1")
+        assertEquals(TodoStatus.IN_PROGRESS, updatedSub?.status)
+    }
+
+    @Test
+    fun `advanceSubStatus는 이미 진행중인 부모를 완료로 전이시키지 않는다`() = runTest {
+        val parent = makeItem("부모", status = TodoStatus.IN_PROGRESS, firestoreId = "p-1")
+        val sub = makeSub(
+            "자식", status = TodoStatus.IN_PROGRESS, firestoreId = "s-1", parentId = "p-1",
+        )
+        fakeRepository.setItems(listOf(parent, sub))
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+
+        viewModel.advanceSubStatus(sub)
+        advanceUntilIdle()
+
+        // 자식은 DONE이 되지만 부모는 자동완료되지 않는다(IN_PROGRESS 유지).
+        val updatedSub = fakeRepository.getTodoItemOnce("s-1")
+        assertEquals(TodoStatus.DONE, updatedSub?.status)
+        val updatedParent = fakeRepository.getTodoItemOnce("p-1")
+        assertEquals(TodoStatus.IN_PROGRESS, updatedParent?.status)
+    }
+
+    @Test
+    fun `deleteTodoItems는 부모와 자식을 함께 삭제한다(cascade)`() = runTest {
+        val parent = makeItem("부모", firestoreId = "p-1")
+        val sub = makeSub("자식", firestoreId = "s-1", parentId = "p-1")
+        val other = makeItem("다른 부모", firestoreId = "p-2")
+        fakeRepository.setItems(listOf(parent, sub, other))
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+
+        viewModel.deleteTodoItems(listOf(parent))
+        advanceUntilIdle()
+
+        assertEquals(listOf("p-1"), fakeRepository.lastDeletedItemIds)
+        assertNull(fakeRepository.getTodoItemOnce("p-1"))
+        assertNull(fakeRepository.getTodoItemOnce("s-1"))
+        assertEquals("p-2", fakeRepository.getTodoItemOnce("p-2")?.firestoreId)
+    }
+
+    @Test
+    fun `반복 부모 완료 시 자식이 있으면 pendingSubClone이 설정된다`() = runTest {
+        val rule = RecurrenceRule(frequency = RecurrenceFrequency.DAILY)
+        val dueAt = Instant.parse("2024-01-01T00:00:00Z")
+        val parent = makeItem(
+            "반복 부모", status = TodoStatus.IN_PROGRESS, firestoreId = "p-1",
+            recurrence = rule, dueAt = dueAt,
+        )
+        val sub = makeSub("자식", firestoreId = "s-1", parentId = "p-1")
+        fakeRepository.setItems(listOf(parent, sub))
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+
+        viewModel.advanceStatus(parent)
+        advanceUntilIdle()
+
+        val pending = viewModel.pendingSubClone.value
+        assertEquals("p-1", pending?.first)
+        assertEquals(listOf(sub), pending?.second)
+    }
+
+    @Test
+    fun `반복 부모 완료 시 자식이 없으면 pendingSubClone은 설정되지 않는다`() = runTest {
+        val rule = RecurrenceRule(frequency = RecurrenceFrequency.DAILY)
+        val dueAt = Instant.parse("2024-01-01T00:00:00Z")
+        val parent = makeItem(
+            "반복 부모", status = TodoStatus.IN_PROGRESS, firestoreId = "p-1",
+            recurrence = rule, dueAt = dueAt,
+        )
+        fakeRepository.setItems(listOf(parent))
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+
+        viewModel.advanceStatus(parent)
+        advanceUntilIdle()
+
+        assertNull(viewModel.pendingSubClone.value)
+    }
+
+    @Test
+    fun `cloneSubsToNextOccurrence는 자식을 NOT_STARTED로 새 부모에 복제한다`() = runTest {
+        val newParent = makeItem("새 회차 부모", firestoreId = "p-1")
+        fakeRepository.setItems(listOf(newParent))
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+
+        val subToClone = makeSub("복제 자식", status = TodoStatus.DONE, parentId = "old")
+        viewModel.cloneSubsToNextOccurrence("p-1", listOf(subToClone))
+        advanceUntilIdle()
+
+        assertEquals("p-1", fakeRepository.lastAddedSubParentId)
+        assertEquals("복제 자식", fakeRepository.lastAddedSubItem?.title)
+        assertEquals(TodoStatus.NOT_STARTED, fakeRepository.lastAddedSubItem?.status)
+    }
+
+    @Test
+    fun `cloneSubsToNextOccurrence는 무알림(notify=false)으로 복제해 push를 만들지 않는다`() = runTest {
+        val newParent = makeItem("새 회차 부모", firestoreId = "p-1")
+        fakeRepository.setItems(listOf(newParent))
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+
+        val subs = listOf(
+            makeSub("자식1", parentId = "old"),
+            makeSub("자식2", parentId = "old"),
+        )
+        viewModel.cloneSubsToNextOccurrence("p-1", subs)
+        advanceUntilIdle()
+
+        // 복제 자식이 여러 개여도 push는 0건이어야 한다(≤1 push 원칙).
+        assertEquals(false, fakeRepository.lastAddSubNotify)
+        assertEquals(0, fakeRepository.subNotifyPushCount)
+    }
+
+    // --- 부모 DONE cascade (advanceStatus 경로, 이슈 #88 CRITICAL 회귀) ---
+
+    @Test
+    fun `advanceStatus로 부모를 완료하면 자식도 DONE으로 cascade되고 push는 발생하지 않는다`() = runTest {
+        val parent = makeItem("부모", status = TodoStatus.IN_PROGRESS, firestoreId = "p-1")
+        val sub1 = makeSub(
+            "자식1", status = TodoStatus.NOT_STARTED, firestoreId = "s-1", parentId = "p-1",
+        )
+        val sub2 = makeSub(
+            "자식2", status = TodoStatus.IN_PROGRESS, firestoreId = "s-2", parentId = "p-1",
+        )
+        fakeRepository.setItems(listOf(parent, sub1, sub2))
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+
+        viewModel.advanceStatus(parent)
+        advanceUntilIdle()
+
+        // 완료는 completeTodoItem 경로(cascade+무알림)를 탄다.
+        assertEquals("p-1", fakeRepository.lastCompletedItemId)
+        assertEquals(TodoStatus.DONE, fakeRepository.itemById("p-1")?.status)
+        assertEquals(TodoStatus.DONE, fakeRepository.itemById("s-1")?.status)
+        assertEquals(TodoStatus.DONE, fakeRepository.itemById("s-2")?.status)
+        // 부모 완료·자식 cascade 모두 무알림이므로 자식 생성 push는 0건.
+        assertEquals(0, fakeRepository.subNotifyPushCount)
+    }
+
+    @Test
+    fun `advanceSubStatus 부모 전이 실패는 uiState를 Error로 덮지 않는다`() = runTest {
+        val parent = makeItem("부모", status = TodoStatus.NOT_STARTED, firestoreId = "p-1")
+        val sub = makeSub(
+            "자식", status = TodoStatus.NOT_STARTED, firestoreId = "s-1", parentId = "p-1",
+        )
+        fakeRepository.setItems(listOf(parent, sub))
+        fakeAuth.setLoggedIn(true)
+        advanceUntilIdle()
+
+        // 자식 변경(주 작업)은 성공, 이어지는 부모 전이(부수 작업)만 실패시킨다.
+        fakeRepository.failNextUpdateAfter(1)
+        viewModel.advanceSubStatus(sub)
+        advanceUntilIdle()
+
+        // 부수 작업 실패는 삼켜지고 uiState는 Success를 유지한다.
+        assertTrue(viewModel.uiState.value is TodoUiState.Success)
+    }
+
     // --- helpers ---
 
     private fun makeItem(
@@ -369,5 +583,18 @@ class TodoViewModelTest {
         recurrence = recurrence,
         dueAt = dueAt,
         reminderOffsetMinutes = reminderOffsetMinutes,
+    )
+
+    private fun makeSub(
+        title: String,
+        parentId: String,
+        status: TodoStatus = TodoStatus.NOT_STARTED,
+        firestoreId: String? = null,
+    ) = TodoItem(
+        firestoreId = firestoreId,
+        type = TodoType.SUB,
+        mainTodoId = parentId,
+        title = title,
+        status = status,
     )
 }

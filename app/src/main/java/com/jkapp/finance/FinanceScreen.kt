@@ -78,6 +78,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jkapp.R
 import com.jkapp.common.IsoDatePickerDialog
 import com.jkapp.common.LoadingIndicator
+import com.jkapp.common.MultiDeleteBar
+import com.jkapp.common.MultiDeleteState
 import com.jkapp.common.todayDate
 import com.jkapp.finance.asset.ASSET_OWNERS
 import com.jkapp.finance.asset.AssetItem
@@ -853,9 +855,8 @@ private fun InvestmentTab(
     var showFabMenu by remember { mutableStateOf(false) }
     var showFilterModal by remember { mutableStateOf(false) }
     val sheetImport by viewModel.sheetImport.collectAsStateWithLifecycle()
-    var isSelectionMode by rememberSaveable { mutableStateOf(false) }
     // 선택 항목은 (owner, item) 쌍으로 관리한다(같은 종목명이라도 명의별로 다른 문서라 owner가 필요).
-    var selectedItems by remember { mutableStateOf<Set<Pair<String, InvestmentItem>>>(emptySet()) }
+    val multiDeleteState = remember { MultiDeleteState<Pair<String, InvestmentItem>>() }
     var showDeleteAllConfirm by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
 
@@ -877,19 +878,14 @@ private fun InvestmentTab(
     }
 
     // 선택 모드에 들어가면 맨 위(첫 항목)부터 볼 수 있도록 목록을 위로 스크롤한다(BenchmarkTab과 동일한 패턴).
-    LaunchedEffect(isSelectionMode) {
-        if (isSelectionMode) listState.animateScrollToItem(0)
-    }
-
-    fun exitSelectionMode() {
-        isSelectionMode = false
-        selectedItems = emptySet()
+    LaunchedEffect(multiDeleteState.isSelectionMode) {
+        if (multiDeleteState.isSelectionMode) listState.animateScrollToItem(0)
     }
 
     // 필터나 날짜를 바꾸면 화면에 보이는 목록 자체가 바뀌므로, 선택 모드에서 체크해 둔 항목이
     // 더 이상 보이는 목록과 무관해진다(엉뚱한 항목 삭제 방지). 전환 시 선택 모드를 초기화한다.
     LaunchedEffect(filter, latestDate) {
-        exitSelectionMode()
+        multiDeleteState.exit()
     }
 
     var valuationMismatchMessage by remember { mutableStateOf<String?>(null) }
@@ -980,15 +976,9 @@ private fun InvestmentTab(
                                     val pair = owner to entry.item
                                     InvestmentListItem(
                                         entry = entry,
-                                        isSelectionMode = isSelectionMode,
-                                        isSelected = pair in selectedItems,
-                                        onToggleSelected = {
-                                            selectedItems = if (pair in selectedItems) {
-                                                selectedItems - pair
-                                            } else {
-                                                selectedItems + pair
-                                            }
-                                        },
+                                        isSelectionMode = multiDeleteState.isSelectionMode,
+                                        isSelected = pair in multiDeleteState.selectedIds,
+                                        onToggleSelected = { multiDeleteState.toggle(pair) },
                                         onEditRequest = { formTarget = InvestmentFormTarget.Edit(owner = owner, target = entry.item) },
                                         onDeleteRequest = {
                                             val date = latestDate
@@ -1003,39 +993,39 @@ private fun InvestmentTab(
                     }
                 }
 
-                if (isSelectionMode) {
-                    Row(
+                if (multiDeleteState.isSelectionMode) {
+                    Column(
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            .fillMaxWidth(),
                     ) {
+                        // '전체 삭제'는 투자종목 화면 고유로 남긴다(공통 MultiDeleteBar 외부에 위치).
                         Button(
                             onClick = { showDeleteAllConfirm = true },
                             enabled = rowMetrics.isNotEmpty(),
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp)
+                                .padding(top = 8.dp),
                         ) { Text(stringResource(R.string.investment_delete_all)) }
-                        Button(
-                            onClick = {
+                        MultiDeleteBar(
+                            selectedCount = multiDeleteState.selectedIds.size,
+                            onDeleteSelected = {
                                 val date = latestDate
                                 if (date != null) {
                                     // 명의별로 나눠 삭제한다(문서가 {date}_{owner}로 분리되어 있음).
-                                    selectedItems.groupBy { it.first }.forEach { (owner, pairs) ->
-                                        viewModel.deleteInvestments(date, owner, pairs.map { it.second })
-                                    }
+                                    multiDeleteState.selectedIds
+                                        .groupBy { it.first }
+                                        .forEach { (owner, pairs) ->
+                                            val items = pairs.map { it.second }
+                                            viewModel.deleteInvestments(date, owner, items)
+                                        }
                                 }
-                                exitSelectionMode()
+                                multiDeleteState.exit()
                             },
-                            enabled = selectedItems.isNotEmpty(),
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                            modifier = Modifier.weight(1f),
-                        ) { Text(stringResource(R.string.investment_delete_selected)) }
-                        OutlinedButton(
-                            onClick = { exitSelectionMode() },
-                            modifier = Modifier.weight(1f),
-                        ) { Text(stringResource(R.string.cancel)) }
+                            onCancel = { multiDeleteState.exit() },
+                        )
                     }
                 } else {
                     Row(
@@ -1075,7 +1065,7 @@ private fun InvestmentTab(
                                 }
                             }
                             if (rowMetrics.isNotEmpty()) {
-                                FloatingActionButton(onClick = { isSelectionMode = true }) {
+                                FloatingActionButton(onClick = { multiDeleteState.enter() }) {
                                     Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.investment_bulk_delete))
                                 }
                             }
@@ -1212,7 +1202,7 @@ private fun InvestmentTab(
                         }
                     }
                     showDeleteAllConfirm = false
-                    exitSelectionMode()
+                    multiDeleteState.exit()
                 }) {
                     Text(stringResource(android.R.string.ok), color = MaterialTheme.colorScheme.error)
                 }
@@ -1594,8 +1584,7 @@ private fun BenchmarkTab(viewModel: BenchmarkViewModel) {
     var pendingDelete by remember { mutableStateOf<Benchmark?>(null) }
     var showFabMenu by remember { mutableStateOf(false) }
     val sheetImport by viewModel.sheetImport.collectAsStateWithLifecycle()
-    var isSelectionMode by rememberSaveable { mutableStateOf(false) }
-    var selectedDates by remember { mutableStateOf<Set<String>>(emptySet()) }
+    val multiDeleteState = remember { MultiDeleteState<String>() }
     var showDeleteAllConfirm by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val existingDates = remember(entries) {
@@ -1620,13 +1609,8 @@ private fun BenchmarkTab(viewModel: BenchmarkViewModel) {
     }
 
     // 선택 모드에 들어가면 최신 날짜(맨 앞 행)부터 볼 수 있도록 목록 맨 위로 이동한다.
-    LaunchedEffect(isSelectionMode) {
-        if (isSelectionMode) listState.animateScrollToItem(0)
-    }
-
-    fun exitSelectionMode() {
-        isSelectionMode = false
-        selectedDates = emptySet()
+    LaunchedEffect(multiDeleteState.isSelectionMode) {
+        if (multiDeleteState.isSelectionMode) listState.animateScrollToItem(0)
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -1657,13 +1641,21 @@ private fun BenchmarkTab(viewModel: BenchmarkViewModel) {
                             .horizontalScroll(rememberScrollState()),
                     ) {
                         BenchmarkHeaderRow(
-                            isSelectionMode = isSelectionMode,
-                            allSelected = selectedDates.size == entries.size,
+                            isSelectionMode = multiDeleteState.isSelectionMode,
+                            allSelected = multiDeleteState.selectedIds.size == entries.size,
                             onToggleSelectAll = {
-                                selectedDates = if (selectedDates.size == entries.size) {
-                                    emptySet()
+                                val allDates = entries.map { it.benchmark.date }.toSet()
+                                if (multiDeleteState.selectedIds.size == entries.size) {
+                                    allDates.forEach { multiDeleteState.toggle(it) }
+                                    // 전체 선택 해제: 현재 선택된 것과 동일하므로 exit 후 재진입
+                                    multiDeleteState.exit()
+                                    multiDeleteState.enter()
                                 } else {
-                                    entries.map { it.benchmark.date }.toSet()
+                                    allDates.forEach { date ->
+                                        if (date !in multiDeleteState.selectedIds) {
+                                            multiDeleteState.toggle(date)
+                                        }
+                                    }
                                 }
                             },
                         )
@@ -1674,17 +1666,12 @@ private fun BenchmarkTab(viewModel: BenchmarkViewModel) {
                             state = listState,
                         ) {
                             items(entries, key = { it.benchmark.date }) { entry ->
+                                val benchmarkDate = entry.benchmark.date
                                 BenchmarkRow(
                                     entry = entry,
-                                    isSelectionMode = isSelectionMode,
-                                    isSelected = entry.benchmark.date in selectedDates,
-                                    onToggleSelected = {
-                                        selectedDates = if (entry.benchmark.date in selectedDates) {
-                                            selectedDates - entry.benchmark.date
-                                        } else {
-                                            selectedDates + entry.benchmark.date
-                                        }
-                                    },
+                                    isSelectionMode = multiDeleteState.isSelectionMode,
+                                    isSelected = benchmarkDate in multiDeleteState.selectedIds,
+                                    onToggleSelected = { multiDeleteState.toggle(benchmarkDate) },
                                     onEditRequest = { formTarget = BenchmarkFormTarget.Edit(entry.benchmark) },
                                     onDeleteRequest = { pendingDelete = entry.benchmark },
                                 )
@@ -1693,33 +1680,30 @@ private fun BenchmarkTab(viewModel: BenchmarkViewModel) {
                     }
                 }
 
-                if (isSelectionMode) {
-                    Row(
+                if (multiDeleteState.isSelectionMode) {
+                    Column(
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            .fillMaxWidth(),
                     ) {
+                        // '전체 삭제'는 벤치마크 화면 고유로 남긴다(공통 MultiDeleteBar 외부에 위치).
                         Button(
                             onClick = { showDeleteAllConfirm = true },
                             enabled = entries.isNotEmpty(),
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp)
+                                .padding(top = 8.dp),
                         ) { Text(stringResource(R.string.benchmark_delete_all)) }
-                        Button(
-                            onClick = {
-                                viewModel.deleteBenchmarks(selectedDates.toList())
-                                exitSelectionMode()
+                        MultiDeleteBar(
+                            selectedCount = multiDeleteState.selectedIds.size,
+                            onDeleteSelected = {
+                                viewModel.deleteBenchmarks(multiDeleteState.selectedIds.toList())
+                                multiDeleteState.exit()
                             },
-                            enabled = selectedDates.isNotEmpty(),
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                            modifier = Modifier.weight(1f),
-                        ) { Text(stringResource(R.string.benchmark_delete_selected)) }
-                        OutlinedButton(
-                            onClick = { exitSelectionMode() },
-                            modifier = Modifier.weight(1f),
-                        ) { Text(stringResource(R.string.cancel)) }
+                            onCancel = { multiDeleteState.exit() },
+                        )
                     }
                 } else {
                     Box(modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)) {
@@ -1746,7 +1730,7 @@ private fun BenchmarkTab(viewModel: BenchmarkViewModel) {
                                 }
                             }
                             if (entries.isNotEmpty()) {
-                                FloatingActionButton(onClick = { isSelectionMode = true }) {
+                                FloatingActionButton(onClick = { multiDeleteState.enter() }) {
                                     Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.benchmark_bulk_delete))
                                 }
                             }
@@ -1824,7 +1808,7 @@ private fun BenchmarkTab(viewModel: BenchmarkViewModel) {
                 TextButton(onClick = {
                     viewModel.deleteAllBenchmarks()
                     showDeleteAllConfirm = false
-                    exitSelectionMode()
+                    multiDeleteState.exit()
                 }) {
                     Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error)
                 }

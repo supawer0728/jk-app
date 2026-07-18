@@ -233,4 +233,15 @@
     <string name="todo_empty">표시할 할 일이 없습니다</string>
     <string name="todo_delete_confirm_title">할 일 삭제</string>
     <string name="todo_delete_confirm_message">%s 할 일을 삭제하시겠습니까?</string>
+    <!-- 자식(SUB) 항목 -->
+    <string name="todo_form_add_sub_title">하위 할 일 추가</string>
+    <string name="todo_add_sub">하위 할 일 추가</string>
+    <string name="todo_expand_subs">하위 할 일 펼치기</string>
+    <string name="todo_collapse_subs">하위 할 일 접기</string>
+    <string name="todo_sub_clone_title">하위 할 일 복제</string>
+    <string name="todo_sub_clone_message">다음 회차에도 하위 할 일을 그대로 만들까요?</string>
+    <string name="todo_sub_clone_confirm">생성</string>
+    <string name="todo_sub_clone_dismiss">만들지 않음</string>
+    <!-- 다중선택 삭제 -->
+    <string name="todo_bulk_delete">할 일 일괄 삭제</string>
 </resources>

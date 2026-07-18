@@ -78,6 +78,9 @@
 3. **단건 저장**: `saveBenchmark(benchmark)` → `upsertBenchmark`(문서 ID=`date`).
 4. **삭제**: 단건 `deleteBenchmark(date)` / 선택 `deleteBenchmarks(dates)`(배치) / 전체
    `deleteAllBenchmarks`(손상 문서 포함). 실패는 `actionError`로 안내.
+5. **다중선택 삭제 공통화(이슈 #88)**: 선택 모드의 상태 관리(`isSelectionMode`, `selectedDates`)와
+   하단 "선택 삭제"·"취소" 바는 `com.jkapp.common.MultiDeleteState`·`MultiDeleteBar`로 대체한다.
+   '전체 삭제' 버튼은 벤치마크 화면 고유로 남긴다. 강제 위치 `BenchmarkTab`(`FinanceScreen.kt`).
 
 ## 관련 결정 (ADR)
 

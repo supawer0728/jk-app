@@ -269,6 +269,78 @@ class TodoAssignmentPushTest {
         assertEquals(1, fakePushes.createdMessages.size)
     }
 
+    // --- 자식(SUB) 추가 push (이슈 #88) ---
+
+    // 자식 추가는 부모 조회(getTodoItemOnce = document(parentId).get) 후 자식 문서를 add한다.
+    // 부모 되돌림이 없도록 부모 조회는 title 없는 snapshot(=null)로 준다.
+    private fun repositoryForAddSub(
+        parentId: String,
+        editorUid: String?,
+        fakeUsers: FakeUserRepository,
+        fakePushes: FakePushRepository,
+    ): TodoFirestoreRepositoryImpl {
+        val parentRef = mockk<DocumentReference>()
+        every { parentRef.get() } returns taskReturning(snapshotWithoutTitle())
+        val addedRef = mockk<DocumentReference>()
+        every { addedRef.id } returns "sub-id"
+        val collectionRef = mockk<CollectionReference>()
+        every { collectionRef.document(parentId) } returns parentRef
+        every { collectionRef.add(any()) } returns taskReturning(addedRef)
+        val db = mockk<FirebaseFirestore>()
+        every { db.collection("todo-items") } returns collectionRef
+        return TodoFirestoreRepositoryImpl(db, { editorUid }, fakeUsers, fakePushes)
+    }
+
+    @Test
+    fun `addSubTodoItem은 notify=true면 담당자에게 보낼 push를 1건 만든다`() = runTest {
+        val fakeUsers = FakeUserRepository()
+        fakeUsers.registerToken(
+            uid = "uid-jeon",
+            email = TodoAssignee.EMAIL_JEON_JIHOON,
+            token = "token-jeon",
+        )
+        fakeUsers.registerToken(
+            uid = "uid-kwon",
+            email = TodoAssignee.EMAIL_KWON_YUKYEONG,
+            token = "token-kwon",
+        )
+        val fakePushes = FakePushRepository()
+        val repository = repositoryForAddSub("p-1", editorUid = "uid-jeon", fakeUsers, fakePushes)
+
+        repository.addSubTodoItem(
+            "p-1",
+            TodoItem(title = "장보기", assignee = TodoAssignee.SHARED),
+            notify = true,
+        )
+
+        assertEquals(1, fakePushes.createdMessages.size)
+    }
+
+    @Test
+    fun `addSubTodoItem은 notify=false면(복제) push를 만들지 않는다`() = runTest {
+        val fakeUsers = FakeUserRepository()
+        fakeUsers.registerToken(
+            uid = "uid-jeon",
+            email = TodoAssignee.EMAIL_JEON_JIHOON,
+            token = "token-jeon",
+        )
+        fakeUsers.registerToken(
+            uid = "uid-kwon",
+            email = TodoAssignee.EMAIL_KWON_YUKYEONG,
+            token = "token-kwon",
+        )
+        val fakePushes = FakePushRepository()
+        val repository = repositoryForAddSub("p-1", editorUid = "uid-jeon", fakeUsers, fakePushes)
+
+        repository.addSubTodoItem(
+            "p-1",
+            TodoItem(title = "장보기", assignee = TodoAssignee.SHARED),
+            notify = false,
+        )
+
+        assertTrue(fakePushes.createdMessages.isEmpty())
+    }
+
     @Test
     fun `updateTodoItem은 이전 문서가 없어도(레거시 등) push를 신규 생성으로 취급한다`() = runTest {
         val fakeUsers = FakeUserRepository()

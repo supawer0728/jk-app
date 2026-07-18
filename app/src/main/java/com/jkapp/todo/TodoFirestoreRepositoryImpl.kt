@@ -18,7 +18,7 @@ import java.time.Instant
 import kotlinx.coroutines.flow.Flow
 
 class TodoFirestoreRepositoryImpl(
-    db: FirebaseFirestore = AppFirestore.instance,
+    private val db: FirebaseFirestore = AppFirestore.instance,
     // 현재 로그인 사용자 uid 공급자. 저장 시 lastEditedByUid에 주입해 마지막 편집자를 감사(audit)
     // 기록으로 남기고, 담당자 배정 push 생성 시 편집자 본인을 대상에서 제외하는 데도 쓴다(→ ADR/60/01
     // 근거 갱신). 기본값은 FirebaseAuth이며, 테스트에서 대체할 수 있도록 분리한다.
@@ -45,6 +45,40 @@ class TodoFirestoreRepositoryImpl(
         return id
     }
 
+    /**
+     * 자식(SUB) 항목 추가.
+     * - type=SUB, mainTodoId=parentId 를 자동 주입한다.
+     * - 완료(DONE) 부모는 IN_PROGRESS로 되돌린다(상태변경 무알림). 자동 되돌림은 사용자 편집이
+     *   아니므로 부모의 lastEditedByUid는 보존한다(withEditor 미적용).
+     * - notify=true면 자식 생성 push 1건 발송, notify=false면 무알림(반복 복제용, ≤1 push 원칙).
+     */
+    override suspend fun addSubTodoItem(parentId: String, item: TodoItem, notify: Boolean): String {
+        // 완료 부모 → IN_PROGRESS 되돌림(무편집·무알림). 쓰기 실패해도 자식 추가는 진행.
+        runCatching {
+            val parent = getTodoItemOnce(parentId)
+            if (parent != null && parent.status == TodoStatus.DONE) {
+                // 자동 되돌림은 사용자 편집이 아니므로 withEditor()로 lastEditedByUid를 덮지 않는다.
+                val revertedParent = parent.copy(
+                    status = TodoStatus.IN_PROGRESS,
+                    completedAt = null,
+                )
+                itemsRef.document(parentId).update(revertedParent.toMap()).await()
+                // 부모 상태 변경은 assignee/title 변경이 아니므로 push 없음(≤1 원칙).
+            }
+        }.onFailure { Log.w(LOG_TAG, "완료 부모 되돌림 실패(자식 추가는 계속)", it) }
+
+        val sub = item.copy(type = TodoType.SUB, mainTodoId = parentId).withEditor()
+        val createdAt = sub.createdAt ?: Instant.now()
+        val data = sub.toMap() + (FIELD_CREATED_AT to createdAt.toTimestamp())
+        val id = itemsRef.add(data).await().id
+
+        // 자식 생성 push는 notify=true일 때만 1건 발송(복제는 무알림으로 ≤1 원칙 충족).
+        if (notify) {
+            maybeCreateAssignmentPush(before = null, after = sub.copy(firestoreId = id))
+        }
+        return id
+    }
+
     override suspend fun updateTodoItem(item: TodoItem) {
         val id = item.firestoreId ?: throw IllegalArgumentException("수정할 할일의 ID가 없습니다")
         val before = getTodoItemOnce(id)
@@ -53,8 +87,41 @@ class TodoFirestoreRepositoryImpl(
         maybeCreateAssignmentPush(before, after)
     }
 
+    /**
+     * 단건 삭제. MAIN이면 자식(SUB)도 cascade 삭제.
+     */
     override suspend fun deleteTodoItem(firestoreId: String) {
-        itemsRef.document(firestoreId).delete().await()
+        val batch = db.batch()
+        batch.delete(itemsRef.document(firestoreId))
+        // 자식 cascade: mainTodoId == firestoreId 인 문서 모두 삭제.
+        val subs = itemsRef
+            .whereEqualTo(FIELD_MAIN_TODO_ID, firestoreId)
+            .get().await()
+        subs.documents.forEach { batch.delete(it.reference) }
+        batch.commit().await()
+    }
+
+    /**
+     * 다중 삭제. 각 id가 MAIN이면 자식(SUB)도 cascade 삭제.
+     * Firestore 배치는 500건 제한이 있으므로 500건 단위로 나눠 커밋한다.
+     */
+    override suspend fun deleteTodoItems(ids: List<String>) {
+        if (ids.isEmpty()) return
+        // 삭제 대상 문서 ref 목록 수집(자식 cascade 포함).
+        val allRefs = ids.flatMap { parentId ->
+            val subRefs = itemsRef
+                .whereEqualTo(FIELD_MAIN_TODO_ID, parentId)
+                .get().await()
+                .documents
+                .map { it.reference }
+            listOf(itemsRef.document(parentId)) + subRefs
+        }
+        // 500건 단위로 배치 분할(Firestore 배치 제한).
+        allRefs.chunked(MAX_BATCH_SIZE).forEach { chunk ->
+            val batch = db.batch()
+            chunk.forEach { batch.delete(it) }
+            batch.commit().await()
+        }
     }
 
     override suspend fun completeTodoItem(firestoreId: String) {
@@ -62,7 +129,35 @@ class TodoFirestoreRepositoryImpl(
             ?: throw IllegalArgumentException("완료할 할일을 찾을 수 없습니다: $firestoreId")
         val updated = current.completeOccurrence(Instant.now()).withEditor()
         itemsRef.document(firestoreId).update(updated.toMap()).await()
+
+        // 부모 DONE 시 자식 cascade 완료(무알림).
+        if (updated.status == TodoStatus.DONE) {
+            cascadeCompleteChildren(firestoreId)
+        }
         // completeOccurrence는 assignee·title을 바꾸지 않으므로 push를 만들지 않는다(FEATURE 참고).
+    }
+
+    /**
+     * 부모가 DONE이 되었을 때 자식을 모두 DONE으로 cascade 완료한다.
+     * 자식 알림은 발송하지 않는다(무알림, ≤1 push 원칙).
+     */
+    private suspend fun cascadeCompleteChildren(parentId: String) {
+        runCatching {
+            val subs = itemsRef
+                .whereEqualTo(FIELD_MAIN_TODO_ID, parentId)
+                .get().await()
+            if (subs.isEmpty) return@runCatching
+            val now = Instant.now()
+            val batch = db.batch()
+            subs.documents.forEach { doc ->
+                val sub = doc.toTodoItem() ?: return@forEach
+                if (sub.status != TodoStatus.DONE) {
+                    val done = sub.copy(status = TodoStatus.DONE, completedAt = now).withEditor()
+                    batch.update(doc.reference, done.toMap())
+                }
+            }
+            batch.commit().await()
+        }.onFailure { Log.w(LOG_TAG, "자식 cascade 완료 실패", it) }
     }
 
     // 저장 시점에 편집자(현재 로그인 사용자)의 uid를 박아둔다. add/update/complete 모든 쓰기 경로가
@@ -102,6 +197,8 @@ class TodoFirestoreRepositoryImpl(
     // createdAt은 addTodoItem에서만 값을 부여하는 불변 필드이므로 여기(toMap)에는 포함하지 않는다.
     // 포함시키면 updateTodoItem/completeTodoItem이 매번 최신 값으로 덮어써 생성 시각을 잃어버린다.
     private fun TodoItem.toMap(): Map<String, Any?> = mapOf(
+        FIELD_TYPE to type.name,
+        FIELD_MAIN_TODO_ID to mainTodoId,
         FIELD_TITLE to title,
         FIELD_MEMO to memo,
         FIELD_STATUS to status.name,
@@ -135,8 +232,12 @@ class TodoFirestoreRepositoryImpl(
         // status가 있으면 그대로 파싱하고, 없으면(status 도입 이전 문서) isCompleted로부터 유도한다.
         val status = getString(FIELD_STATUS)?.toTodoStatusOrNull()
             ?: todoStatusFromLegacyCompleted(getBoolean(FIELD_IS_COMPLETED) ?: false)
+        // type이 없는 레거시 문서는 MAIN으로 처리한다(하위 호환).
+        val type = TodoType.fromNameOrDefault(getString(FIELD_TYPE))
         return TodoItem(
             firestoreId = id,
+            type = type,
+            mainTodoId = getString(FIELD_MAIN_TODO_ID),
             title = title,
             memo = getString(FIELD_MEMO) ?: "",
             status = status,
@@ -192,6 +293,9 @@ class TodoFirestoreRepositoryImpl(
 
         private const val COLLECTION_ITEMS = "todo-items"
 
+        // Firestore 배치 최대 쓰기 건수.
+        private const val MAX_BATCH_SIZE = 500
+
         // 이전 문서(before)와 저장된 문서(after)를 비교해 배정(assignee)·제목(title)이 모두 그대로면
         // 상태 순환·완료 전진 등 배정과 무관한 쓰기이므로 push를 만들 필요가 없다. before가 없으면
         // (신규 생성) 항상 만든다. 순수 함수라 Firestore/push 의존 없이 직접 단위 테스트할 수 있다.
@@ -201,6 +305,8 @@ class TodoFirestoreRepositoryImpl(
         fun assignmentPushTitle(before: TodoItem?): String =
             if (before == null) "새 할일이 등록되었습니다" else "할일이 수정되었습니다"
 
+        private const val FIELD_TYPE = "type"
+        private const val FIELD_MAIN_TODO_ID = "mainTodoId"
         private const val FIELD_TITLE = "title"
         private const val FIELD_MEMO = "memo"
         private const val FIELD_STATUS = "status"

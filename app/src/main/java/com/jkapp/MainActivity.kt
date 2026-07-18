@@ -154,6 +154,9 @@ class MainActivity : ComponentActivity() {
                                     onNavigateToTodoForm = { firestoreId ->
                                         backStack.add(TodoFormRoute(firestoreId = firestoreId))
                                     },
+                                    onNavigateToTodoSubForm = { parentId ->
+                                        backStack.add(TodoFormRoute(parentId = parentId))
+                                    },
                                     onNavigateToSettings = {
                                         backStack.add(SettingsRoute)
                                     },
@@ -189,6 +192,7 @@ class MainActivity : ComponentActivity() {
                                 TodoFormScreen(
                                     viewModel = todoViewModel,
                                     firestoreId = route.firestoreId,
+                                    subParentId = route.parentId,
                                     onBack = { backStack.removeLastOrNull() },
                                 )
                             }
