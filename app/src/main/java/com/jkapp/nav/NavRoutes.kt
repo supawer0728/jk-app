@@ -29,3 +29,9 @@ data object SettingsRoute
 
 @Serializable
 data object PortfolioRoute
+
+enum class BenchmarkChartType { RETURN, MDD }
+
+// chartType: BenchmarkChartType.name 저장 → enumValueOf로 복원
+@Serializable
+data class BenchmarkChartRoute(val chartType: String)
