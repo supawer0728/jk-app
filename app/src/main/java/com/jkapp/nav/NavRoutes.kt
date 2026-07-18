@@ -28,6 +28,9 @@ data class TodoFormRoute(val firestoreId: String? = null, val parentId: String? 
 data object SettingsRoute
 
 @Serializable
+data object TabOrderEditRoute
+
+@Serializable
 data object PortfolioRoute
 
 enum class BenchmarkChartType { RETURN, MDD }

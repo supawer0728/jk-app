@@ -8,6 +8,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 
@@ -67,9 +68,20 @@ class TabOrderViewModelTest {
     }
 
     @Test
-    fun `moveTab으로 탭 위치를 옮기면 순서가 즉시 반영된다`() = runTest {
+    fun `beginEdit 호출 시 editTabOrder가 현재 tabOrder의 복사본으로 초기화된다`() = runTest {
         viewModel.loadTabOrder("uid-1")
         testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.beginEdit()
+
+        assertEquals(viewModel.tabOrder.value, viewModel.editTabOrder.value)
+    }
+
+    @Test
+    fun `moveTab으로 editTabOrder 내 탭 위치를 옮기면 순서가 즉시 반영된다`() = runTest {
+        viewModel.loadTabOrder("uid-1")
+        testDispatcher.scheduler.advanceUntilIdle()
+        viewModel.beginEdit()
 
         viewModel.moveTab(0, 2)
 
@@ -77,35 +89,63 @@ class TabOrderViewModelTest {
             listOf(
                 MainTab.ASSET, MainTab.DIARY, MainTab.HOME, MainTab.TODO, MainTab.CALENDAR,
             ),
-            viewModel.tabOrder.value
+            viewModel.editTabOrder.value
         )
     }
 
     @Test
-    fun `완료를 누르면 편집 모드가 종료되고 현재 순서가 저장된다`() = runTest {
+    fun `moveTab은 editTabOrder가 null이면 아무것도 하지 않는다`() = runTest {
         viewModel.loadTabOrder("uid-1")
         testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.moveTab(0, 2)
+
+        // editTabOrder가 null이므로 tabOrder는 변경되지 않아야 한다
+        assertEquals(MainTab.entries, viewModel.tabOrder.value)
+        assertNull(viewModel.editTabOrder.value)
+    }
+
+    @Test
+    fun `applyEdit 호출 시 editTabOrder가 tabOrder에 반영되고 저장되며 편집이 종료된다`() = runTest {
+        viewModel.loadTabOrder("uid-1")
+        testDispatcher.scheduler.advanceUntilIdle()
+        viewModel.beginEdit()
         viewModel.moveTab(0, 1)
 
-        viewModel.toggleEditMode() // 수정 진입
-        assertEquals(true, viewModel.isEditMode.value)
-
-        viewModel.toggleEditMode() // 완료 -> 저장 + 편집 모드 종료
+        viewModel.applyEdit()
         testDispatcher.scheduler.advanceUntilIdle()
 
-        assertEquals(false, viewModel.isEditMode.value)
+        assertNull(viewModel.editTabOrder.value)
         assertEquals("uid-1", fakeRepository.lastSavedUid)
         assertEquals(viewModel.tabOrder.value.map { it.name }, fakeRepository.lastSavedOrder)
     }
 
     @Test
-    fun `수정 진입만 했을 때는 저장을 호출하지 않는다`() = runTest {
+    fun `applyEdit은 변경이 없으면 저장을 호출하지 않는다`() = runTest {
         viewModel.loadTabOrder("uid-1")
         testDispatcher.scheduler.advanceUntilIdle()
+        viewModel.beginEdit()
 
-        viewModel.toggleEditMode()
+        viewModel.applyEdit()
         testDispatcher.scheduler.advanceUntilIdle()
 
-        assertEquals(null, fakeRepository.lastSavedUid)
+        assertNull(fakeRepository.lastSavedUid)
+        assertNull(viewModel.editTabOrder.value)
+    }
+
+    @Test
+    fun `cancelEdit 호출 시 변경을 버리고 편집이 종료된다`() = runTest {
+        viewModel.loadTabOrder("uid-1")
+        testDispatcher.scheduler.advanceUntilIdle()
+        val originalOrder = viewModel.tabOrder.value
+        viewModel.beginEdit()
+        viewModel.moveTab(0, 1)
+
+        viewModel.cancelEdit()
+
+        assertNull(viewModel.editTabOrder.value)
+        // tabOrder는 변경되지 않아야 한다
+        assertEquals(originalOrder, viewModel.tabOrder.value)
+        assertNull(fakeRepository.lastSavedUid)
     }
 }

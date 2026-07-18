@@ -95,9 +95,11 @@ ViewModel이 위임하는 저장소 API(상세는 각 인프라 문서):
   [`infra/user.md`](../infra/user.md)
 - `auth` — `AuthRepository.observeCurrentUserId()`로 얻은 uid가 있어야 Firestore preference를
   읽고 쓴다. uid가 없으면(로그아웃) 기본값을 표시한다. [`infra/auth.md`](../infra/auth.md)
-- **하단 탭 순서** — 앱 환경설정의 일종이지만 설정 화면이 아니라 `common`의 홈 탭 편집 UI
-  (`common.TabOrderViewModel`)가 다룬다. Firestore `tab-orders` 컬렉션에 사용자별로 저장된다
-  (설정 화면 코드에는 포함되지 않음). [`infra/common.md`](../infra/common.md)
+- **하단 탭 순서** — 앱 환경설정의 일종이며, **설정 화면**의 '탭 순서 변경' 항목에서 진입하는
+  별도 화면(`TabOrderEditScreen`)에서 드래그앤드롭으로 재배치한다. `common.TabOrderViewModel`이
+  상태를 관리하고, 하단 **적용/취소** 버튼으로 확정한다. 적용 시 변경이 있을 때만 Firestore
+  `tab-orders`에 저장된다. 대상은 콘텐츠 탭(홈~캘린더)에 한정된다.
+  [`infra/common.md`](../infra/common.md)
 
 ## Firestore 컬렉션
 

@@ -1,8 +1,9 @@
 # settings(설정) 기능
 
-사용자가 앱 환경(다크모드, 햅틱 강도, 알림 방식·알림음, 언어, 시간대)을 한 화면에서 조정한다.
+사용자가 앱 환경(다크모드, 햅틱 강도, 알림 방식·알림음, 언어, 시간대, 탭 순서)을 조정한다.
 설정마다 저장소가 달라, 기기별로 유지할 값은 로컬(DataStore)에, 계정 간 공유할 값은
-Firestore(`users/{uid}.preference`)에 저장된다.
+Firestore(`users/{uid}.preference`)에 저장된다. 탭 순서는 별도 화면(`TabOrderEditScreen`)에서
+드래그앤드롭으로 변경한다.
 
 ## 비즈니스 규칙
 
@@ -46,6 +47,7 @@ Firestore(`users/{uid}.preference`)에 저장된다.
 
 1. **설정 화면 진입**: `SettingsScreen`이 `SettingsViewModel`의 StateFlow들을 구독 →
    DataStore 4개 값 + Firestore `preference`(로그인 시 `users/{uid}` 실시간 구독)를 표시.
+   목록 하단에 **탭 순서 변경** 항목이 있다.
 2. **기기 로컬 설정 변경**(다크모드/알림 방식/알림음): 드롭다운 선택 →
    `SettingsViewModel.setXxx` → `AppPreferences.setXxx`(DataStore 저장) → StateFlow 재방출.
 3. **햅틱 강도 변경**: 슬라이더 조작 → 손 뗌(`onValueChangeFinished`) →
@@ -53,9 +55,18 @@ Firestore(`users/{uid}.preference`)에 저장된다.
 4. **언어/시간대 변경**: 드롭다운 선택 → `SettingsViewModel.setLanguage`/`setTimeZone` →
    `updatePreference`(uid 필요) → `UserRepository.updatePreference`로 Firestore
    `users/{uid}.preference` merge → `preference` 구독이 새 값을 밀어줌.
+5. **탭 순서 변경**: '탭 순서 변경' 항목 탭 → `TabOrderEditScreen`으로 이동 →
+   드래그앤드롭으로 콘텐츠 탭(홈~캘린더) 순서 변경 → **적용** 버튼 탭.
+   - 적용: 변경이 있을 때만 `tab-orders` Firestore에 저장하고 하단 탭에 즉시 반영.
+     변경이 없으면 no-op. 저장 후 이전 화면(설정)으로 복귀.
+   - 취소: 변경을 버리고 이전 화면(설정)으로 복귀.
+   - 편집 중 Firestore 스냅샷 도착은 무시(사용자 드래그 순서 보호). → ADR/100
+   - 재배열 대상: 콘텐츠 탭(홈·자산관리·육묘일기·TODO·캘린더)만. 액션 탭(로그아웃·설정)은
+     포함되지 않으며 항상 하단 탭 목록 끝에 고정된다.
 
 ## 관련 결정 (ADR)
 
 - [`doc/adr/57/settings-preference-scope-and-timezone-storage.md`](../../adr/57/settings-preference-scope-and-timezone-storage.md) — 설정 동기화 범위 축소(다크모드·햅틱 로컬 유지), 언어 표시 전용, 시간대 저장 원칙
 - [`doc/adr/56/user-profile-upsert-strategy.md`](../../adr/56/user-profile-upsert-strategy.md) — 사용자 프로필 upsert 전략(다크모드·햅틱을 preference에서 제외한 최초 결정)
-- [`doc/adr/41/tab-order-firestore-schema.md`](../../adr/41/tab-order-firestore-schema.md) — 하단 탭 순서 저장 구조(설정 화면이 아닌 common 홈 탭 편집에서 사용하는 관련 설정)
+- [`doc/adr/41/tab-order-firestore-schema.md`](../../adr/41/tab-order-firestore-schema.md) — 하단 탭 순서 저장 구조(`tab-orders` 스키마, `mergeTabOrder` 정합성 유지)
+- [`doc/adr/100/remove-gnb-and-tab-interaction-redesign.md`](../../adr/100/remove-gnb-and-tab-interaction-redesign.md) — GNB 제거·탭 재배열을 설정 화면으로 이동한 결정

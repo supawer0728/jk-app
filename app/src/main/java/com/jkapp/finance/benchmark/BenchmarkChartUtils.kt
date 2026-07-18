@@ -26,6 +26,22 @@ object BenchmarkChartUtils {
     /** 수익률(%) 세로축 단위. 최댓값을 이 단위로 올림한다. */
     private const val PERCENT_UNIT = 50.0
 
+    /** niceCeilStep: 정규화 값(1~10)을 1/2/5×10ⁿ 형태로 올림할 때의 경계·후보 값. */
+    private const val NICE_STEP_1 = 1.0
+    private const val NICE_STEP_2 = 2.0
+    private const val NICE_STEP_5 = 5.0
+    private const val NICE_STEP_10 = 10.0
+
+    /** filterByPeriod: 기간 프리셋별 개월/연 수. */
+    private const val PERIOD_MONTHS_3 = 3
+    private const val PERIOD_MONTHS_6 = 6
+    private const val PERIOD_YEARS_1 = 1
+
+    /** formatAmount: K/M/G 단위 축약 경계(= 나눗셈 제수). */
+    private const val AMOUNT_UNIT_K = 1_000.0
+    private const val AMOUNT_UNIT_M = 1_000_000.0
+    private const val AMOUNT_UNIT_G = 1_000_000_000.0
+
     /**
      * 수익률(%) 세로축 최댓값. 데이터 최대 수익률을 50% 단위로 올림한다(최소 50).
      * 예: 123 → 150, 150 → 150, 0/음수 → 50.
@@ -60,10 +76,10 @@ object BenchmarkChartUtils {
         val magnitude = 10.0.pow(floor(log10(value)))
         val normalized = value / magnitude
         val niceNormalized = when {
-            normalized <= 1.0 -> 1.0
-            normalized <= 2.0 -> 2.0
-            normalized <= 5.0 -> 5.0
-            else -> 10.0
+            normalized <= NICE_STEP_1 -> NICE_STEP_1
+            normalized <= NICE_STEP_2 -> NICE_STEP_2
+            normalized <= NICE_STEP_5 -> NICE_STEP_5
+            else -> NICE_STEP_10
         }
         return niceNormalized * magnitude
     }
@@ -82,9 +98,9 @@ object BenchmarkChartUtils {
         if (period == ChartPeriod.ALL) return sorted
         val latestDate = LocalDate.parse(sorted.last().benchmark.date)
         val cutoff = when (period) {
-            ChartPeriod.MONTHS_3 -> latestDate.minus(Period.ofMonths(3))
-            ChartPeriod.MONTHS_6 -> latestDate.minus(Period.ofMonths(6))
-            ChartPeriod.YEAR_1 -> latestDate.minus(Period.ofYears(1))
+            ChartPeriod.MONTHS_3 -> latestDate.minus(Period.ofMonths(PERIOD_MONTHS_3))
+            ChartPeriod.MONTHS_6 -> latestDate.minus(Period.ofMonths(PERIOD_MONTHS_6))
+            ChartPeriod.YEAR_1 -> latestDate.minus(Period.ofYears(PERIOD_YEARS_1))
             ChartPeriod.ALL -> latestDate // 도달 불가(위에서 처리)
         }
         return sorted.filter { !LocalDate.parse(it.benchmark.date).isBefore(cutoff) }
@@ -101,9 +117,9 @@ object BenchmarkChartUtils {
     fun formatAmount(value: BigDecimal): String {
         val d = value.toDouble()
         return when {
-            d >= 1_000_000_000.0 -> formatWithSuffix(d / 1_000_000_000.0, "g")
-            d >= 1_000_000.0 -> formatWithSuffix(d / 1_000_000.0, "m")
-            d >= 1_000.0 -> formatWithSuffix(d / 1_000.0, "k")
+            d >= AMOUNT_UNIT_G -> formatWithSuffix(d / AMOUNT_UNIT_G, "g")
+            d >= AMOUNT_UNIT_M -> formatWithSuffix(d / AMOUNT_UNIT_M, "m")
+            d >= AMOUNT_UNIT_K -> formatWithSuffix(d / AMOUNT_UNIT_K, "k")
             else -> value.toBigInteger().toString()
         }
     }

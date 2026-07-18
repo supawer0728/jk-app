@@ -3,57 +3,43 @@ package com.jkapp.common
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
 import androidx.annotation.StringRes
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil.compose.SubcomposeAsyncImage
 import com.jkapp.R
 import com.jkapp.auth.AuthViewModel
 import com.jkapp.calendar.CalendarTabScreen
@@ -70,11 +56,15 @@ import com.jkapp.todo.TodoScreen
 import com.jkapp.todo.TodoViewModel
 import java.math.BigDecimal
 
-private const val TAB_PANEL_SWIPE_THRESHOLD_PX = 60f
 private val TAB_BAR_COLOR_LIGHT = Color(0xFFDBD6EB)
 private val TAB_BAR_COLOR_DARK = Color(0xFF30264F)
 
-@OptIn(ExperimentalMaterial3Api::class)
+// 한 화면에 항상 정확히 보이는 하단 탭 개수. 각 탭 항목 폭 = 화면 폭 / VISIBLE_TAB_COUNT로
+// 고정해, 콘텐츠 탭 5개가 화면을 꽉 채우고 나머지(로그아웃·설정)는 가로 스크롤로 접근한다.
+private const val VISIBLE_TAB_COUNT = 5
+private val TAB_BAR_HEIGHT = 48.dp
+private val TAB_DIVIDER_WIDTH = 1.dp
+
 @Composable
 fun MainScreen(
     viewModel: AuthViewModel,
@@ -98,25 +88,19 @@ fun MainScreen(
     val netWorth by dailyAssetViewModel.netWorth.collectAsStateWithLifecycle()
     val investmentAmount by benchmarkViewModel.latestCurrentAmount.collectAsStateWithLifecycle()
     val tabOrder by tabOrderViewModel.tabOrder.collectAsStateWithLifecycle()
-    val isEditMode by tabOrderViewModel.isEditMode.collectAsStateWithLifecycle()
 
     LaunchedEffect(currentUser.uid) {
         tabOrderViewModel.loadTabOrder(currentUser.uid)
     }
 
     var selectedTab by rememberSaveable { mutableStateOf(MainTab.HOME) }
-    var showProfileMenu by remember { mutableStateOf(false) }
-    var panelExpanded by remember { mutableStateOf(false) }
     var showExitConfirm by remember { mutableStateOf(false) }
+    var showSignOutConfirm by remember { mutableStateOf(false) }
     val activity = LocalActivity.current
     val haptic = LocalHapticController.current
 
     BackHandler {
         when {
-            panelExpanded -> {
-                if (isEditMode) tabOrderViewModel.toggleEditMode()
-                panelExpanded = false
-            }
             selectedTab != MainTab.HOME -> selectedTab = MainTab.HOME
             else -> showExitConfirm = true
         }
@@ -140,58 +124,39 @@ fun MainScreen(
         )
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(selectedTab.labelRes)) },
-                actions = {
-                    Box {
-                        IconButton(onClick = { showProfileMenu = true }) {
-                            SubcomposeAsyncImage(
-                                model = currentUser.photoUrl,
-                                contentDescription = stringResource(R.string.profile),
-                                modifier = Modifier
-                                    .size(32.dp)
-                                    .clip(CircleShape),
-                                contentScale = ContentScale.Crop,
-                                error = {
-                                    ProfileInitial(
-                                        displayName = currentUser.displayName,
-                                        modifier = Modifier.fillMaxSize()
-                                    )
-                                }
-                            )
-                        }
-                        DropdownMenu(
-                            expanded = showProfileMenu,
-                            onDismissRequest = { showProfileMenu = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.settings)) },
-                                onClick = {
-                                    showProfileMenu = false
-                                    onNavigateToSettings()
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.sign_out)) },
-                                onClick = {
-                                    showProfileMenu = false
-                                    viewModel.signOut()
-                                }
-                            )
-                        }
-                    }
+    if (showSignOutConfirm) {
+        AlertDialog(
+            onDismissRequest = { showSignOutConfirm = false },
+            title = { Text(stringResource(R.string.sign_out_confirm_title)) },
+            text = { Text(stringResource(R.string.sign_out_confirm_message)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showSignOutConfirm = false
+                    viewModel.signOut()
+                }) {
+                    Text(stringResource(R.string.sign_out))
                 }
-            )
-        },
-        bottomBar = {
-            // 다크 모드 설정(SYSTEM/ON/OFF)에 따라 실제 적용된 색상 스킴의 밝기로 판단한다.
-            val tabBarColor = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) {
-                TAB_BAR_COLOR_DARK
-            } else {
-                TAB_BAR_COLOR_LIGHT
+            },
+            dismissButton = {
+                TextButton(onClick = { showSignOutConfirm = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
             }
+        )
+    }
+
+    val tabBarColor = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) {
+        TAB_BAR_COLOR_DARK
+    } else {
+        TAB_BAR_COLOR_LIGHT
+    }
+
+    val bottomItems: List<BottomTabItem> =
+        tabOrder.map { BottomTabItem.Content(it) } +
+            listOf(BottomTabItem.Action.Logout, BottomTabItem.Action.Settings)
+
+    Scaffold(
+        bottomBar = {
             Column(
                 modifier = Modifier.background(tabBarColor),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -199,69 +164,38 @@ fun MainScreen(
                 if (selectedTab == MainTab.ASSET) {
                     NetWorthBanner(netWorth = netWorth, investmentAmount = investmentAmount)
                 }
-                var swipeAccumulator by remember { mutableFloatStateOf(0f) }
-                TabBarHandle(
-                    // swipeAccumulator는 onDragStart/End/Cancel에서 매번 리셋되므로 panelExpanded를
-                    // key로 둘 필요가 없다. panelExpanded를 key로 쓰면 임계값을 넘어 그 값이 바뀌는
-                    // 순간 이 pointerInput 자신이 재시작되어(코루틴이 취소되고 awaitFirstDown부터
-                    // 다시 대기), 손가락을 떼지 않고 이어서 반대 방향으로 스와이프해도 인식되지 않는다.
-                    modifier = Modifier.pointerInput(Unit) {
-                        detectVerticalDragGestures(
-                            onDragStart = { swipeAccumulator = 0f },
-                            onDragEnd = { swipeAccumulator = 0f },
-                            onDragCancel = { swipeAccumulator = 0f },
-                        ) { change, dragAmount ->
-                            change.consume()
-                            swipeAccumulator += dragAmount
-                            if (swipeAccumulator < -TAB_PANEL_SWIPE_THRESHOLD_PX && !panelExpanded) {
-                                panelExpanded = true
-                            } else if (swipeAccumulator > TAB_PANEL_SWIPE_THRESHOLD_PX && panelExpanded) {
-                                panelExpanded = false
-                            }
-                        }
-                    }
-                )
-                AnimatedContent(
-                    targetState = panelExpanded,
-                    transitionSpec = {
-                        if (targetState) {
-                            slideInVertically(initialOffsetY = { it }) + fadeIn() togetherWith
-                                slideOutVertically(targetOffsetY = { -it / 4 }) + fadeOut()
-                        } else {
-                            slideInVertically(initialOffsetY = { -it / 4 }) + fadeIn() togetherWith
-                                slideOutVertically(targetOffsetY = { it }) + fadeOut()
-                        }
-                    },
-                    label = "tabBottomPanel",
-                ) { expanded ->
-                    if (expanded) {
-                        TabOrderPanel(
-                            tabs = tabOrder,
-                            isEditMode = isEditMode,
-                            onToggleEditMode = {
-                                haptic?.tick()
-                                tabOrderViewModel.toggleEditMode()
-                            },
-                            onMove = { from, to -> tabOrderViewModel.moveTab(from, to) },
-                            onSelectTab = { tab ->
-                                haptic?.tick()
-                                selectedTab = tab
-                                panelExpanded = false
-                            },
-                        )
-                    } else {
-                        NavigationBar(containerColor = tabBarColor) {
-                            tabOrder.take(MAIN_TAB_ROW_SIZE).forEach { tab ->
-                                NavigationBarItem(
-                                    selected = selectedTab == tab,
-                                    onClick = {
-                                        haptic?.tick()
-                                        selectedTab = tab
-                                    },
-                                    icon = { Icon(tab.icon, contentDescription = null) },
-                                    label = { Text(stringResource(tab.labelRes)) }
-                                )
-                            }
+                // 각 탭 항목 폭을 화면 폭의 1/VISIBLE_TAB_COUNT로 고정해 항상 정확히 5개가
+                // 한 화면에 보이게 하고, 나머지(로그아웃·설정)는 가로 스크롤로 접근한다.
+                BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                    val tabWidth = maxWidth / VISIBLE_TAB_COUNT
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                            .background(tabBarColor),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        bottomItems.forEachIndexed { index, item ->
+                            BottomTabCell(
+                                width = tabWidth,
+                                showDivider = index > 0,
+                                label = when (item) {
+                                    is BottomTabItem.Content -> stringResource(item.tab.labelRes)
+                                    is BottomTabItem.Action.Logout -> stringResource(R.string.sign_out)
+                                    is BottomTabItem.Action.Settings -> stringResource(R.string.settings)
+                                },
+                                selected = item is BottomTabItem.Content && selectedTab == item.tab,
+                                onClick = {
+                                    when (item) {
+                                        is BottomTabItem.Content -> {
+                                            haptic?.tick()
+                                            selectedTab = item.tab
+                                        }
+                                        is BottomTabItem.Action.Logout -> showSignOutConfirm = true
+                                        is BottomTabItem.Action.Settings -> onNavigateToSettings()
+                                    }
+                                },
+                            )
                         }
                     }
                 }
@@ -295,27 +229,38 @@ fun MainScreen(
     }
 }
 
-private val TAB_BAR_HANDLE_WIDTH = 96.dp // 기본 32dp의 3배
-private val TAB_BAR_HANDLE_HEIGHT = 4.dp
-private val TAB_BAR_HANDLE_TOUCH_HEIGHT = TAB_BAR_HANDLE_HEIGHT * 3
-
-// 하단바를 스와이프해 탭 목록 패널을 열 수 있다는 것을 알려주는 손잡이.
-// 인식 범위(터치 영역)는 화면에 보이는 손잡이보다 세로로 3배 넓게 잡아 스와이프 제스처를 더 쉽게 인식한다.
+// 하단 탭 한 칸. 폭은 화면 폭/VISIBLE_TAB_COUNT로 고정된다. 구분선은 셀 폭을 잠식하지 않도록
+// 셀 내부 왼쪽 경계에 겹쳐 그린다(항목 5개 폭의 합이 정확히 화면 폭이 되도록).
 @Composable
-private fun TabBarHandle(modifier: Modifier = Modifier) {
+private fun BottomTabCell(
+    width: Dp,
+    showDivider: Boolean,
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
     Box(
-        modifier = modifier
-            .padding(vertical = 8.dp)
-            .size(width = TAB_BAR_HANDLE_WIDTH, height = TAB_BAR_HANDLE_TOUCH_HEIGHT),
+        modifier = Modifier
+            .width(width)
+            .height(TAB_BAR_HEIGHT)
+            .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Box(
-            modifier = Modifier
-                .size(width = TAB_BAR_HANDLE_WIDTH, height = TAB_BAR_HANDLE_HEIGHT)
-                .background(
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f),
-                    shape = RoundedCornerShape(2.dp),
-                )
+        if (showDivider) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .width(TAB_DIVIDER_WIDTH)
+                    .fillMaxHeight()
+                    .background(MaterialTheme.colorScheme.outlineVariant)
+            )
+        }
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            textAlign = TextAlign.Center,
         )
     }
 }
@@ -347,22 +292,4 @@ private fun BannerStat(@StringRes labelRes: Int, value: BigDecimal?) {
         style = MaterialTheme.typography.titleMedium,
         fontWeight = FontWeight.Bold,
     )
-}
-
-@Composable
-private fun ProfileInitial(displayName: String?, modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier.background(
-            color = MaterialTheme.colorScheme.primaryContainer,
-            shape = CircleShape
-        ),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = displayName?.firstOrNull()?.uppercaseChar()?.toString() ?: "?",
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onPrimaryContainer
-        )
-    }
 }
