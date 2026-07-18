@@ -1,8 +1,9 @@
 # settings(설정) 기능
 
-사용자가 앱 환경(다크모드, 햅틱 강도, 알림 방식·알림음, 언어, 시간대)을 한 화면에서 조정한다.
+사용자가 앱 환경(다크모드, 햅틱 강도, 알림 방식·알림음, 언어, 시간대, 탭 순서)을 조정한다.
 설정마다 저장소가 달라, 기기별로 유지할 값은 로컬(DataStore)에, 계정 간 공유할 값은
-Firestore(`users/{uid}.preference`)에 저장된다.
+Firestore(`users/{uid}.preference`)에 저장된다. 탭 순서는 별도 화면(`TabOrderEditScreen`)에서
+드래그앤드롭으로 변경하며, 홈은 항상 선두 고정이라 홈을 제외한 콘텐츠 탭만 재배치 대상이다.
 
 ## 비즈니스 규칙
 
@@ -30,6 +31,14 @@ Firestore(`users/{uid}.preference`)에 저장된다.
 - **저장소 장애 내성**: DataStore가 `IOException`을 방출하면 읽기는 빈 설정(기본값)으로 대체하고
   쓰기는 무시해 크래시를 막는다. Firestore preference 구독 오류는 로그 후 기본값을 방출한다.
   강제 위치 `AppPreferences.safePreferencesData`/각 setter, `SettingsViewModel.preference.catch`.
+- **로그아웃은 설정 화면 항목**: 로그아웃은 하단 탭이 아니라 설정 화면 목록의 항목이다. 누르면
+  확인 다이얼로그("정말 로그아웃하시겠습니까?")를 띄우고, 확인 시에만 `AuthViewModel.signOut()`을
+  호출한다(취소 시 무동작). `SettingsScreen`은 `onSignOut` 콜백으로 주입받아 호출한다. → ADR/100 후속
+- **설정 항목 좌측 라벨 고정폭 정렬**: 모든 설정 항목 행의 좌측 라벨은 동일한 고정폭으로 맞춰
+  우측 컨트롤(드롭다운·슬라이더·이동 화살표)이 세로로 정렬된다. 고정폭은 하드코딩이 아니라
+  `SubcomposeLayout`으로 모든 라벨을 measure해 얻은 **최대 폭**을 적용한다. 강제 위치
+  `SettingsScreen`(`AlignedLabelSettings`/라벨 폭 측정 레이아웃). 로그아웃은 버튼 형태라 라벨 정렬
+  대상에서 제외한다.
 
 ## 유효성 검증
 
@@ -46,6 +55,8 @@ Firestore(`users/{uid}.preference`)에 저장된다.
 
 1. **설정 화면 진입**: `SettingsScreen`이 `SettingsViewModel`의 StateFlow들을 구독 →
    DataStore 4개 값 + Firestore `preference`(로그인 시 `users/{uid}` 실시간 구독)를 표시.
+   목록 하단에 **탭 순서 변경**과 **로그아웃** 항목이 있다. 각 설정 항목의 좌측 라벨은
+   최대 폭으로 정렬되어 우측 컨트롤이 세로로 맞춰진다.
 2. **기기 로컬 설정 변경**(다크모드/알림 방식/알림음): 드롭다운 선택 →
    `SettingsViewModel.setXxx` → `AppPreferences.setXxx`(DataStore 저장) → StateFlow 재방출.
 3. **햅틱 강도 변경**: 슬라이더 조작 → 손 뗌(`onValueChangeFinished`) →
@@ -53,9 +64,21 @@ Firestore(`users/{uid}.preference`)에 저장된다.
 4. **언어/시간대 변경**: 드롭다운 선택 → `SettingsViewModel.setLanguage`/`setTimeZone` →
    `updatePreference`(uid 필요) → `UserRepository.updatePreference`로 Firestore
    `users/{uid}.preference` merge → `preference` 구독이 새 값을 밀어줌.
+5. **탭 순서 변경**: '탭 순서 변경' 항목 탭 → `TabOrderEditScreen`으로 이동 →
+   드래그앤드롭으로 순서 변경 → **적용** 버튼 탭.
+   - 적용: 변경이 있을 때만 `tab-orders` Firestore에 저장하고 하단 탭에 즉시 반영.
+     변경이 없으면 no-op. 저장 후 이전 화면(설정)으로 복귀.
+   - 취소: 변경을 버리고 이전 화면(설정)으로 복귀.
+   - 편집 중 Firestore 스냅샷 도착은 무시(사용자 드래그 순서 보호). → ADR/100
+   - **재배열 대상은 홈을 제외한 콘텐츠 탭(자산관리·육묘일기·TODO·캘린더)뿐**이다. 홈은
+     하단바 왼쪽에 고정되므로 재배치 화면 목록에 나타나지 않고, 저장 시 항상
+     `[HOME] + 재배치된 나머지` 순서로 저장되어 선두를 유지한다.
+6. **로그아웃**: 설정 목록의 '로그아웃' 항목 탭 → 확인 다이얼로그("정말 로그아웃하시겠습니까?")
+   → **확인** 시 `onSignOut()`(→ `AuthViewModel.signOut()`) 호출, **취소** 시 무동작.
 
 ## 관련 결정 (ADR)
 
 - [`doc/adr/57/settings-preference-scope-and-timezone-storage.md`](../../adr/57/settings-preference-scope-and-timezone-storage.md) — 설정 동기화 범위 축소(다크모드·햅틱 로컬 유지), 언어 표시 전용, 시간대 저장 원칙
 - [`doc/adr/56/user-profile-upsert-strategy.md`](../../adr/56/user-profile-upsert-strategy.md) — 사용자 프로필 upsert 전략(다크모드·햅틱을 preference에서 제외한 최초 결정)
-- [`doc/adr/41/tab-order-firestore-schema.md`](../../adr/41/tab-order-firestore-schema.md) — 하단 탭 순서 저장 구조(설정 화면이 아닌 common 홈 탭 편집에서 사용하는 관련 설정)
+- [`doc/adr/41/tab-order-firestore-schema.md`](../../adr/41/tab-order-firestore-schema.md) — 하단 탭 순서 저장 구조(`tab-orders` 스키마, `mergeTabOrder` 정합성 유지)
+- [`doc/adr/100/remove-gnb-and-tab-interaction-redesign.md`](../../adr/100/remove-gnb-and-tab-interaction-redesign.md) — GNB 제거·탭 재배열을 설정 화면으로 이동한 결정

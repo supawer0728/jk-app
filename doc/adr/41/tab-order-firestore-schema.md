@@ -30,3 +30,12 @@
 - 탭이 `MAIN_TAB_ROW_SIZE`개를 넘어도 하단바는 항상 `MAIN_TAB_ROW_SIZE`개만 노출되고, 나머지는 스와이프 업 패널에서 접근한다.
 - 사용자별 탭 순서는 기기/재실행 간 유지되며, 신규 탭 추가 시 자동으로 맨 뒤에 붙는다.
 - 드래그앤드롭 재배열 로직(2D 그리드 오프셋 계산, `computeNewIndex`)은 `MAIN_TAB_ROW_SIZE`가 바뀌면 함께 검토가 필요하다.
+
+## 후속 과제 (이번 범위 밖)
+
+- **하단 탭 상호작용 재설계**: 여기서 정한 하단바 인라인 재배열(세로 스와이프 패널 +
+  jiggle/드래그, `MAIN_TAB_ROW_SIZE` 노출)은 이슈 #100에서 대체되었다. 상단 GNB를
+  제거하고, 탭 재배열을 설정 화면(드래그앤드롭·적용/취소)으로 옮기며, 하단 탭은 텍스트
+  전용·가로 슬라이드로 바꾼다. 단 이 ADR이 정한 `tab-orders` Firestore 스키마(문서ID=uid,
+  `tabs: List<String>`)와 `TabOrderRepository` 분리는 그대로 유지된다. 근거는
+  [`../100/remove-gnb-and-tab-interaction-redesign.md`](../100/remove-gnb-and-tab-interaction-redesign.md) 참고.

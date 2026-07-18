@@ -6,8 +6,9 @@
 ## 책임
 
 - 한다: 로그인 후 앱 셸(`MainScreen`)과 로그인/스플래시 화면 제공, 로컬 기기 설정(`AppPreferences`,
-  DataStore) 관리, 하단 탭 순서(`tab-orders`) 저장·재배열, 공유 `FirebaseFirestore` 인스턴스와
-  코루틴 확장(`await`, `snapshotFlow`) 제공, 테마·공용 다이얼로그·포맷 유틸 제공.
+  DataStore) 관리, 하단 탭 순서(`tab-orders`) 저장(재배열 UI는 settings 화면에서 제공),
+  공유 `FirebaseFirestore` 인스턴스와 코루틴 확장(`await`, `snapshotFlow`) 제공,
+  테마·공용 다이얼로그·포맷 유틸 제공.
 - 하지 않는다: 각 feature의 도메인 로직·화면(→ 각 feature 패키지), 서버 사용자 설정(→ `user`).
 
 ## 공개 API
@@ -19,9 +20,9 @@
 | `AppFirestore` | object | 공유 `FirebaseFirestore` 인스턴스(`lazy`). 캐시 등 설정을 한 곳에서 구성 |
 | `Task<T>.await()`, `Query.snapshotFlow`, `DocumentReference.snapshotFlow` | 확장 함수 | Firestore Task/리스너를 코루틴·`Flow`로 감싸는 공통 골격 (`FirestoreExtensions.kt`) |
 | `TabOrderRepository` / `TabOrderRepositoryImpl` | 인터페이스/클래스 | `observeTabOrder(uid): Flow<List<String>?>`, `saveTabOrder(uid, tabNames)` |
-| `TabOrderViewModel` | `ViewModel` | `tabOrder: StateFlow<List<MainTab>>`, `isEditMode`, `loadTabOrder`, `moveTab`, `toggleEditMode`. `mergeTabOrder`로 신규/삭제 탭 정합성 유지 |
-| `MainTab` | enum | `HOME`/`ASSET`/`DIARY`/`TODO`/`CALENDAR` (라벨·아이콘). `MAIN_TAB_ROW_SIZE` 상수 공유 |
-| `MainScreen`, `HomeTabScreen`, `LoginScreen`, `SplashScreen`, `TabOrderPanel` | `@Composable` | 앱 셸·진입 화면·탭 재배열 패널 |
+| `TabOrderViewModel` | `ViewModel` | `tabOrder: StateFlow<List<MainTab>>` — 현재 적용 순서. `editTabOrder: StateFlow<List<MainTab>?>` — 편집 중 임시 순서(null이면 편집 비활성). `loadTabOrder(uid)`, `moveTab(from, to)`, `beginEdit()`, `applyEdit()`, `cancelEdit()`. `mergeTabOrder`로 신규/삭제 탭 정합성 유지. `applyEdit`는 dirty 판정(원본과 순서가 다를 때만) 후 Firestore 저장 |
+| `MainTab` | enum | `HOME`/`ASSET`/`DIARY`/`TODO`/`CALENDAR` (라벨만, 아이콘 제거). 콘텐츠 탭 5개. `HOME`은 하단바 왼쪽에 아이콘으로 고정 노출되고 탭 순서 재배치 대상이 아니다(항상 선두). 나머지 4개(ASSET/DIARY/TODO/CALENDAR)만 재배치 대상이자 가운데 스크롤 영역에 표시된다 |
+| `MainScreen`, `HomeTabScreen`, `LoginScreen`, `SplashScreen` | `@Composable` | 앱 셸·진입 화면. GNB(TopAppBar) 제거. 하단바 3구역: **왼쪽 고정** 홈 아이콘(`Icons.Default.Home`, 선택 시 primary 강조) + **가운데** 홈 제외 콘텐츠 탭 4개(ASSET/DIARY/TODO/CALENDAR) 텍스트(구분선·선택 강조. 각 항목은 가운데 영역 폭의 1/`CENTER_TAB_COUNT`(=4) 고정폭이라 4개가 스크롤 없이 딱 맞음) + **오른쪽 고정** 설정 아이콘(`Icons.Default.Settings`). 로그아웃은 하단바에 없고 설정 화면 항목으로 이동했다. 양 끝 고정 셀은 배경을 하단바 기본색보다 조금 짙게(`PINNED_TAB_COLOR_LIGHT`/`DARK`). 전체 하단바에 `navigationBarsPadding` 적용. `TabOrderPanel`·`BottomTabItem` 제거됨 |
 | `JkappTheme` | `@Composable` | Material3 테마(다크/다이나믹 컬러). `theme/` 하위 Color·Type 포함 |
 | `toComposeColorOrNull()`, `Long.formatFileSize()`, `LoadingIndicator` | 확장/`@Composable` | 공용 유틸(`Extensions.kt`) |
 | `DateUtils`, `IsoDatePickerDialog`, `IsoDateTimePickerDialog` | 유틸/`@Composable` | 날짜 포맷·ISO 날짜 선택 다이얼로그 |
@@ -51,5 +52,6 @@
 
 ## 관련 결정 (ADR)
 
-- [`doc/adr/41/tab-order-firestore-schema.md`](../../adr/41/tab-order-firestore-schema.md) — 하단 탭 순서 저장 구조(`tab-orders`) 및 재배열 UI 방식
+- [`doc/adr/41/tab-order-firestore-schema.md`](../../adr/41/tab-order-firestore-schema.md) — 하단 탭 순서 저장 구조(`tab-orders`, `mergeTabOrder` 정합성)
 - [`doc/adr/57/settings-preference-scope-and-timezone-storage.md`](../../adr/57/settings-preference-scope-and-timezone-storage.md) — 기기별 설정을 DataStore(로컬)에 두는 저장 범위 결정
+- [`doc/adr/100/remove-gnb-and-tab-interaction-redesign.md`](../../adr/100/remove-gnb-and-tab-interaction-redesign.md) — GNB 제거, 하단 탭 텍스트 전용·가로 슬라이드, 탭 재배열을 설정 화면으로 이동한 결정

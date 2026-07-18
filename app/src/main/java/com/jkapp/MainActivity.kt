@@ -52,8 +52,10 @@ import com.jkapp.nav.PortfolioRoute
 import com.jkapp.nav.RecordTypeManagementRoute
 import com.jkapp.nav.SettingsRoute
 import com.jkapp.nav.SplashRoute
+import com.jkapp.nav.TabOrderEditRoute
 import com.jkapp.nav.TodoFormRoute
 import com.jkapp.settings.SettingsScreen
+import com.jkapp.settings.TabOrderEditScreen
 import com.jkapp.settings.SettingsViewModel
 import com.jkapp.todo.TodoFormScreen
 import com.jkapp.todo.TodoReminderSchedulerImpl
@@ -205,7 +207,15 @@ class MainActivity : ComponentActivity() {
                             entry<SettingsRoute> {
                                 SettingsScreen(
                                     viewModel = settingsViewModel,
-                                    onBack = { backStack.removeLastOrNull() }
+                                    onBack = { backStack.removeLastOrNull() },
+                                    onNavigateToTabOrderEdit = { backStack.add(TabOrderEditRoute) },
+                                    onSignOut = { authViewModel.signOut() },
+                                )
+                            }
+                            entry<TabOrderEditRoute> {
+                                TabOrderEditScreen(
+                                    viewModel = tabOrderViewModel,
+                                    onBack = { backStack.removeLastOrNull() },
                                 )
                             }
                             entry<PortfolioRoute> {

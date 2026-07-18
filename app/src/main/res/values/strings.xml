@@ -255,4 +255,11 @@
     <string name="todo_sub_clone_dismiss">만들지 않음</string>
     <!-- 다중선택 삭제 -->
     <string name="todo_bulk_delete">할 일 일괄 삭제</string>
+    <!-- 탭 순서 변경 -->
+    <string name="tab_order_edit">탭 순서 변경</string>
+    <string name="tab_order_edit_title">탭 순서 변경</string>
+    <string name="apply">적용</string>
+    <string name="tab_order_drag_handle">순서 변경 핸들</string>
+    <string name="sign_out_confirm_title">로그아웃</string>
+    <string name="sign_out_confirm_message">정말 로그아웃하시겠습니까?</string>
 </resources>

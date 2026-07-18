@@ -4,6 +4,11 @@
 환경설정 값을 한 화면에서 읽고 쓴다. **기기 로컬 설정**은 DataStore(`common.AppPreferences`)에,
 **계정 동기화 설정**은 Firestore `users/{uid}.preference`(`user.UserRepository`)에 저장된다.
 
+설정 화면은 환경설정 값 외에 **탭 순서 변경**(별도 화면 진입)과 **로그아웃**(확인 다이얼로그 후
+`auth.AuthViewModel.signOut()` 호출) 진입점도 제공한다. 로그아웃은 하단 탭이 아니라 설정 화면
+항목이다(ADR 100 후속 보완). 설정 항목들의 좌측 라벨은 실제 라벨 중 최대 폭을 측정한
+고정폭으로 정렬되어 우측 컨트롤(드롭다운·슬라이더 등)이 세로로 정렬된다.
+
 ## 도메인 모델
 
 설정 화면이 다루는 값과 그 저장소는 다음과 같다.
@@ -95,9 +100,13 @@ ViewModel이 위임하는 저장소 API(상세는 각 인프라 문서):
   [`infra/user.md`](../infra/user.md)
 - `auth` — `AuthRepository.observeCurrentUserId()`로 얻은 uid가 있어야 Firestore preference를
   읽고 쓴다. uid가 없으면(로그아웃) 기본값을 표시한다. [`infra/auth.md`](../infra/auth.md)
-- **하단 탭 순서** — 앱 환경설정의 일종이지만 설정 화면이 아니라 `common`의 홈 탭 편집 UI
-  (`common.TabOrderViewModel`)가 다룬다. Firestore `tab-orders` 컬렉션에 사용자별로 저장된다
-  (설정 화면 코드에는 포함되지 않음). [`infra/common.md`](../infra/common.md)
+- **하단 탭 순서** — 앱 환경설정의 일종이며, **설정 화면**의 '탭 순서 변경' 항목에서 진입하는
+  별도 화면(`TabOrderEditScreen`)에서 드래그앤드롭으로 재배치한다. `common.TabOrderViewModel`이
+  상태를 관리하고, 하단 **적용/취소** 버튼으로 확정한다. 적용 시 변경이 있을 때만 Firestore
+  `tab-orders`에 저장된다. **홈은 하단바 왼쪽에 고정되므로 재배치 대상에서 제외**되고,
+  대상은 홈을 제외한 콘텐츠 탭(자산관리·육묘일기·TODO·캘린더)이다. 저장 시에는 항상
+  `[HOME] + 재배치된 나머지` 순서로 저장해 홈이 선두를 유지한다.
+  [`infra/common.md`](../infra/common.md)
 
 ## Firestore 컬렉션
 
